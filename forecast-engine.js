@@ -177,15 +177,66 @@ function getRecentValidBalanceDays(dailyData, now, monthlySettings, maxDays){
   return out.reverse(); // chronologisch aufsteigend
 }
 
+/* ===== TEMPORAERE DIAGNOSE-KENNUNG =====
+   Rein informativer Marker OHNE jeden Einfluss auf die Berechnung — dient
+   ausschliesslich dazu, in einer veroeffentlichten Umgebung nachweisen zu
+   koennen, ob dort wirklich der aktuelle Engine-Stand (kalenderuebergreifende
+   Datenauswahl, siehe getRecentValidBalanceDays) laeuft oder noch ein
+   aelterer/gecachter Build. Erscheint als forecastBuildId im Ergebnis von
+   calculateCurrentMonthForecast() (siehe dort) — KEINE zweite Berechnung,
+   nur ein zusaetzliches Feld auf demselben Objekt. Kann nach Abschluss der
+   Fehlersuche wieder entfernt werden. */
+const FORECAST_BUILD_ID = "cross-month-valid-days-v1";
+
 /* ===== TEMPORAERES DIAGNOSE-WERKZEUG (keine Fachlogik, nichts wird
    dauerhaft gespeichert) =====
-   Durchlaeuft GENAU denselben Suchraum wie getRecentValidBalanceDays()
+   buildDayForecastDiagnostic() bewertet GENAU EINEN Kalendertag exakt nach
+   denselben Regeln wie isValidForecastDay()/getMonthlyTdee() und liefert
+   dazu ein vollstaendiges Diagnoseobjekt inkl. Ablehnungsgruenden — nutzbar
+   sowohl fuer einen fortlaufenden Suchhorizont (debugRecentForecastDays)
+   als auch fuer gezielt einzeln abgefragte, feste Kalendertage (z.B. einen
+   konkret gemeldeten Zeitraum), unabhaengig vom aktuellen "now". */
+function buildDayForecastDiagnostic(y, m, d, dailyData, monthlySettings){
+  const key = dayKey(y,m,d);
+  const day = dailyData[key];
+  const monthId = monthIdOf(y,m);
+  const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
+  const dayExists = !!day;
+  const logged = dayExists && day.logged===true;
+  const kcalIn = dayExists ? day.kcalIn : undefined;
+  const kcalBurned = dayExists ? day.kcalBurned : undefined;
+  const valid = isValidForecastDay(day, monthlyTdee);
+  const rejectionReasons=[];
+  if(!valid){
+    if(!dayExists){
+      rejectionReasons.push("missing_day");
+    }else{
+      if(!logged) rejectionReasons.push("not_logged");
+      if(!(isFinite(kcalIn)&&kcalIn>0)) rejectionReasons.push("missing_or_invalid_kcal_in");
+      if(kcalBurned!=null && (!isFinite(kcalBurned)||kcalBurned<0)) rejectionReasons.push("invalid_kcal_burned");
+    }
+    if(monthlyTdee==null) rejectionReasons.push("missing_monthly_tdee");
+  }
+  return {
+    date: new Date(y,m,d),
+    dayKey: key,
+    dayExists,
+    logged,
+    kcalIn: kcalIn==null?null:kcalIn,
+    kcalBurned: kcalBurned==null?null:kcalBurned,
+    monthId,
+    monthlyTdee,
+    valid,
+    rejectionReasons
+  };
+}
+/* Durchlaeuft GENAU denselben Suchraum wie getRecentValidBalanceDays()
    (dieselbe dayKey()-Konvention, derselbe Suchhorizont), scannt aber IMMER
    den vollen Suchhorizont (statt bei maxDays gueltigen Tagen zu stoppen)
-   und liefert fuer JEDEN geprueften Kalendertag ein vollstaendiges
-   Diagnoseobjekt inkl. Ablehnungsgruenden. Dient ausschliesslich der
-   Fehlersuche (z.B. ueber die Browser-Konsole) und veraendert kein
-   Verhalten der eigentlichen Prognose. */
+   und liefert fuer JEDEN geprueften Kalendertag das Diagnoseobjekt aus
+   buildDayForecastDiagnostic(). Dient ausschliesslich der Fehlersuche
+   (z.B. ueber die Browser-Konsole oder ein Diagnose-Sheet) und veraendert
+   kein Verhalten der eigentlichen Prognose. */
 function debugRecentForecastDays({now, dailyData, monthlySettings, maxDays}){
   maxDays = maxDays || FORECAST_CONFIG.maxRecentValidDays;
   const searchHorizonDays = FORECAST_CONFIG.recentValidDaysSearchHorizonDays;
@@ -193,45 +244,13 @@ function debugRecentForecastDays({now, dailyData, monthlySettings, maxDays}){
   const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let validCount = 0;
   for(let scannedDays=0; scannedDays<searchHorizonDays; scannedDays++){
-    const y=cursor.getFullYear(), m=cursor.getMonth(), d=cursor.getDate();
-    const key = dayKey(y,m,d);
-    const day = dailyData[key];
-    const monthId = monthIdOf(y,m);
-    const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
-    const dayExists = !!day;
-    const logged = dayExists && day.logged===true;
-    const kcalIn = dayExists ? day.kcalIn : undefined;
-    const kcalBurned = dayExists ? day.kcalBurned : undefined;
-    const valid = isValidForecastDay(day, monthlyTdee);
-    const rejectionReasons=[];
-    if(!valid){
-      if(!dayExists){
-        rejectionReasons.push("missing_day");
-      }else{
-        if(!logged) rejectionReasons.push("not_logged");
-        if(!(isFinite(kcalIn)&&kcalIn>0)) rejectionReasons.push("missing_or_invalid_kcal_in");
-        if(kcalBurned!=null && (!isFinite(kcalBurned)||kcalBurned<0)) rejectionReasons.push("invalid_kcal_burned");
-      }
-      if(monthlyTdee==null) rejectionReasons.push("missing_monthly_tdee");
-    }
+    const diag = buildDayForecastDiagnostic(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), dailyData, monthlySettings);
     // Wuerde dieser (gueltige) Tag tatsaechlich in getRecentValidBalanceDays()
     // landen, oder ist er zwar gueltig, aber weil bereits maxDays neuere
     // gueltige Tage gefunden wurden, gar nicht mehr Teil der Stichprobe?
-    const usedByForecast = valid && validCount<maxDays;
-    if(valid) validCount++;
-    out.push({
-      date: new Date(cursor),
-      dayKey: key,
-      dayExists,
-      logged,
-      kcalIn: kcalIn==null?null:kcalIn,
-      kcalBurned: kcalBurned==null?null:kcalBurned,
-      monthId,
-      monthlyTdee,
-      valid,
-      usedByForecast,
-      rejectionReasons
-    });
+    const usedByForecast = diag.valid && validCount<maxDays;
+    if(diag.valid) validCount++;
+    out.push({...diag, usedByForecast});
     cursor.setDate(cursor.getDate()-1);
   }
   return out.reverse(); // chronologisch aufsteigend
@@ -596,28 +615,35 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
 
   const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
   if(monthlyTdee==null){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["no_monthly_tdee"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["no_monthly_tdee"], forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const monthEnd = new Date(y,m+1,0);
   if(startOfDay(now)>startOfDay(monthEnd)){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["month_already_ended"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["month_already_ended"], forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const anchor = getLatestValidWeightEntry(weightEntries, now, FORECAST_CONFIG, dailyData, monthlySettings, weightConfirmations);
   if(!anchor){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["missing_anchor_weight"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["missing_anchor_weight"], forecastBuildId:FORECAST_BUILD_ID};
   }
   const anchorAgeDays = daysBetween(anchor.date, now);
   if(anchorAgeDays>FORECAST_CONFIG.maxAnchorAgeDays){
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["anchor_weight_too_old"],
-      requirements:{maxAnchorAgeDays:FORECAST_CONFIG.maxAnchorAgeDays, anchorAgeDays}};
+      requirements:{maxAnchorAgeDays:FORECAST_CONFIG.maxAnchorAgeDays, anchorAgeDays},
+      anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const recentDays = getRecentValidBalanceDays(dailyData, now, monthlySettings, FORECAST_CONFIG.maxRecentValidDays);
   if(recentDays.length<FORECAST_CONFIG.minForecastValidDays){
+    // anchorDate/anchorWeightKg werden HIER absichtlich mit ausgegeben, obwohl
+    // status "insufficient_data" ist: der Anker wurde oben bereits gefunden
+    // (sonst waere schon "missing_anchor_weight" zurueckgegeben worden) -- es
+    // ist keine zweite/neue Berechnung, nur dieselben bereits vorhandenen
+    // Werte auch in diesem Rueckgabezweig sichtbar zu machen (Diagnose).
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["not_enough_valid_log_days"],
-      requirements:{validDaysRequired:FORECAST_CONFIG.minForecastValidDays, validDaysAvailable:recentDays.length}};
+      requirements:{validDaysRequired:FORECAST_CONFIG.minForecastValidDays, validDaysAvailable:recentDays.length},
+      anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const robust = calculateRobustAverageBalance(recentDays, FORECAST_CONFIG);
@@ -666,7 +692,8 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
     calibratedMonths: calibrationProfile.calibratedMonths||0,
     dataQuality: quality,
     uncertainty,
-    reasons: []
+    reasons: [],
+    forecastBuildId: FORECAST_BUILD_ID
   };
 }
 
@@ -1072,7 +1099,7 @@ if(typeof module!=="undefined" && module.exports){
   module.exports = {
     FORECAST_CONFIG, round1, round2, round4, monthIdOf, dateToIso, parseLocalIsoDate, dayKey, addMonthsSimple,
     getMonthlyTdee, calculateDailyEnergyBalance, isValidForecastDay, sanitizeBalanceForForecast,
-    getRecentValidBalanceDays, debugRecentForecastDays, calculateRobustAverageBalance,
+    getRecentValidBalanceDays, debugRecentForecastDays, buildDayForecastDiagnostic, FORECAST_BUILD_ID, calculateRobustAverageBalance,
     validateWeightEntry, evaluateWeightEntryContext, classifyWeightEntries,
     weightEntryConfirmationKey, isEntryConfirmed, recordWeightConfirmation, removeWeightConfirmation,
     getLatestValidWeightEntry,

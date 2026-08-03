@@ -50,6 +50,7 @@ const BROWSER_TESTS=[
   "browser-retroactive-tdee-setup.test.js",
   "browser-live-prognose-crossmonth.test.js",
   "browser-live-prognose-real-datapath.test.js",
+  "browser-forecast-diagnostic-sheet.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}
