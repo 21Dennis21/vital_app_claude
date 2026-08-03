@@ -20,6 +20,8 @@
 <script src="date-utils.js"></script>
 <script src="format.js"></script>
 <script src="storage.js"></script>
+<!-- Phase 2B (Migrationsplan): reine Kalender-/Tagesdaten-Logik ausgelagert. -->
+<script src="calendar-engine.js"></script>
 <!-- Phase 2A (Migrationsplan): reine Wochenlogik ausgelagert. -->
 <script src="week-engine.js"></script>
 <style>
@@ -1455,27 +1457,7 @@ const ACT=[
 /* daysIn, firstDay, isoWeek, weekStartDate, groupByWeekSorted: siehe
    date-utils.js (Phase 1 des Migrationsplans, per <script src> vor diesem
    Block geladen). */
-/* Liefert alle Tage eines Monats als VOLLSTAENDIGE Montag-Sonntag-Wochen —
-   Tage aus dem Vor-/Folgemonat werden mit "own:false" ergaenzt und in der
-   Anzeige nur ausgegraut, statt den Kalender an Wochenraendern abzuschneiden. */
-function monthGridDays(y,m,data){
-  const dim=daysIn(y,m);
-  const first=new Date(y,m,1);
-  const last=new Date(y,m,dim);
-  const startOffset=(first.getDay()+6)%7;      // Tage vom Vormonat davor
-  const endOffset=6-((last.getDay()+6)%7);      // Tage vom Folgemonat danach
-  const out=[];
-  for(let i=startOffset;i>0;i--){
-    const dt=new Date(y,m,1-i);
-    out.push({own:false,d:dt.getDate(),...dayData(data,dt.getFullYear(),dt.getMonth(),dt.getDate())});
-  }
-  for(let d=1;d<=dim;d++)out.push({own:true,d,...dayData(data,y,m,d)});
-  for(let i=1;i<=endOffset;i++){
-    const dt=new Date(y,m,dim+i);
-    out.push({own:false,d:dt.getDate(),...dayData(data,dt.getFullYear(),dt.getMonth(),dt.getDate())});
-  }
-  return out;
-}
+/* monthGridDays: siehe calendar-engine.js (Phase 2B des Migrationsplans). */
 /* Magermasse (Koerpergewicht ohne Fettanteil) — Basis fuer Grundumsatz UND
    fuer die Eiweiss-Zielmenge weiter unten. */
 function leanMass(w,f){
@@ -1501,8 +1483,7 @@ function macroTargets(weight,fat,budgetKcal){
   return {carbs,protein,fat:fatG};
 }
 /* load, save: siehe storage.js (Phase 1 des Migrationsplans). */
-const dk=(y,m,d)=>y+"-"+m+"-"+d;
-function dayData(data,y,m,d){return data[dk(y,m,d)]||{};}
+/* dk, dayData: siehe calendar-engine.js (Phase 2B des Migrationsplans). */
 /* isDayLogged: siehe week-engine.js (Phase 2A des Migrationsplans). */
 /* km eines Tages — versteht neues (sports-Array) und altes (sportKm) Format */
 function dayKm(x,type){
@@ -1521,17 +1502,7 @@ function monthKm(data,type,y,m){
 function gymMonthMins(data,y,m){
   let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(isDayLogged(x))s+=dayGymMins(x);}return s;
 }
-/* NEU: Monatseinstellungen werden aus dem letzten eingerichteten Monat uebernommen,
-   Grundbedarf gilt nur fuer den Monat, in dem er eingetragen wurde
-   (wie in der urspruenglichen App — jeder Monat wird eigens eingerichtet). */
-function settingsOf(mSet,y,m){
-  const s=mSet[y+"-"+m];
-  return s?{...s}:null;
-}
-function tdeeOf(mSet,y,m){
-  const s=settingsOf(mSet,y,m);
-  return s?Math.round(calcBMR(s.weight,s.fat)*ACT[s.activityIdx].f):null;
-}
+/* settingsOf, tdeeOf: siehe calendar-engine.js (Phase 2B des Migrationsplans). */
 /* buildWeekSlots, getWeekDayVisualState, buildIsoWeekSummary: siehe
    week-engine.js (Phase 2A des Migrationsplans, per <script src> vor
    diesem Block geladen). */
