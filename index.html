@@ -1613,6 +1613,27 @@ function getWeekDayVisualState(day,dayGoalColorFn){
   return {logged:true,supportsGoal:background==="var(--good)",isExternalMonth,
     background,opacity:isExternalMonth?0.5:1};
 }
+/* EINZIGE Quelle fuer die komplette Zusammenfassung EINER ISO-Woche —
+   X/7-Zaehler, Ø kcal, Wochenbilanz, kg-Aequivalent, Farbe der
+   Wochenbilanz, Tagesbalken UND Bottom Sheet lesen ausschliesslich aus
+   diesem einen Ergebnis, nie aus einer eigenen/parallelen Berechnung.
+   "slots" MUSS aus buildWeekSlots() kommen (alle 7 echten Kalendertage der
+   Woche inkl. Tage aus einem Nachbarmonat, je mit EIGENEM TDEE) — niemals
+   aus einer auf den angezeigten Monat gefilterten Teilmenge, sonst fehlen
+   nachtraeglich geloggte Randtage in Bilanz/Durchschnitt/kg-Wert, obwohl
+   Balken/Zaehler/Bottom Sheet (die bereits alle 7 slots nutzen) sie
+   korrekt anzeigen. Nur tatsaechlich geloggte Tage fliessen in die
+   Bilanz/den Durchschnitt ein — ein leerer Tag zaehlt nicht als 0 kcal. */
+function buildIsoWeekSummary(slots,dayGoalColorFn,weekGoalColorFn){
+  const dayStates=slots.map(x=>getWeekDayVisualState(x,dayGoalColorFn));
+  const loggedDays=slots.filter(isDayLogged);
+  const loggedDayCount=loggedDays.length;
+  const totalBalanceKcal=loggedDays.reduce((s,x)=>s+(x.kcalIn||0)-(x.tdee||0)-(x.kcalBurned||0),0);
+  const averageLoggedKcal=loggedDayCount?Math.round(loggedDays.reduce((s,x)=>s+(x.kcalIn||0),0)/loggedDayCount):0;
+  const theoreticalWeightChangeKg=totalBalanceKcal/KCAL_PER_KG;
+  const goalStatus=weekGoalColorFn(totalBalanceKcal,loggedDayCount,slots.length);
+  return {days:slots,dayStates,loggedDays,loggedDayCount,totalBalanceKcal,averageLoggedKcal,theoreticalWeightChangeKg,goalStatus};
+}
 /* Letztes eingetragenes Gewicht (bis 60 Tage zurueck) */
 function lastWeight(data){
   const it=new Date(NOW);
@@ -3157,21 +3178,23 @@ function forecastEmptyStateText(forecast){
    Tagesdaten (ds/slots) sind aber bereits vorhanden, sodass eine spaetere
    Erweiterung um Kalorien/Gewicht/Training/Schritte/Notizen pro Tag keine
    neue Architektur braucht, nur zusaetzliche Zeilen in dieser Komponente. */
-function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,onClose}){
-  /* Keine eigene/eingefrorene Kopie der Wochendaten — slots wird bei JEDEM
-     Render frisch aus den aktuellen data/mSet ueber dieselbe Funktion
-     gebaut, die auch die Wochenkarte fuellt. Solange dieses Sheet offen ist
-     und sich data aendert (z.B. weil anderswo ein Eintrag gespeichert
-     wurde), rendert es beim naechsten Update automatisch den aktuellen
-     Stand — es gibt keinen Zwischenspeicher, der veralten koennte.
-     dayGoalColor kommt von VerlaufView (dieselbe Funktion wie fuer die
+function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,weekGoalColor,onClose}){
+  /* Keine eigene/eingefrorene Kopie der Wochendaten — slots/summary werden
+     bei JEDEM Render frisch aus den aktuellen data/mSet ueber dieselben
+     Funktionen gebaut, die auch die Wochenkarte fuellen (buildWeekSlots +
+     buildIsoWeekSummary). Solange dieses Sheet offen ist und sich data
+     aendert (z.B. weil anderswo ein Eintrag gespeichert wurde), rendert es
+     beim naechsten Update automatisch den aktuellen Stand — es gibt keinen
+     Zwischenspeicher, der veralten koennte. dayGoalColor/weekGoalColor
+     kommen von VerlaufView (dieselben Funktionen wie fuer die
      Wochenkarten), damit die Haken hier garantiert genau dann erscheinen,
-     wenn auch der Tagesbalken farbig ist — ueber getWeekDayVisualState(). */
+     wenn auch der Tagesbalken farbig ist. */
   const slots=buildWeekSlots(data,mSet,start,sy,sm);
+  const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
   return(
     <Sheet onClose={onClose} title={"KW "+kw}>
       {slots.map((x,i)=>{
-        const s=getWeekDayVisualState(x,dayGoalColor);
+        const s=summary.dayStates[i];
         return(
         <div key={i} className="row" style={{padding:"10px 0",borderBottom:i<6?"1px solid var(--line)":"none"}}>
           <span className="sub">{DS[i]}{x?" · "+x.d+"."+(x.m+1)+".":""}</span>
@@ -3354,59 +3377,46 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
         return(
         <div>
           <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)}/>
-          {weeks.map(({kw,items:ds,start})=>{
-              const wl=ds.filter(isDayLogged);
-              const wd=wl.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
-              const wavg=wl.length?Math.round(wl.reduce((s,x)=>s+(x.kcalIn||0),0)/wl.length):0;
-              /* Alle 7 Positionen der ISO-Woche mit ECHTEN, LIVE gelesenen
-                 Tagesdaten befuellen — auch fuer Tage ausserhalb des
-                 angezeigten Monats (ext:true), inkl. deren eigenem
-                 Monatsbedarf. Einzige Quelle: buildWeekSlots() — dieselbe
-                 Funktion, die auch das Bottom Sheet (WeekDetailSheet) nutzt,
-                 damit beide garantiert denselben Stand zeigen. Die Wochen-
-                 Aggregation oben (wl/wd/wavg) bleibt bewusst NUR auf ds
-                 (Monatstage) begrenzt — hier geht es ausschliesslich um die
-                 Balken-Darstellung. */
+          {weeks.map(({kw,start})=>{
+              /* Alle 7 echten Kalendertage der ISO-Woche — auch Tage aus
+                 einem Nachbarmonat, je mit eigenem TDEE — UND die komplette
+                 Zusammenfassung (X/7, Ø, Bilanz, kg, Farbe) kommen
+                 ausschliesslich aus buildWeekSlots()/buildIsoWeekSummary().
+                 Keine auf den angezeigten Monat gefilterte Teilmenge mehr:
+                 ein nachtraeglich geloggter Randtag (z.B. der letzte Tag des
+                 Vormonats) fliesst dadurch vollstaendig in Bilanz/
+                 Durchschnitt/kg-Wert ein, exakt wie er es bereits im Balken/
+                 Zaehler/Bottom Sheet tut. */
               const slots=buildWeekSlots(data,mSet,start,sy,sm);
-              const rowColor=weekGoalColor(wd,wl.length,ds.length);
-              /* Eine Kalenderwoche hat immer 7 Tage — die Anzeige zaehlt
-                 deshalb ueber ALLE 7 Slots (auch Tage ausserhalb des
-                 gezeigten Monats), nicht nur ueber ds. Die Bilanz/Ø-Werte
-                 (wd/wavg) bleiben unveraendert NUR auf ds (Monatstage)
-                 begrenzt — hier wird nur die Anzeigezahl anders gezaehlt.
-                 dayStates: EINE Berechnung pro Tag ueber getWeekDayVisualState
-                 — Balken, Datumszahl UND X/7-Zaehler lesen ausschliesslich
-                 aus diesem Array, keine getrennte Logik im JSX. */
-              const dayStates=slots.map(x=>getWeekDayVisualState(x,dayGoalColor));
-              const loggedInWeek=dayStates.filter(s=>s.logged).length;
+              const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
               return(
                 <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
                   <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
-                      <div className="sub">{loggedInWeek}/7 Tage geloggt · Ø {wavg||"–"} kcal</div>
+                      <div className="sub">{summary.loggedDayCount}/7 Tage geloggt · Ø {summary.averageLoggedKcal||"–"} kcal</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div className="num" style={{fontSize:19,fontWeight:700,color:rowColor}}>{wd<0?"−":"+"}{Math.abs(wd).toLocaleString("de-DE")} kcal</div>
-                      <div className="sub">≈ {wd<0?"−":"+"}{(Math.abs(wd)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div>
+                      <div className="num" style={{fontSize:19,fontWeight:700,color:summary.goalStatus}}>{summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.totalBalanceKcal).toLocaleString("de-DE")} kcal</div>
+                      <div className="sub">≈ {summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.theoreticalWeightChangeKg).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:4}}>
                     {slots.map((x,i)=>{
-                      const s=dayStates[i];
+                      const s=summary.dayStates[i];
                       return <div key={i} style={{flex:1,height:6,borderRadius:3,background:s.background,opacity:s.opacity}}/>;
                     })}
                   </div>
                   <div style={{display:"flex",gap:4,marginTop:3}}>
                     {slots.map((x,i)=>{
-                      const s=dayStates[i];
+                      const s=summary.dayStates[i];
                       return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.logged?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
                     })}
                   </div>
                 </div>
               );
             })}
-          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} onClose={()=>setWeekDetail(null)}/>}
+          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} weekGoalColor={weekGoalColor} onClose={()=>setWeekDetail(null)}/>}
         </div>
         );
       })()}
