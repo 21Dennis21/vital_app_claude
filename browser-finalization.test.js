@@ -23,12 +23,16 @@ function seedStorage(win){
 }
 
 async function main(){
+  // Feste Testzeit (kein Bezug zur echten Container-Uhr): Sonntag,
+  // 02.08.2026, 12:00 Uhr lokal — alle Punkte dieser Datei setzen genau
+  // diesen Tag als "heute" voraus (z.B. data["2026-7-2"] weiter unten).
+  const FIXED_NOW=new Date(2026,7,2,12,0,0);
   console.log("############################################");
   console.log("# ABSCHLUSS-TESTRUNDE (Punkt 9 der Spezifikation)");
-  console.log("# Heutiges Systemdatum im Container:", new Date().toDateString());
+  console.log("# Feste Testzeit (\"heute\" fuer die App):", FIXED_NOW.toDateString(), "— unabhaengig von der echten Container-Uhr");
   console.log("############################################\n");
 
-  const dom = createApp(seedStorage);
+  const dom = createApp(seedStorage, {now:FIXED_NOW});
   const origError = console.error;
   console.error = (...a)=>{ consoleErrors.push(a.map(String).join(" ")); origError(...a); };
   await flush(dom);
@@ -121,7 +125,8 @@ async function main(){
   const snapshot = { tracker_mset: ls.getItem("tracker_mset"), tracker_data: ls.getItem("tracker_data"),
     tracker_goals: ls.getItem("tracker_goals"), tracker_weight_confirmations: ls.getItem("tracker_weight_confirmations"),
     tracker_forecast_calibration: ls.getItem("tracker_forecast_calibration") };
-  const dom2 = createApp((win)=>{ Object.keys(snapshot).forEach(k=>{ if(snapshot[k]!=null) win.localStorage.setItem(k, snapshot[k]); }); });
+  // Simulierter Reload am selben Tag — dieselbe feste Testzeit wie oben.
+  const dom2 = createApp((win)=>{ Object.keys(snapshot).forEach(k=>{ if(snapshot[k]!=null) win.localStorage.setItem(k, snapshot[k]); }); }, {now:FIXED_NOW});
   await flush(dom2);
   const d2 = dom2.window.document;
   const ls2 = dom2.window.localStorage;

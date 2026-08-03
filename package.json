@@ -1,0 +1,15 @@
+{
+  "name": "vital-app-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Test-Tooling für VITAL (index.html bleibt eine einzelne, buildlose HTML-Datei — dieses package.json betrifft ausschließlich die Testsuite, siehe CLAUDE.md).",
+  "scripts": {
+    "test": "node run-all-tests.js"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.23.2",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "jsdom": "^24.0.0"
+  }
+}

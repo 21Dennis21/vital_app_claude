@@ -25,10 +25,14 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 5. Seite neu laden — bleibt die Bestätigung erhalten? ---");
+  // Dieselbe feste Testzeit wie in Teil 1 (browser-scenarios-1to4.test.js):
+  // 02.08.2026, 12:00 Uhr lokal — der wiederhergestellte Snapshot enthaelt
+  // Eintraege unter dem Tagesschluessel "2026-7-2", die App muss also auch
+  // hier "heute" = 2.8.2026 sehen, unabhaengig vom echten Ausfuehrungstag.
   const dom = createApp((win)=>{
     Object.keys(snap).forEach(k=>{ if(snap[k]!=null) win.localStorage.setItem(k, snap[k]); });
     win.__consoleErrors = [];
-  });
+  }, {now:new Date(2026,7,2,12,0,0)});
   // Konsolenfehler waehrend dieses gesamten Laufs mitschneiden (Punkt 9)
   const origError = console.error;
   console.error = (...a)=>{ consoleErrors.push(a.map(String).join(" ")); origError(...a); };
