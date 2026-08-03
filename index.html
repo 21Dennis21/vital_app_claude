@@ -1380,7 +1380,7 @@ function computeGoalProgress(g,data,mSet){
   while(it<=pe&&it<=NOW){
     const yy=it.getFullYear(),mm=it.getMonth(),dd2=it.getDate();
     const x=dayData(data,yy,mm,dd2);
-    if(x.logged){
+    if(isDayLogged(x)){
       days++;
       if(gt.kind==="deficitsum"||gt.kind==="surplussum"){
         const t=tdeeOf(mSet,yy,mm);
@@ -1527,6 +1527,15 @@ function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 const dk=(y,m,d)=>y+"-"+m+"-"+d;
 function dayData(data,y,m,d){return data[dk(y,m,d)]||{};}
+/* EINZIGE Quelle dafuer, ob ein Kalendertag als "geloggt" gilt. JEDE Stelle
+   der App, die einen Tag als geloggt/nicht geloggt behandelt — Wochenkarte,
+   Tagesbalken, "X/7 Tage geloggt", Bottom Sheet, Wochen-/Monatszusammen-
+   fassungen, Ziel-Fortschritt, Kalender —, MUSS ausschliesslich diese
+   Funktion aufrufen statt selbst auf x.logged zuzugreifen oder andere
+   Kriterien (z.B. ob ein TDEE fuer den Monat vorhanden ist) hineinzumischen.
+   So kann es nicht mehr passieren, dass derselbe Tag an zwei Stellen
+   unterschiedlich dargestellt wird. */
+function isDayLogged(x){return !!(x&&x.logged);}
 /* km eines Tages — versteht neues (sports-Array) und altes (sportKm) Format */
 function dayKm(x,type){
   if(x.sports&&x.sports.length>0)
@@ -1539,10 +1548,10 @@ function dayGymMins(x){
   return x.sports.filter(s=>s.type==="gym").reduce((s,v)=>s+(parseFloat(v.hours)||0)*60+(parseFloat(v.minutes)||0),0);
 }
 function monthKm(data,type,y,m){
-  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(x.logged)s+=dayKm(x,type);}return s;
+  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(isDayLogged(x))s+=dayKm(x,type);}return s;
 }
 function gymMonthMins(data,y,m){
-  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(x.logged)s+=dayGymMins(x);}return s;
+  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(isDayLogged(x))s+=dayGymMins(x);}return s;
 }
 /* NEU: Monatseinstellungen werden aus dem letzten eingerichteten Monat uebernommen,
    Grundbedarf gilt nur fuer den Monat, in dem er eingetragen wurde
@@ -1554,6 +1563,24 @@ function settingsOf(mSet,y,m){
 function tdeeOf(mSet,y,m){
   const s=settingsOf(mSet,y,m);
   return s?Math.round(calcBMR(s.weight,s.fat)*ACT[s.activityIdx].f):null;
+}
+/* EINZIGE Stelle, die die 7 echten Kalendertage einer ISO-Woche (Montag bis
+   Sonntag, "start" = das Montags-Datum) aus den Live-Daten aufbaut — jeder
+   Verbrauch dieser Struktur (Wochenkarte, Tagesbalken, "X/7 Tage geloggt",
+   Bottom Sheet, Wochenzusammenfassungen) MUSS ausschliesslich ueber diese
+   Funktion gehen statt eine eigene Kopie/eigenes Array zu bauen. Liest data/
+   mSet direkt (keine Zwischenspeicherung), daher immer aktuell — auch fuer
+   Tage aus einem Nachbarmonat inkl. deren eigenem TDEE. "sy"/"sm" bestimmen
+   nur das "ext"-Flag (gehoert der Tag zum gerade angezeigten Monat), keine
+   Datenquelle. */
+function buildWeekSlots(data,mSet,start,sy,sm){
+  return Array.from({length:7},(_,i)=>{
+    const dt=new Date(start);dt.setDate(dt.getDate()+i);
+    const y=dt.getFullYear(),m=dt.getMonth(),dNum=dt.getDate();
+    const ext=!(y===sy&&m===sm);
+    const x=dayData(data,y,m,dNum);
+    return {...x,d:dNum,y,m,ext,tdee:tdeeOf(mSet,y,m)};
+  });
 }
 /* Letztes eingetragenes Gewicht (bis 60 Tage zurueck) */
 function lastWeight(data){
@@ -3099,14 +3126,20 @@ function forecastEmptyStateText(forecast){
    Tagesdaten (ds/slots) sind aber bereits vorhanden, sodass eine spaetere
    Erweiterung um Kalorien/Gewicht/Training/Schritte/Notizen pro Tag keine
    neue Architektur braucht, nur zusaetzliche Zeilen in dieser Komponente. */
-function WeekDetailSheet({detail,y,m,tdee,onClose}){
-  const {kw,slots}=detail;
+function WeekDetailSheet({kw,start,data,mSet,sy,sm,onClose}){
+  /* Keine eigene/eingefrorene Kopie der Wochendaten — slots wird bei JEDEM
+     Render frisch aus den aktuellen data/mSet ueber dieselbe Funktion
+     gebaut, die auch die Wochenkarte fuellt. Solange dieses Sheet offen ist
+     und sich data aendert (z.B. weil anderswo ein Eintrag gespeichert
+     wurde), rendert es beim naechsten Update automatisch den aktuellen
+     Stand — es gibt keinen Zwischenspeicher, der veralten koennte. */
+  const slots=buildWeekSlots(data,mSet,start,sy,sm);
   return(
     <Sheet onClose={onClose} title={"KW "+kw}>
       {slots.map((x,i)=>(
         <div key={i} className="row" style={{padding:"10px 0",borderBottom:i<6?"1px solid var(--line)":"none"}}>
-          <span className="sub">{DS[i]}{x?" · "+x.d+"."+((x.m!=null?x.m:m)+1)+".":""}</span>
-          {x&&x.logged?(
+          <span className="sub">{DS[i]}{x?" · "+x.d+"."+(x.m+1)+".":""}</span>
+          {x&&isDayLogged(x)?(
             <span style={{fontWeight:700,color:"var(--accent)"}}>✔</span>
           ):x?(
             <span style={{fontWeight:700,color:"var(--ink3)"}}>✖</span>
@@ -3128,7 +3161,12 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
      bewusst schon jetzt vorbereitet (antippbare Wochenkarte), die
      eigentliche Detailansicht bleibt hier absichtlich noch einfach
      (KW-Nummer + Wochentage mit Haken/Kreuz), wie angefordert. */
-  const [weekDetail,setWeekDetail]=useState(null); // {kw, ds, slots}
+  /* Nur die leichtgewichtige Woechenidentitaet (kw + Montags-Datum) wird
+     gemerkt, NIE die Tagesdaten selbst — das Sheet baut slots bei jedem
+     Render live ueber buildWeekSlots() aus data/mSet neu auf, damit hier
+     kein zwischengespeichertes, potenziell veraltendes Wochenobjekt
+     entstehen kann. */
+  const [weekDetail,setWeekDetail]=useState(null); // {kw, start}
   /* Zeitraum-Auswahl der Gewichtsanalyse — eigener, von der Monats-Navigation
      (sy/sm, von Kalender/Sport/Jahr mitgenutzt) UNABHAENGIGER Anker, damit
      das Umschalten auf Quartal/Halbjahr/Jahr die anderen Verlauf-Reiter
@@ -3143,7 +3181,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
   const tdee=tdeeOf(mSet,sy,sm);
   const dim=daysIn(sy,sm),fd=firstDay(sy,sm);
   const days=useMemo(()=>Array.from({length:dim},(_,i)=>({d:i+1,...dayData(data,sy,sm,i+1)})),[data,sy,sm,dim]);
-  const lg=days.filter(x=>x.logged);
+  const lg=days.filter(isDayLogged);
   const totDef=lg.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
   const isToday=d=>d===NOW.getDate()&&sm===NOW.getMonth()&&sy===NOW.getFullYear();
 
@@ -3211,7 +3249,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:14}}>
             {monthGridDays(sy,sm,data).map((x,i)=>{
-              const def=x.logged&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
+              const def=isDayLogged(x)&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
               const km=dayKm(x);            // Sport-km gesamt (neues + altes Format)
               const gym=dayGymMins(x);      // Gym-Minuten gesamt
               const isT=x.own&&isToday(x.d);
@@ -3219,7 +3257,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 <div key={i} className="cell" onClick={()=>{if(x.own){tapH();openDay(sy,sm,x.d);}}}
                   style={{minHeight:76,justifyContent:"flex-start",gap:1,paddingTop:5,opacity:x.own?1:.35,
                     ...(isT?{boxShadow:"0 0 0 2px var(--accent)"}:{})}}>
-                  <div style={{fontSize:13,fontWeight:isT?700:500,color:isT?"var(--accent)":x.logged?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
+                  <div style={{fontSize:13,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
                   {x.weight>0&&<div className="num" style={{fontSize:10,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
                   {km>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.bike}}>{km.toFixed(km<10?1:0)}km</div>}
                   {km===0&&gym>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.gym}}>{Math.round(gym)}min</div>}
@@ -3267,30 +3305,28 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             };
             const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
             return weeks.map(({kw,items:ds,start})=>{
-              const wl=ds.filter(x=>x.logged);
+              const wl=ds.filter(isDayLogged);
               const wd=wl.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
               const wavg=wl.length?Math.round(wl.reduce((s,x)=>s+(x.kcalIn||0),0)/wl.length):0;
-              /* Alle 7 Positionen der ISO-Woche mit ECHTEN Tagesdaten befuellen
-                 — auch fuer Tage ausserhalb des angezeigten Monats (ext:true),
-                 inkl. deren eigenem Monatsbedarf. Die Wochen-Aggregation oben
-                 (wl/wd/wavg) bleibt bewusst NUR auf ds (Monatstage) begrenzt —
-                 hier geht es ausschliesslich um die Balken-Darstellung. */
-              const slots=Array.from({length:7},(_,i)=>{
-                const dt=new Date(start);dt.setDate(dt.getDate()+i);
-                const y=dt.getFullYear(),m=dt.getMonth(),dNum=dt.getDate();
-                const ext=!(y===sy&&m===sm);
-                const x=dayData(data,y,m,dNum);
-                return {...x,d:dNum,y,m,ext,tdee:ext?tdeeOf(mSet,y,m):tdee};
-              });
+              /* Alle 7 Positionen der ISO-Woche mit ECHTEN, LIVE gelesenen
+                 Tagesdaten befuellen — auch fuer Tage ausserhalb des
+                 angezeigten Monats (ext:true), inkl. deren eigenem
+                 Monatsbedarf. Einzige Quelle: buildWeekSlots() — dieselbe
+                 Funktion, die auch das Bottom Sheet (WeekDetailSheet) nutzt,
+                 damit beide garantiert denselben Stand zeigen. Die Wochen-
+                 Aggregation oben (wl/wd/wavg) bleibt bewusst NUR auf ds
+                 (Monatstage) begrenzt — hier geht es ausschliesslich um die
+                 Balken-Darstellung. */
+              const slots=buildWeekSlots(data,mSet,start,sy,sm);
               const rowColor=weekGoalColor(wd,wl.length,ds.length);
               /* Eine Kalenderwoche hat immer 7 Tage — die Anzeige zaehlt
                  deshalb ueber ALLE 7 Slots (auch Tage ausserhalb des
                  gezeigten Monats), nicht nur ueber ds. Die Bilanz/Ø-Werte
                  (wd/wavg) bleiben unveraendert NUR auf ds (Monatstage)
                  begrenzt — hier wird nur die Anzeigezahl anders gezaehlt. */
-              const loggedInWeek=slots.filter(s=>s.logged).length;
+              const loggedInWeek=slots.filter(isDayLogged).length;
               return(
-                <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,ds,slots});}}>
+                <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
                   <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
@@ -3303,25 +3339,33 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   </div>
                   <div style={{display:"flex",gap:4}}>
                     {slots.map((x,i)=>{
-                      /* Drei Stufen: geloggt+Ziel unterstuetzt (gruen),
-                         geloggt+Ziel nicht unterstuetzt (orange), nicht
-                         geloggt (gedaempftes Grau — Tage ausserhalb des
-                         Monats etwas dunkler als unlogged Monatstage, aber
-                         beide bewusst als feste Farbe statt per Opacity,
-                         damit sie im Dark Mode nicht fast schwarz wirken). */
-                      const bilanz=x.logged&&x.tdee?(x.kcalIn||0)-x.tdee-(x.kcalBurned||0):null;
-                      const bg=bilanz!=null?dayGoalColor(bilanz):(x.ext?"var(--day-ext)":"var(--day-muted)");
+                      /* isDayLogged(x) entscheidet AUSSCHLIESSLICH, ob ein Tag
+                         als geloggt gilt — dieselbe Funktion wie beim X/7-
+                         Zaehler und im Bottom Sheet. Ob zusaetzlich eine
+                         Bilanz (und damit Gruen/Orange) berechnet werden
+                         kann, haengt vom TDEE des jeweiligen Monats ab —
+                         fehlt der, bleibt der Tag trotzdem als "geloggt"
+                         erkennbar (neutrale Ink-Farbe) statt faelschlich als
+                         "nicht geloggt" (Grau) zu erscheinen. Nur wirklich
+                         NICHT geloggte Tage bekommen die gedaempfte
+                         Grau-Farbe (Tage ausserhalb des Monats etwas dunkler
+                         als unlogged Monatstage), als feste Farbe statt per
+                         Opacity, damit sie im Dark Mode nicht fast schwarz
+                         wirken. */
+                      const logged=isDayLogged(x);
+                      const bilanz=logged&&x.tdee?(x.kcalIn||0)-x.tdee-(x.kcalBurned||0):null;
+                      const bg=!logged?(x.ext?"var(--day-ext)":"var(--day-muted)"):(bilanz!=null?dayGoalColor(bilanz):SEM.neutral);
                       return <div key={i} style={{flex:1,height:6,borderRadius:3,background:bg}}/>;
                     })}
                   </div>
                   <div style={{display:"flex",gap:4,marginTop:3}}>
-                    {slots.map((x,i)=><div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:x.ext?"var(--day-ext)":(x.logged?"var(--ink)":"var(--day-muted)")}}>{x.d}</div>)}
+                    {slots.map((x,i)=><div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:!isDayLogged(x)?(x.ext?"var(--day-ext)":"var(--day-muted)"):"var(--ink)"}}>{x.d}</div>)}
                   </div>
                 </div>
               );
             });
           })()}
-          {weekDetail&&<WeekDetailSheet detail={weekDetail} y={sy} m={sm} tdee={tdee} onClose={()=>setWeekDetail(null)}/>}
+          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} onClose={()=>setWeekDetail(null)}/>}
         </div>
       )}
 
@@ -3556,7 +3600,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                     const wm={};
                     days.forEach(x=>{const kw=isoWeek(sy,sm,x.d);if(!wm[kw])wm[kw]=[];wm[kw].push(x);});
                     return Object.entries(wm).sort((a,b)=>Number(a[0])-Number(b[0])).map(([kw,ds],i,arr)=>{
-                      const v=ds.filter(x=>x.logged).reduce((s,x)=>s+(isGym?dayGymMins(x):dayKm(x,sport)),0);
+                      const v=ds.filter(isDayLogged).reduce((s,x)=>s+(isGym?dayGymMins(x):dayKm(x,sport)),0);
                       return(
                         <div key={kw} className="row" style={{padding:"10px 0",borderBottom:i<arr.length-1?"1px solid var(--line)":"none"}}>
                           <span className="sub">KW {kw}</span>
@@ -3631,7 +3675,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             const stats=Array.from({length:12},(_,m2)=>{
               const t=tdeeOf(mSet,sy,m2);
               let def=null,lgd=0;
-              if(t){def=0;for(let d2=1;d2<=daysIn(sy,m2);d2++){const x=dayData(data,sy,m2,d2);if(x.logged){def+=(x.kcalIn||0)-t-(x.kcalBurned||0);lgd++;}}}
+              if(t){def=0;for(let d2=1;d2<=daysIn(sy,m2);d2++){const x=dayData(data,sy,m2,d2);if(isDayLogged(x)){def+=(x.kcalIn||0)-t-(x.kcalBurned||0);lgd++;}}}
               return {m:m2,def,km:monthKm(data,null,sy,m2),gym:gymMonthMins(data,sy,m2),lgd};
             });
             const withDef=stats.filter(s=>s.def!==null&&s.lgd>0);
@@ -3644,7 +3688,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               if(!t){streak=0;continue;}
               for(let d2=1;d2<=daysIn(sy,m2);d2++){
                 const x=dayData(data,sy,m2,d2);
-                if(x.logged){
+                if(isDayLogged(x)){
                   if((x.kcalIn||0)-t-(x.kcalBurned||0)<0){streak++;if(streak>longest)longest=streak;}
                   else streak=0;
                 }
@@ -4400,7 +4444,7 @@ function DayDetailSheet({date,data,mSet,onSaveWeight,onOpenMealDetail,onOpenActi
   const sports=x.sports||[];
   const eaten=x.kcalIn||0,burned=x.kcalBurned||0;
   const bal=tdee!=null?eaten-tdee-burned:null;
-  const hasAnyData=x.logged||eaten>0||burned>0||sports.length>0||x.weight>0;
+  const hasAnyData=isDayLogged(x)||eaten>0||burned>0||sports.length>0||x.weight>0;
   return(
     <Sheet onClose={onClose} title={d+". "+MN[m]+" "+y}>
       {tdee!=null&&bal!=null&&(eaten>0||burned>0)&&(
@@ -5355,7 +5399,7 @@ function StatsSheet({data,mSet,init,onClose}){
   const tdee=tdeeOf(mSet,y,m);
   const dim=daysIn(y,m);
   const ds=Array.from({length:dim},(_,i)=>({d:i+1,...dayData(data,y,m,i+1)}));
-  const lg=ds.filter(x=>x.logged);
+  const lg=ds.filter(isDayLogged);
   const def=lg.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
   const km=monthKm(data,null,y,m);
   const gym=gymMonthMins(data,y,m);
@@ -5386,7 +5430,7 @@ function StatsSheet({data,mSet,init,onClose}){
           </div>
           <div className="card" style={{padding:"6px 18px"}}>
             {Object.entries(wm).sort((a,b)=>Number(a[0])-Number(b[0])).map(([kw,dss],i,arr)=>{
-              const wd=dss.filter(x=>x.logged).reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
+              const wd=dss.filter(isDayLogged).reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
               return(
                 <div key={kw} className="row" style={{padding:"9px 0",borderBottom:i<arr.length-1?"1px solid var(--line)":"none"}}>
                   <span className="sub">KW {kw}</span>
