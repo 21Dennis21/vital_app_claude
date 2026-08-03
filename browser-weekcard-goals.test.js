@@ -59,8 +59,9 @@ async function testScenario(label, goalSetup, dailyOverrides, expectations){
   // GREEN/ORANGE bilden die fachliche Zielbewertung ab (var(--good)/var(--amber)) —
   // getrennt von var(--accent), das seit dem UI-Rebrand die neue blaue
   // Akzentfarbe ist und mit der Gruen/Orange-Logik nichts mehr zu tun hat.
-  // GRAY gilt hier fuer "im Monat, aber nicht geloggt" (var(--day-muted));
-  // Tage ausserhalb des Monats waeren var(--day-ext).
+  // GRAY gilt fuer "nicht bewertbar" (nicht geloggt ODER geloggt ohne TDEE) —
+  // dieselbe Farbe unabhaengig von der Monatszugehoerigkeit, die nur die
+  // Deckkraft veraendert (siehe getWeekDayVisualState).
   const GREEN="var(--good)", ORANGE="var(--amber)", GRAY="var(--day-muted)";
 
   // Montag=3.8., ..., Sonntag=9.8. (KW32, slotIndex 0-6)
