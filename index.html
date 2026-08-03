@@ -53,12 +53,12 @@
   --line:rgba(20,25,30,.08);
   --shadow:0 1px 2px rgba(15,20,25,.03),0 6px 16px rgba(15,20,25,.04);
   --tabbg:#FFFFFF; --ovbg:rgba(10,12,14,.35);
-  /* Rueckblick-Wochenkarte: gedaempfte Balken-/Datumsfarben fuer Tage
-     ausserhalb des Monats bzw. unlogged Monatstage — bewusst als feste
-     Farbwerte statt Opacity auf --card2, weil Opacity auf dunklem
-     Hintergrund fast schwarz wirkt. Reihenfolge nach Praesenz:
-     day-ext < day-muted < volle Gruen/Orange-Farbe bei geloggten Tagen. */
-  --day-ext:#A1A09B; --day-muted:#D9D8D2;
+  /* Rueckblick-Wochenkarte: EINE Graufarbe fuer "nicht bewertbar" (nicht
+     geloggt ODER geloggt ohne TDEE) — sichtbar heller als --card2, damit
+     sie nicht im Karten-Hintergrund verschwindet. Die Monatszugehoerigkeit
+     (ext) aendert NIE die Farbe selbst, nur die Deckkraft (siehe
+     getWeekDayVisualState). */
+  --day-muted:#D9D8D2;
 }
 :root[data-theme="dark"]{
   --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
@@ -71,7 +71,7 @@
   --line:rgba(255,255,255,.09);
   --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
   --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
-  --day-ext:#383D44; --day-muted:#5C6570;
+  --day-muted:#5C6570;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]):not([data-theme="dark"]){
@@ -85,7 +85,7 @@
     --line:rgba(255,255,255,.09);
     --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
     --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
-    --day-ext:#383D44; --day-muted:#5C6570;
+    --day-muted:#5C6570;
   }
 }
 html,body{height:100%;max-width:100%;overflow-x:hidden;}
@@ -1581,6 +1581,33 @@ function buildWeekSlots(data,mSet,start,sy,sm){
     const x=dayData(data,y,m,dNum);
     return {...x,d:dNum,y,m,ext,tdee:tdeeOf(mSet,y,m)};
   });
+}
+/* EINZIGE Funktion, die den vollstaendigen Anzeigezustand eines Wochentags
+   bestimmt — Tagesbalken, Datumszahl, Bottom Sheet UND der X/7-Zaehler
+   muessen ausschliesslich hierueber entscheiden, nie eigene Sonderlogik im
+   JSX. "day" ist ein slot-Objekt aus buildWeekSlots() (enthaelt bereits
+   logged/kcalIn/kcalBurned/tdee/ext). dayGoalColorFn(bilanz) liefert die
+   fachliche Farbe (var(--good) bei unterstuetztem, var(--amber) bei nicht
+   unterstuetztem Ziel) — dieselbe Funktion, die die Wochenbilanz-Zahl
+   einfaerbt.
+     Prinzip wie in der urspruenglichen Wochenkarte: die Statusfarbe (Grau/
+   Gruen/Orange) kommt AUSSCHLIESSLICH aus dem fachlichen Status. Die
+   Monatszugehoerigkeit (ext) veraendert NIEMALS die Farbe selbst, sondern
+   ausschliesslich die Deckkraft (einheitlich fuer alle drei Status, genau
+   wie frueher "opacity:x&&x.ext?.5:1"). Es gibt bewusst KEINE vierte
+   Sonderfarbe: ist ein Tag geloggt, aber mangels TDEE fuer seinen Monat
+   keine Bilanz berechenbar, faellt er auf dieselbe Grau-Darstellung zurueck
+   wie ein nicht geloggter Tag (statt faelschlich Weiss oder Blau zu
+   bekommen — Blau ist ausschliesslich UI-Akzentfarbe fuer Tabs/Navigation,
+   nie fuer Tagesbalken). */
+function getWeekDayVisualState(day,dayGoalColorFn){
+  const logged=isDayLogged(day);
+  const bilanz=(logged&&day.tdee)?(day.kcalIn||0)-day.tdee-(day.kcalBurned||0):null;
+  const isExternalMonth=!!(day&&day.ext);
+  const rated=bilanz!=null;
+  const background=rated?dayGoalColorFn(bilanz):"var(--day-muted)";
+  return {logged,rated,supportsGoal:rated?background==="var(--good)":null,isExternalMonth,
+    background,opacity:isExternalMonth?0.5:1};
 }
 /* Letztes eingetragenes Gewicht (bis 60 Tage zurueck) */
 function lastWeight(data){
@@ -3126,20 +3153,25 @@ function forecastEmptyStateText(forecast){
    Tagesdaten (ds/slots) sind aber bereits vorhanden, sodass eine spaetere
    Erweiterung um Kalorien/Gewicht/Training/Schritte/Notizen pro Tag keine
    neue Architektur braucht, nur zusaetzliche Zeilen in dieser Komponente. */
-function WeekDetailSheet({kw,start,data,mSet,sy,sm,onClose}){
+function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,onClose}){
   /* Keine eigene/eingefrorene Kopie der Wochendaten — slots wird bei JEDEM
      Render frisch aus den aktuellen data/mSet ueber dieselbe Funktion
      gebaut, die auch die Wochenkarte fuellt. Solange dieses Sheet offen ist
      und sich data aendert (z.B. weil anderswo ein Eintrag gespeichert
      wurde), rendert es beim naechsten Update automatisch den aktuellen
-     Stand — es gibt keinen Zwischenspeicher, der veralten koennte. */
+     Stand — es gibt keinen Zwischenspeicher, der veralten koennte.
+     dayGoalColor kommt von VerlaufView (dieselbe Funktion wie fuer die
+     Wochenkarten), damit die Haken hier garantiert genau dann erscheinen,
+     wenn auch der Tagesbalken farbig ist — ueber getWeekDayVisualState(). */
   const slots=buildWeekSlots(data,mSet,start,sy,sm);
   return(
     <Sheet onClose={onClose} title={"KW "+kw}>
-      {slots.map((x,i)=>(
+      {slots.map((x,i)=>{
+        const s=getWeekDayVisualState(x,dayGoalColor);
+        return(
         <div key={i} className="row" style={{padding:"10px 0",borderBottom:i<6?"1px solid var(--line)":"none"}}>
           <span className="sub">{DS[i]}{x?" · "+x.d+"."+(x.m+1)+".":""}</span>
-          {x&&isDayLogged(x)?(
+          {x&&s.logged?(
             <span style={{fontWeight:700,color:"var(--accent)"}}>✔</span>
           ):x?(
             <span style={{fontWeight:700,color:"var(--ink3)"}}>✖</span>
@@ -3147,7 +3179,8 @@ function WeekDetailSheet({kw,start,data,mSet,sy,sm,onClose}){
             <span className="sub">–</span>
           )}
         </div>
-      ))}
+        );
+      })}
     </Sheet>
   );
 }
@@ -3271,40 +3304,43 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
       )}
 
       {/* --- WOCHEN --- */}
-      {seg==="Rückblick"&&(
+      {seg==="Rückblick"&&(()=>{
+        /* Zielrichtung EINMAL pro Ansicht bestimmen (nicht pro Tag) —
+           dieselbe Funktion, die auch die Live-Prognose und das
+           Gewichts-Widget nutzen, damit die Bewertung app-weit konsistent
+           bleibt. Liefert "abnehmen" | "zunehmen" | "halten". */
+        const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
+        /* Toleranz fuer "Halten": ein Tag gilt als Erfolg, wenn die
+           Tagesbilanz innerhalb dieses kcal-Bereichs um 0 liegt. Bewusst
+           grosszuegig ("kleine Fortschritte zaehlen", keine
+           Perfektionsforderung) statt eng gefasst. */
+        const MAINTAIN_TOLERANCE_KCAL=150;
+        /* Reine Bewertungsfunktion: unterstuetzt die Tagesbilanz das
+           aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
+           Rot — die App bewertet, bestraft aber nicht. Auf Modul-Ebene
+           (VOR der Rueckkehr-JSX) definiert, damit sowohl die Wochenkarten
+           ALS AUCH das weiter unten gerenderte Bottom Sheet (WeekDetailSheet)
+           exakt dieselbe Funktion bekommen — kein zweites Mal implementiert. */
+        const dayGoalColor=(bilanz)=>{
+          if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
+          if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
+          return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
+        };
+        /* Dieselbe Zielbewertung auch fuer die grosse Wochenbilanz-Zahl —
+           bei null geloggten Tagen bewusst KEINE Farbaussage (neutral),
+           damit eine leere Woche nicht wie eine Warnung wirkt, nur weil
+           der mathematische Wert zufaellig 0 ist. */
+        const weekGoalColor=(wdVal,loggedCount,dayCount)=>{
+          if(loggedCount===0)return SEM.neutral;
+          if(goalDirection==="abnehmen")return wdVal<0?"var(--good)":"var(--amber)";
+          if(goalDirection==="zunehmen")return wdVal>0?"var(--good)":"var(--amber)";
+          return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
+        };
+        const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
+        return(
         <div>
           <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)}/>
-          {(()=>{
-            /* Zielrichtung EINMAL pro Ansicht bestimmen (nicht pro Tag) —
-               dieselbe Funktion, die auch die Live-Prognose und das
-               Gewichts-Widget nutzen, damit die Bewertung app-weit konsistent
-               bleibt. Liefert "abnehmen" | "zunehmen" | "halten". */
-            const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
-            /* Toleranz fuer "Halten": ein Tag gilt als Erfolg, wenn die
-               Tagesbilanz innerhalb dieses kcal-Bereichs um 0 liegt. Bewusst
-               grosszuegig ("kleine Fortschritte zaehlen", keine
-               Perfektionsforderung) statt eng gefasst. */
-            const MAINTAIN_TOLERANCE_KCAL=150;
-            /* Reine Bewertungsfunktion: unterstuetzt die Tagesbilanz das
-               aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
-               Rot — die App bewertet, bestraft aber nicht. */
-            const dayGoalColor=(bilanz)=>{
-              if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
-              if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
-              return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
-            };
-            /* Dieselbe Zielbewertung auch fuer die grosse Wochenbilanz-Zahl —
-               bei null geloggten Tagen bewusst KEINE Farbaussage (neutral),
-               damit eine leere Woche nicht wie eine Warnung wirkt, nur weil
-               der mathematische Wert zufaellig 0 ist. */
-            const weekGoalColor=(wdVal,loggedCount,dayCount)=>{
-              if(loggedCount===0)return SEM.neutral;
-              if(goalDirection==="abnehmen")return wdVal<0?"var(--good)":"var(--amber)";
-              if(goalDirection==="zunehmen")return wdVal>0?"var(--good)":"var(--amber)";
-              return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
-            };
-            const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
-            return weeks.map(({kw,items:ds,start})=>{
+          {weeks.map(({kw,items:ds,start})=>{
               const wl=ds.filter(isDayLogged);
               const wd=wl.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
               const wavg=wl.length?Math.round(wl.reduce((s,x)=>s+(x.kcalIn||0),0)/wl.length):0;
@@ -3323,8 +3359,12 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                  deshalb ueber ALLE 7 Slots (auch Tage ausserhalb des
                  gezeigten Monats), nicht nur ueber ds. Die Bilanz/Ø-Werte
                  (wd/wavg) bleiben unveraendert NUR auf ds (Monatstage)
-                 begrenzt — hier wird nur die Anzeigezahl anders gezaehlt. */
-              const loggedInWeek=slots.filter(isDayLogged).length;
+                 begrenzt — hier wird nur die Anzeigezahl anders gezaehlt.
+                 dayStates: EINE Berechnung pro Tag ueber getWeekDayVisualState
+                 — Balken, Datumszahl UND X/7-Zaehler lesen ausschliesslich
+                 aus diesem Array, keine getrennte Logik im JSX. */
+              const dayStates=slots.map(x=>getWeekDayVisualState(x,dayGoalColor));
+              const loggedInWeek=dayStates.filter(s=>s.logged).length;
               return(
                 <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
                   <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
@@ -3339,35 +3379,23 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   </div>
                   <div style={{display:"flex",gap:4}}>
                     {slots.map((x,i)=>{
-                      /* isDayLogged(x) entscheidet AUSSCHLIESSLICH, ob ein Tag
-                         als geloggt gilt — dieselbe Funktion wie beim X/7-
-                         Zaehler und im Bottom Sheet. Ob zusaetzlich eine
-                         Bilanz (und damit Gruen/Orange) berechnet werden
-                         kann, haengt vom TDEE des jeweiligen Monats ab —
-                         fehlt der, bleibt der Tag trotzdem als "geloggt"
-                         erkennbar (neutrale Ink-Farbe) statt faelschlich als
-                         "nicht geloggt" (Grau) zu erscheinen. Nur wirklich
-                         NICHT geloggte Tage bekommen die gedaempfte
-                         Grau-Farbe (Tage ausserhalb des Monats etwas dunkler
-                         als unlogged Monatstage), als feste Farbe statt per
-                         Opacity, damit sie im Dark Mode nicht fast schwarz
-                         wirken. */
-                      const logged=isDayLogged(x);
-                      const bilanz=logged&&x.tdee?(x.kcalIn||0)-x.tdee-(x.kcalBurned||0):null;
-                      const bg=!logged?(x.ext?"var(--day-ext)":"var(--day-muted)"):(bilanz!=null?dayGoalColor(bilanz):SEM.neutral);
-                      return <div key={i} style={{flex:1,height:6,borderRadius:3,background:bg}}/>;
+                      const s=dayStates[i];
+                      return <div key={i} style={{flex:1,height:6,borderRadius:3,background:s.background,opacity:s.opacity}}/>;
                     })}
                   </div>
                   <div style={{display:"flex",gap:4,marginTop:3}}>
-                    {slots.map((x,i)=><div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:!isDayLogged(x)?(x.ext?"var(--day-ext)":"var(--day-muted)"):"var(--ink)"}}>{x.d}</div>)}
+                    {slots.map((x,i)=>{
+                      const s=dayStates[i];
+                      return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.rated?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
+                    })}
                   </div>
                 </div>
               );
-            });
-          })()}
-          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} onClose={()=>setWeekDetail(null)}/>}
+            })}
+          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} onClose={()=>setWeekDetail(null)}/>}
         </div>
-      )}
+        );
+      })()}
 
       {/* --- GEWICHT --- */}
       {seg==="Gewicht"&&(

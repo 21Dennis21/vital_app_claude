@@ -3,14 +3,26 @@ const { clickByText } = require("./dom-test-helpers.js");
 
 /* Regressionstest fuer den gemeldeten Inkonsistenz-Bug: eine ISO-Woche, die
    ueber zwei Monate laeuft (KW31: Mo 27.7. .. So 2.8.), bei der nur EINER
-   der beiden Monate einen eingerichteten Grundbedarf (TDEE) hat. Vorher
-   fiel die Wochenkarte fuer den Tag ohne TDEE faelschlich auf die
-   "nicht geloggt"-Graufarbe zurueck, obwohl der Tag echt geloggt war —
-   waehrend Bottom Sheet und "X/7"-Zaehler (die nur x.logged pruefen)
-   korrekt "geloggt" zeigten. Dieser Test stellt sicher, dass Wochenkarte
-   (Balken + X/7-Zaehler) und Bottom Sheet fuer JEDEN Tag exakt dieselbe
-   Geloggt-Aussage treffen — unabhaengig davon, ob eine Bilanz berechenbar
-   ist. */
+   der beiden Monate einen eingerichteten Grundbedarf (TDEE) hat.
+
+   Verlauf des Fixes:
+   1. Urspruenglich fiel die Wochenkarte fuer den Tag ohne TDEE faelschlich
+      auf die "nicht geloggt"-Graufarbe zurueck, obwohl der Tag echt geloggt
+      war (waehrend Bottom Sheet/X-7-Zaehler korrekt "geloggt" zeigten).
+   2. Der erste Fix ersetzte das faelschlich durch eine "neutrale" Ink-Farbe
+      fuer diesen Fall — die im Dark Mode aber quasi WEISS ist, also eine
+      neue, verbotene Sonderfarbe fuer den Balken erzeugte.
+   3. Der finale Fix (getWeekDayVisualState) uebernimmt den Mechanismus der
+      urspruenglichen Wochenkarte 1:1: GENAU EINE Graufarbe (--day-muted)
+      fuer "nicht bewertbar" (nicht geloggt ODER geloggt ohne TDEE), dazu
+      Gruen/Orange fuer bewertete Tage — nie eine vierte Farbe (kein Weiss,
+      kein Blau). Die Monatszugehoerigkeit (ext) aendert NIE die Farbe,
+      sondern ausschliesslich die Deckkraft (opacity 0.5 statt 1 — wie
+      frueher "opacity:x&&x.ext?.5:1"), einheitlich fuer alle drei Status.
+      Das Bottom Sheet zeigt fuer den TDEE-losen Tag trotzdem weiterhin ✔,
+      weil "geloggt" (fuer Haken/X-7-Zaehler) und "eine Bilanz bewertbar"
+      (fuer die Balkenfarbe) zwei verschiedene Fragen sind — dieser eine
+      schmale Sonderfall ist bewusst dokumentiert, nicht versteckt. */
 
 let passed=0, failed=0;
 function check(cond, label){
@@ -49,25 +61,30 @@ function check(cond, label){
 
   const bars = [...kw31.querySelectorAll("div")].filter(e=>e.style.height==="6px");
   // Mo=27(0) Di=28(1) Mi=29(2) Do=30(3) Fr=31(4) Sa=1.8.(5) So=2.8.(6)
-  const GREEN="var(--good)", DAY_EXT="var(--day-ext)", DAY_MUTED="var(--day-muted)", NEUTRAL="var(--ink)";
+  const GREEN="var(--good)", DAY_MUTED="var(--day-muted)";
+  const FORBIDDEN=["#fff","#ffffff","white","var(--accent)"]; // kein Weiss, kein Blau am Balken
 
-  const jul31Bar = bars[4];
-  check(!!jul31Bar && jul31Bar.style.background===NEUTRAL,
-    "31.7. (geloggt, kein TDEE fuer Juli) ist NICHT grau, sondern neutral erkennbar als geloggt (erhalten: "+(jul31Bar&&jul31Bar.style.background)+")");
-  check(!!jul31Bar && jul31Bar.style.background!==DAY_EXT && jul31Bar.style.background!==DAY_MUTED,
-    "31.7. wird NICHT als 'nicht geloggt' (Grauton) dargestellt");
+  const jul31Bar = bars[4]; // geloggt, aber Juli hat kein TDEE -> nicht bewertbar
+  check(!!jul31Bar && !FORBIDDEN.includes((jul31Bar.style.background||"").toLowerCase()),
+    "31.7. (geloggt, kein TDEE fuer Juli) hat KEINE weisse/blaue Sonderfarbe (erhalten: "+(jul31Bar&&jul31Bar.style.background)+")");
+  check(!!jul31Bar && jul31Bar.style.background===DAY_MUTED,
+    "31.7. (geloggt, aber keine Bilanz berechenbar) faellt auf dieselbe Grau-Farbe wie 'nicht geloggt' zurueck — bewusst, statt einer vierten Sonderfarbe");
+  check(!!jul31Bar && jul31Bar.style.opacity==="0.5",
+    "31.7. ist externer Monat -> Deckkraft 0.5 (Farbe bleibt gleich, nur die Deckkraft aendert sich)");
 
   const aug1Bar = bars[5];
   check(!!aug1Bar && aug1Bar.style.background===GREEN,
     "1.8. (geloggt, TDEE vorhanden, -500 Defizit) ist gruen (erhalten: "+(aug1Bar&&aug1Bar.style.background)+")");
+  check(!!aug1Bar && (aug1Bar.style.opacity===""||aug1Bar.style.opacity==="1"),
+    "1.8. ist aktueller Monat -> volle Deckkraft");
 
   const jul27Bar = bars[0]; // nicht geloggt, ausserhalb des angezeigten Monats (August)
-  check(!!jul27Bar && jul27Bar.style.background===DAY_EXT,
-    "27.7. (nicht geloggt, externer Monat) zeigt die externe Grau-Stufe");
+  check(!!jul27Bar && jul27Bar.style.background===DAY_MUTED && jul27Bar.style.opacity==="0.5",
+    "27.7. (nicht geloggt, externer Monat) zeigt dieselbe Graufarbe mit reduzierter Deckkraft (0.5)");
 
   const aug2Bar = bars[6]; // nicht geloggt, im angezeigten Monat (August)
-  check(!!aug2Bar && aug2Bar.style.background===DAY_MUTED,
-    "2.8. (nicht geloggt, aktueller Monat) zeigt die Monats-Grau-Stufe");
+  check(!!aug2Bar && aug2Bar.style.background===DAY_MUTED && (aug2Bar.style.opacity===""||aug2Bar.style.opacity==="1"),
+    "2.8. (nicht geloggt, aktueller Monat) zeigt dieselbe Graufarbe mit voller Deckkraft");
 
   // Bottom Sheet oeffnen und garantieren, dass es EXAKT dieselbe
   // Geloggt-Aussage trifft wie die Wochenkarte (kein separates Wochen-
