@@ -45,6 +45,12 @@ function barsOf(card){
   let kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Augustansicht gefunden");
   check(!!kw31 && kw31.textContent.includes("2/7 Tage geloggt"), "August-Ansicht: 2/7 Tage geloggt");
+  // Erwartete Werte: TDEE=2651 (weight90/fat25/activityIdx1, wie im Rest der
+  // Testsuite) fuer BEIDE Monate. 31.7.: 500-2651=-2151. 2.8.: 2000-2651=-651.
+  // Summe=-2802 kcal, Ø=(500+2000)/2=1250 kcal, kg=2802/7700≈0.36.
+  check(!!kw31 && kw31.textContent.includes("Ø 1250 kcal"), "August-Ansicht: Ø kcal berücksichtigt BEIDE geloggten Tage (500 + 2000)/2=1250 (erhalten: "+(kw31&&kw31.textContent)+")");
+  check(!!kw31 && kw31.textContent.includes("−2.802 kcal"), "August-Ansicht: Wochenbilanz berücksichtigt BEIDE Tage (-2151 + -651 = -2802 kcal)");
+  check(!!kw31 && kw31.textContent.includes("0,36 kg"), "August-Ansicht: kg-Wert aus der neuen Gesamtbilanz (2802/7700≈0,36 kg)");
   let bars = kw31 && barsOf(kw31);
   const GRAY="var(--day-muted)";
   check(bars && bars[4].style.background!==GRAY, "August-Ansicht: 31.7.-Balken ist farbig");
@@ -71,6 +77,8 @@ function barsOf(card){
   kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Juli-Ansicht gefunden");
   check(!!kw31 && kw31.textContent.includes("2/7 Tage geloggt"), "Juli-Ansicht: ebenfalls 2/7 Tage geloggt");
+  check(!!kw31 && kw31.textContent.includes("Ø 1250 kcal") && kw31.textContent.includes("−2.802 kcal") && kw31.textContent.includes("0,36 kg"),
+    "Juli-Ansicht zeigt EXAKT dieselben Wochenwerte wie die August-Ansicht (erhalten: "+(kw31&&kw31.textContent)+")");
   bars = kw31 && barsOf(kw31);
   check(bars && bars[4].style.background===augustJul31Color, "31.7.-Balkenfarbe ist in Juli- und August-Ansicht identisch (erhalten: "+(bars&&bars[4].style.background)+" vs. "+augustJul31Color+")");
   check(bars && bars[6].style.background===augustAug2Color, "2.8.-Balkenfarbe ist in Juli- und August-Ansicht identisch");
@@ -101,6 +109,9 @@ function barsOf(card){
   await flush(dom);
   kw31 = kw31Card(d);
   check(!!kw31 && kw31.textContent.includes("1/7 Tage geloggt"), "nach Loeschen von 31.7.: sofort 1/7 Tage geloggt (erhalten: "+(kw31&&kw31.textContent)+")");
+  // Nur noch 2.8. (2000-2651=-651 kcal, Ø=2000 kcal, kg=651/7700≈0.08) zaehlt.
+  check(!!kw31 && kw31.textContent.includes("Ø 2000 kcal") && kw31.textContent.includes("−651 kcal") && kw31.textContent.includes("0,08 kg"),
+    "nach Loeschen von 31.7.: Bilanz/Durchschnitt/kg werden sofort auf nur noch 2.8. zurückgerechnet (erhalten: "+(kw31&&kw31.textContent)+")");
   bars = kw31 && barsOf(kw31);
   check(bars && bars[4].style.background===GRAY, "nach Loeschen von 31.7.: Balken ist sofort wieder grau");
 
