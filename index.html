@@ -26,14 +26,18 @@
      Jede Stufe hat genau eine Aufgabe — Ringzahl bleibt bewusst bei 44px
      (gerade erst gemeinsam feinjustiert), alle anderen Ebenen ordnen sich
      darum herum an. */
-  --fs-hero:44px;    /* Ringzahl */
-  --fs-xl:32px;      /* grosse Kennzahlen */
-  --fs-title:28px;   /* Kartenueberschrift / Seitentitel */
-  --fs-lg:22px;       /* sekundaere Kennzahlen (Gegessen/Verbraucht) */
-  --fs-md:20px;      /* normale Ueberschriften */
-  --fs-body:17px;    /* Fliesstext */
-  --fs-desc:15px;    /* Beschreibung */
-  --fs-help:13px;    /* Hilfetext/Caption */
+  /* clamp(min, bevorzugt-in-vw, max) statt fester px-Werte: die Schrift
+     skaliert stufenlos mit der Bildschirmbreite (klein -> min, gross ->
+     max), ohne dass jede einzelne Stelle im Code angefasst werden muss —
+     alles, was diese Variablen referenziert, profitiert automatisch. */
+  --fs-hero:clamp(36px, 10vw, 44px);    /* Ringzahl */
+  --fs-xl:clamp(27px, 7.3vw, 32px);      /* grosse Kennzahlen */
+  --fs-title:clamp(24px, 6.4vw, 28px);   /* Kartenueberschrift / Seitentitel */
+  --fs-lg:clamp(19px, 5vw, 22px);        /* sekundaere Kennzahlen (Gegessen/Verbraucht) */
+  --fs-md:clamp(18px, 4.6vw, 20px);      /* normale Ueberschriften */
+  --fs-body:clamp(15px, 3.9vw, 17px);    /* Fliesstext */
+  --fs-desc:clamp(14px, 3.4vw, 15px);    /* Beschreibung */
+  --fs-help:clamp(12px, 3vw, 13px);      /* Hilfetext/Caption */
   --bg:#FAFAF8; --card:#FFFFFF; --card2:#F1F1ED;
   --ink:#191C1E; --ink2:#6A737C; --ink3:#A8AFB6;
   /* --accent = UI-Akzent (Buttons, aktive Tabs/Segmente, Fokus, Auswahl).
@@ -54,7 +58,7 @@
      Farbwerte statt Opacity auf --card2, weil Opacity auf dunklem
      Hintergrund fast schwarz wirkt. Reihenfolge nach Praesenz:
      day-ext < day-muted < volle Gruen/Orange-Farbe bei geloggten Tagen. */
-  --day-ext:#C7C6BF; --day-muted:#D9D8D2;
+  --day-ext:#B3B2AC; --day-muted:#D9D8D2;
 }
 :root[data-theme="dark"]{
   --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
@@ -67,7 +71,7 @@
   --line:rgba(255,255,255,.09);
   --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
   --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
-  --day-ext:#454C54; --day-muted:#5C6570;
+  --day-ext:#3E444C; --day-muted:#5C6570;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]):not([data-theme="dark"]){
@@ -81,14 +85,19 @@
     --line:rgba(255,255,255,.09);
     --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
     --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
-    --day-ext:#454C54; --day-muted:#5C6570;
+    --day-ext:#3E444C; --day-muted:#5C6570;
   }
 }
-html,body{height:100%}
+html,body{height:100%;max-width:100%;overflow-x:hidden;}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;font-size:var(--fs-body);line-height:1.4;transition:background .3s,color .3s;}
 /* .num = SF Pro Rounded fuer grosse Zahlen (der "Apple Fitness"-Look) */
 .num{font-family:ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;font-variant-numeric:tabular-nums;}
-.app{max-width:520px;margin:0 auto;min-height:100vh;padding:calc(var(--sp-2) + env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom));}
+/* Sicherheitsnetz gegen horizontales Scrollen: width:100% statt einer
+   festen Prozent-/Pixelbreite plus box-sizing:border-box (siehe *{} oben)
+   sorgt dafuer, dass Innenabstaende nie ueber den Viewport hinausschieben;
+   overflow-x:hidden auf html/body faengt selbst dann noch ab, wenn ein
+   einzelnes Element trotzdem zu breit wird. */
+.app{width:100%;max-width:520px;margin:0 auto;min-height:100vh;padding:calc(var(--sp-2) + env(safe-area-inset-top)) max(20px,env(safe-area-inset-left)) calc(96px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-right));}
 .h1{font-size:var(--fs-title);font-weight:700;letter-spacing:-.5px;}
 .eyebrow{font-size:var(--fs-help);font-weight:600;color:var(--ink2);letter-spacing:.4px;}
 /* ===== KARTEN-VARIANTEN =====
@@ -119,7 +128,7 @@ input:focus,select:focus{border-color:var(--accent);}
 input::placeholder{color:var(--ink3);}
 .seg{display:flex;gap:3px;background:var(--card2);padding:3px;border-radius:14px;overflow-x:auto;margin-bottom:16px;scrollbar-width:none;}
 .seg::-webkit-scrollbar{display:none}
-.segb{flex:1;white-space:nowrap;padding:10px 4px;border:none;border-radius:11px;background:transparent;color:var(--ink2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .18s cubic-bezier(.32,.72,.28,1);}
+.segb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:10px 4px;border:none;border-radius:11px;background:transparent;color:var(--ink2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .18s cubic-bezier(.32,.72,.28,1);}
 .segb.on{background:var(--nav-active);color:#fff;}
 .segb:active{transform:scale(.98);}
 /* Fuenf Menuepunkte (Kalender/Rueckblick/Gewicht/Sport/Jahr) muessen auch
@@ -2306,8 +2315,8 @@ function AnimatedNumber({value,decimals=0,suffix=""}){
 function InfoDot({onOpen}){
   return(
     <button onClick={e=>{e.stopPropagation();tapH();onOpen();}}
-      style={{width:24,height:24,borderRadius:99,border:"none",background:"var(--card2)",color:"var(--ink3)",
-        fontSize:12,fontWeight:700,fontStyle:"italic",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>i</button>
+      style={{width:32,height:32,borderRadius:99,border:"none",background:"var(--card2)",color:"var(--ink3)",
+        fontSize:13,fontWeight:700,fontStyle:"italic",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>i</button>
   );
 }
 /* Erklaer-Sheet: was zeigt dieses Widget, wie wird's berechnet, warum
