@@ -36,36 +36,52 @@
   --fs-help:13px;    /* Hilfetext/Caption */
   --bg:#FAFAF8; --card:#FFFFFF; --card2:#F1F1ED;
   --ink:#191C1E; --ink2:#6A737C; --ink3:#A8AFB6;
-  --accent:#437862; --accent-soft:rgba(67,120,98,.10);
+  /* --accent = UI-Akzent (Buttons, aktive Tabs/Segmente, Fokus, Auswahl).
+     --good = fachliche Erfolgsfarbe (Defizit/Zielerreichung) — bewusst
+     getrennt, damit ein UI-Rebrand (z.B. Gruen->Blau) nie die fachliche
+     Gruen/Orange-Bewertung (Tagesbilanz, Wochenbilanz, Zielbewertung)
+     mitreisst. */
+  --accent:#2F6FED; --accent-soft:rgba(47,111,237,.10);
+  --good:#437862; --good-soft:rgba(67,120,98,.10);
   --pill-off:#EFEDE6; --pill-on:#FFFFFF;
-  --nav-active:#66907E;
+  --nav-active:#2F6FED;
   --amber:#C4880F; --amber-soft:rgba(196,136,15,.12);
   --line:rgba(20,25,30,.08);
   --shadow:0 1px 2px rgba(15,20,25,.03),0 6px 16px rgba(15,20,25,.04);
   --tabbg:#FFFFFF; --ovbg:rgba(10,12,14,.35);
+  /* Rueckblick-Wochenkarte: gedaempfte Balken-/Datumsfarben fuer Tage
+     ausserhalb des Monats bzw. unlogged Monatstage — bewusst als feste
+     Farbwerte statt Opacity auf --card2, weil Opacity auf dunklem
+     Hintergrund fast schwarz wirkt. Reihenfolge nach Praesenz:
+     day-ext < day-muted < volle Gruen/Orange-Farbe bei geloggten Tagen. */
+  --day-ext:#C7C6BF; --day-muted:#D9D8D2;
 }
 :root[data-theme="dark"]{
   --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
   --ink:#F0F2F3; --ink2:#98A1A8; --ink3:#5C646B;
-  --accent:#69A98C; --accent-soft:rgba(105,169,140,.14);
+  --accent:#5B8DEF; --accent-soft:rgba(91,141,239,.16);
+  --good:#69A98C; --good-soft:rgba(105,169,140,.14);
   --pill-off:#181C20; --pill-on:#272D33;
-  --nav-active:#5A8F78;
+  --nav-active:#5B8DEF;
   --amber:#E0A83F; --amber-soft:rgba(224,168,63,.14);
   --line:rgba(255,255,255,.09);
   --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
   --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
+  --day-ext:#454C54; --day-muted:#5C6570;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]):not([data-theme="dark"]){
     --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
     --ink:#F0F2F3; --ink2:#98A1A8; --ink3:#5C646B;
-    --accent:#69A98C; --accent-soft:rgba(105,169,140,.14);
+    --accent:#5B8DEF; --accent-soft:rgba(91,141,239,.16);
+    --good:#69A98C; --good-soft:rgba(105,169,140,.14);
   --pill-off:#181C20; --pill-on:#272D33;
-  --nav-active:#5A8F78;
+  --nav-active:#5B8DEF;
     --amber:#E0A83F; --amber-soft:rgba(224,168,63,.14);
     --line:rgba(255,255,255,.09);
     --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
     --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
+    --day-ext:#454C54; --day-muted:#5C6570;
   }
 }
 html,body{height:100%}
@@ -101,11 +117,16 @@ body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSys
 input,select{width:100%;background:var(--card2);border:1.5px solid transparent;border-radius:14px;padding:14px;font:inherit;font-size:17px;color:var(--ink);outline:none;-webkit-appearance:none;appearance:none;transition:border-color .2s;}
 input:focus,select:focus{border-color:var(--accent);}
 input::placeholder{color:var(--ink3);}
-.seg{display:flex;gap:4px;background:var(--card2);padding:4px;border-radius:14px;overflow-x:auto;margin-bottom:16px;scrollbar-width:none;}
+.seg{display:flex;gap:3px;background:var(--card2);padding:3px;border-radius:14px;overflow-x:auto;margin-bottom:16px;scrollbar-width:none;}
 .seg::-webkit-scrollbar{display:none}
-.segb{flex:1;white-space:nowrap;padding:12px 12px;border:none;border-radius:11px;background:transparent;color:var(--ink2);font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:all .18s cubic-bezier(.32,.72,.28,1);}
+.segb{flex:1;white-space:nowrap;padding:10px 4px;border:none;border-radius:11px;background:transparent;color:var(--ink2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .18s cubic-bezier(.32,.72,.28,1);}
 .segb.on{background:var(--nav-active);color:#fff;}
 .segb:active{transform:scale(.98);}
+/* Fuenf Menuepunkte (Kalender/Rueckblick/Gewicht/Sport/Jahr) muessen auch
+   auf schmalen Displays ohne horizontales Scrollen nebeneinander passen. */
+@media (max-width:400px){
+  .segb{padding:9px 2px;font-size:11.5px;}
+}
 .tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-around;padding:9px 8px calc(8px + env(safe-area-inset-bottom));background:var(--tabbg);border-top:1px solid var(--line);z-index:60;}
 .tabbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--ink3);font:inherit;font-size:10px;font-weight:600;cursor:pointer;padding:2px 14px;transition:color .2s;}
 .tabbtn.on{color:var(--accent);}
@@ -2303,7 +2324,7 @@ function WidgetInfoSheet({title,text,onClose}){
 /* Farblogik einheitlich fuer alle Widgets: Gruen = erreicht/positiv,
    Orange = Achtung/fast erreicht, Rot ist bewusst reserviert fuer wirklich
    wichtige Warnungen (hier: deutlich ueber Budget) — kein Ampel-Overkill. */
-const SEM={good:"var(--accent)",warn:"var(--amber)",bad:"#C0453E",neutral:"var(--ink)"};
+const SEM={good:"var(--good)",warn:"var(--amber)",bad:"#C0453E",neutral:"var(--ink)"};
 /* Uebersetzt AUSSCHLIESSLICH die standardisierten deadlineStatus-Codes aus
    evaluateForecastAgainstGoal() in sichtbaren Text — enthaelt selbst keine
    Zielrichtungs-, Distanz- oder Deadline-Berechnung mehr. Der "kein Ziel
@@ -2784,7 +2805,7 @@ function HeuteView({data,mSet,goals,dashRefresh,openDay,openSetup,openActivity,o
            App), exakt ausgeglichen = neutrale Farbe statt Gruen oder Orange.
            Das Vorzeichen + diese Farbe allein vermitteln Defizit/Ueberschuss
            — kein ausgeschriebenes Wort mehr im Zentrum noetig. */
-        const bilanzColor=isBalanced?"var(--ink)":isDeficit?"var(--accent)":pct>1.15?"#C0453E":"var(--amber)";
+        const bilanzColor=isBalanced?"var(--ink)":isDeficit?"var(--good)":pct>1.15?"#C0453E":"var(--amber)";
         return(
         <div className="card card-hero">
           <div style={{display:"flex",justifyContent:"flex-end"}}>
@@ -3157,8 +3178,8 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
               {[
                 ["Ø kcal",lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,"var(--ink)"],
-                ["Bilanz",(totDef<0?"−":"+")+Math.abs(totDef),totDef<0?"var(--accent)":"var(--amber)"],
-                ["Fett kg",(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),totDef<0?"var(--accent)":"var(--amber)"],
+                ["Bilanz",(totDef<0?"−":"+")+Math.abs(totDef),totDef<0?"var(--good)":"var(--amber)"],
+                ["Fett kg",(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),totDef<0?"var(--good)":"var(--amber)"],
                 ["Sport km",monthKm(data,null,sy,sm).toFixed(0),"var(--ink)"],
               ].map(([l,v,c])=>(
                 <div key={l} className="mini">
@@ -3169,7 +3190,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             </div>
           )}
           <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-            {[["Gewicht","var(--amber)"],["Sport","#4E93AE"],["Defizit","var(--accent)"]].map(([l,c])=>(
+            {[["Gewicht","var(--amber)"],["Sport","#4E93AE"],["Defizit","var(--good)"]].map(([l,c])=>(
               <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
                 <div style={{width:7,height:7,borderRadius:99,background:c}}/>
                 <span className="sub" style={{fontSize:11}}>{l}</span>
@@ -3193,7 +3214,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   {x.weight>0&&<div className="num" style={{fontSize:10,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
                   {km>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.bike}}>{km.toFixed(km<10?1:0)}km</div>}
                   {km===0&&gym>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.gym}}>{Math.round(gym)}min</div>}
-                  {def!==null&&<div className="num" style={{fontSize:11,fontWeight:700,marginTop:"auto",color:def<0?"var(--accent)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
+                  {def!==null&&<div className="num" style={{fontSize:11,fontWeight:700,marginTop:"auto",color:def<0?"var(--good)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
                 </div>
               );
             })}
@@ -3221,9 +3242,9 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
                Rot — die App bewertet, bestraft aber nicht. */
             const dayGoalColor=(bilanz)=>{
-              if(goalDirection==="abnehmen")return bilanz<0?"var(--accent)":"var(--amber)";
-              if(goalDirection==="zunehmen")return bilanz>0?"var(--accent)":"var(--amber)";
-              return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--accent)":"var(--amber)";
+              if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
+              if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
+              return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
             };
             /* Dieselbe Zielbewertung auch fuer die grosse Wochenbilanz-Zahl —
                bei null geloggten Tagen bewusst KEINE Farbaussage (neutral),
@@ -3231,9 +3252,9 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                der mathematische Wert zufaellig 0 ist. */
             const weekGoalColor=(wdVal,loggedCount,dayCount)=>{
               if(loggedCount===0)return SEM.neutral;
-              if(goalDirection==="abnehmen")return wdVal<0?"var(--accent)":"var(--amber)";
-              if(goalDirection==="zunehmen")return wdVal>0?"var(--accent)":"var(--amber)";
-              return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--accent)":"var(--amber)";
+              if(goalDirection==="abnehmen")return wdVal<0?"var(--good)":"var(--amber)";
+              if(goalDirection==="zunehmen")return wdVal>0?"var(--good)":"var(--amber)";
+              return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
             };
             const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
             return weeks.map(({kw,items:ds,start})=>{
@@ -3253,34 +3274,39 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 return {...x,d:dNum,y,m,ext,tdee:ext?tdeeOf(mSet,y,m):tdee};
               });
               const rowColor=weekGoalColor(wd,wl.length,ds.length);
+              /* Eine Kalenderwoche hat immer 7 Tage — die Anzeige zaehlt
+                 deshalb ueber ALLE 7 Slots (auch Tage ausserhalb des
+                 gezeigten Monats), nicht nur ueber ds. Die Bilanz/Ø-Werte
+                 (wd/wavg) bleiben unveraendert NUR auf ds (Monatstage)
+                 begrenzt — hier wird nur die Anzeigezahl anders gezaehlt. */
+              const loggedInWeek=slots.filter(s=>s.logged).length;
               return(
-                <div key={kw} className="card dc" onClick={()=>{tapH();setWeekDetail({kw,ds,slots});}}>
-                  <div className="row" style={{marginBottom:12}}>
+                <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,ds,slots});}}>
+                  <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
-                      <div className="sub">{wl.length} von {ds.length} Tagen geloggt · Ø {wavg||"–"} kcal</div>
+                      <div className="sub">{loggedInWeek}/7 Tage geloggt · Ø {wavg||"–"} kcal</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div className="num" style={{fontSize:19,fontWeight:700,color:rowColor}}>{wd<0?"−":"+"}{Math.abs(wd).toLocaleString("de-DE")} kcal</div>
                       <div className="sub">≈ {wd<0?"−":"+"}{(Math.abs(wd)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div>
-                      <div className="sub" style={{fontSize:10,opacity:0.7}}>Theoretische Gewichtsänderung</div>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:4}}>
                     {slots.map((x,i)=>{
-                      /* Vier Zustaende: extern+bewertet, im Monat aber nicht
-                         geloggt (Dunkelgrau), geloggt+Ziel unterstuetzt
-                         (gruen), geloggt+Ziel nicht unterstuetzt (orange).
-                         Externe Tage nutzen DIESELBE Logik wie echte
-                         Monatstage, nur mit reduzierter Deckkraft — sie
-                         verschwinden nicht, sie treten nur zurueck. */
+                      /* Drei Stufen: geloggt+Ziel unterstuetzt (gruen),
+                         geloggt+Ziel nicht unterstuetzt (orange), nicht
+                         geloggt (gedaempftes Grau — Tage ausserhalb des
+                         Monats etwas dunkler als unlogged Monatstage, aber
+                         beide bewusst als feste Farbe statt per Opacity,
+                         damit sie im Dark Mode nicht fast schwarz wirken). */
                       const bilanz=x.logged&&x.tdee?(x.kcalIn||0)-x.tdee-(x.kcalBurned||0):null;
-                      const bg=bilanz==null?"var(--card2)":dayGoalColor(bilanz);
-                      return <div key={i} style={{flex:1,height:6,borderRadius:3,background:bg,opacity:x.ext?0.5:1}}/>;
+                      const bg=bilanz!=null?dayGoalColor(bilanz):(x.ext?"var(--day-ext)":"var(--day-muted)");
+                      return <div key={i} style={{flex:1,height:6,borderRadius:3,background:bg}}/>;
                     })}
                   </div>
-                  <div style={{display:"flex",gap:4,marginTop:4}}>
-                    {slots.map((x,i)=><div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,opacity:x.ext?0.6:1}}>{x.d}</div>)}
+                  <div style={{display:"flex",gap:4,marginTop:3}}>
+                    {slots.map((x,i)=><div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:x.ext?"var(--day-ext)":(x.logged?"var(--ink)":"var(--day-muted)")}}>{x.d}</div>)}
                   </div>
                 </div>
               );
@@ -3371,7 +3397,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                         return [
                           [wRange==="all"?"Erstes Gewicht":"Start",pts[0].w.toFixed(1)+" kg","var(--ink)"],
                           ["Aktuell",pts[pts.length-1].w.toFixed(1)+" kg","var(--ink)"],
-                          [WEIGHT_STAT_DELTA_LABEL[wRange],(diff>0?"+":"")+diff.toFixed(1)+" kg",diff<=0?"var(--accent)":"var(--amber)"],
+                          [WEIGHT_STAT_DELTA_LABEL[wRange],(diff>0?"+":"")+diff.toFixed(1)+" kg",diff<=0?"var(--good)":"var(--amber)"],
                         ];
                       })().map(([l,v,c],i)=>(
                         <div key={l} style={{textAlign:"center",position:"relative"}}>
@@ -3432,7 +3458,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 <div className="sub" style={{marginBottom:12}}>Basis: Ø der letzten {forecast.validBalanceDays} geloggten Tage — je mehr Daten, desto verlässlicher.</div>
                 <div className="row" style={{padding:"8px 0",borderBottom:"1px solid var(--line)"}}>
                   <span className="sub">Ø Bilanz / Tag</span>
-                  <span className="num" style={{fontWeight:700,color:inDef?"var(--accent)":"var(--amber)"}}>{inDef?"−":"+"}{Math.abs(Math.round(avgDef))} kcal</span>
+                  <span className="num" style={{fontWeight:700,color:inDef?"var(--good)":"var(--amber)"}}>{inDef?"−":"+"}{Math.abs(Math.round(avgDef))} kcal</span>
                 </div>
                 <div className="row" style={{padding:"8px 0",borderBottom:"1px solid var(--line)"}}>
                   <span className="sub">Aktuell</span>
@@ -3440,7 +3466,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 </div>
                 <div className="row" style={{padding:"8px 0"}}>
                   <span className="sub">{horizonLabel} (in {dLeft} Tagen)</span>
-                  <span className="num" style={{fontSize:18,fontWeight:700,color:inDef?"var(--accent)":"var(--amber)"}}>≈ {projW.toFixed(1)} kg</span>
+                  <span className="num" style={{fontSize:18,fontWeight:700,color:inDef?"var(--good)":"var(--amber)"}}>≈ {projW.toFixed(1)} kg</span>
                 </div>
 
                 {/* Automatisch erzeugte Einschaetzung — motivierend, aber
@@ -3455,10 +3481,10 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 </div>
 
                 {weightGoal&&goalEval.status==="ok"&&(
-                  <div style={{marginTop:12,padding:12,borderRadius:14,background:goalEval.goalReached?"var(--accent-soft)":status.tone===SEM.bad?"rgba(192,69,62,.10)":status.tone===SEM.warn?"var(--amber-soft)":"var(--accent-soft)",textAlign:"center"}}>
+                  <div style={{marginTop:12,padding:12,borderRadius:14,background:goalEval.goalReached?"var(--good-soft)":status.tone===SEM.bad?"rgba(192,69,62,.10)":status.tone===SEM.warn?"var(--amber-soft)":"var(--good-soft)",textAlign:"center"}}>
                     <div className="sub" style={{marginBottom:4}}>Ziel {weightGoal.label?weightGoal.label+" ("+normalizedGoal.targetWeightKg+" kg)":normalizedGoal.targetWeightKg+" kg"}</div>
                     {goalEval.goalReached?(
-                      <div style={{fontWeight:700,color:"var(--accent)"}}>🎉 Ziel erreicht</div>
+                      <div style={{fontWeight:700,color:"var(--good)"}}>🎉 Ziel erreicht</div>
                     ):(
                       <div style={{fontSize:14,fontWeight:700,color:status.tone}}>
                         {status.tone===SEM.good?"🟢 Ziel im Plan":status.tone===SEM.warn?"🟡 Leicht hinter Plan":"🔴 Deutlich hinter Plan"}
@@ -3566,7 +3592,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               <div className="card">
                 <div className="row" style={{marginBottom:10}}>
                   <span className="lbl">Gewicht {sy}</span>
-                  <span className="num" style={{fontWeight:700,color:diff<=0?"var(--accent)":"var(--amber)"}}>{diff>0?"+":""}{diff.toFixed(1)} kg</span>
+                  <span className="num" style={{fontWeight:700,color:diff<=0?"var(--good)":"var(--amber)"}}>{diff>0?"+":""}{diff.toFixed(1)} kg</span>
                 </div>
                 <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block"}}>
                   {marks.map(mk=><g key={mk.m}><line x1={X(mk.i)} y1={P} x2={X(mk.i)} y2={P+ch} stroke="var(--line)" strokeDasharray="3,3"/><text x={X(mk.i)+2} y={H-4} fill="var(--ink3)" fontSize="8">{MN[mk.m].slice(0,3)}</text></g>)}
@@ -3617,8 +3643,8 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             }
             if(!best&&!mostKm&&!mostGym&&!longest)return null;
             const rows=[];
-            if(best&&best.def<0)rows.push(["Bester Monat",MN[best.m],"−"+Math.abs(best.def)+" kcal","var(--accent)"]);
-            if(longest>0)rows.push(["Längste Defizit-Serie",longest+" Tage","","var(--accent)"]);
+            if(best&&best.def<0)rows.push(["Bester Monat",MN[best.m],"−"+Math.abs(best.def)+" kcal","var(--good)"]);
+            if(longest>0)rows.push(["Längste Defizit-Serie",longest+" Tage","","var(--good)"]);
             if(mostKm)rows.push(["Meiste km",MN[mostKm.m],mostKm.km.toFixed(1)+" km",SPORT_COLORS.bike]);
             if(mostGym)rows.push(["Meiste Gym-Zeit",MN[mostGym.m],fmtGym(mostGym.gym),SPORT_COLORS.gym]);
             return(
@@ -3683,10 +3709,10 @@ function ZieleView({data,mSet,goals,openGoal}){
       <div className="card" style={{padding:"14px 18px",opacity:g.active===false?.55:1}} onClick={()=>{tapH();openGoal(g);}}>
         <div className="row" style={{marginBottom:10}}>
           <div>
-            <div style={{fontSize:15,fontWeight:600,color:r.done?"var(--accent)":"var(--ink)"}}>{gt.icon} {g.label||gt.label}{r.done?" 🎉":""}</div>
+            <div style={{fontSize:15,fontWeight:600,color:r.done?"var(--good)":"var(--ink)"}}>{gt.icon} {g.label||gt.label}{r.done?" 🎉":""}</div>
             <div className="sub">{pl[g.period]}{!gt.tracked?" · manuell":""}{g.active===false?" · inaktiv":""}</div>
           </div>
-          <div className="num" style={{fontWeight:700,color:r.done?"var(--accent)":"var(--ink2)"}}>{r.prog.toFixed(0)}%</div>
+          <div className="num" style={{fontWeight:700,color:r.done?"var(--good)":"var(--ink2)"}}>{r.prog.toFixed(0)}%</div>
         </div>
         <div style={{background:"var(--card2)",height:8,borderRadius:99,overflow:"hidden",marginBottom:6}}>
           <div style={{height:"100%",width:r.prog+"%",borderRadius:99,background:"var(--accent)",transition:"width .6s cubic-bezier(.32,.72,.28,1)"}}/>
@@ -3780,7 +3806,7 @@ function ZieleView({data,mSet,goals,openGoal}){
                   {plan.months.map(r=>(
                     <div key={r.n} className="row" style={{padding:"7px 2px",borderBottom:"1px solid var(--line)"}}>
                       <span className="sub">Monat {r.n}{r.done?" · Ziel ✓":""} <span style={{fontSize:11}}>(TDEE {r.t})</span></span>
-                      <span className="num" style={{fontWeight:700,color:r.done?"var(--accent)":"var(--ink)"}}>{r.w} kg</span>
+                      <span className="num" style={{fontWeight:700,color:r.done?"var(--good)":"var(--ink)"}}>{r.w} kg</span>
                     </div>
                   ))}
                 </div>
@@ -3807,7 +3833,7 @@ function ZieleView({data,mSet,goals,openGoal}){
               if(days<=0)return <div className="sub" style={{marginTop:10,color:"var(--amber)"}}>Die Deadline liegt in der Vergangenheit.</div>;
               if(tw>=sw)return <div className="sub" style={{marginTop:10,color:"var(--amber)"}}>Das Zielgewicht muss unter dem aktuellen liegen.</div>;
               const perDay=Math.round((sw-tw)*KCAL_PER_KG/days);
-              let rating="Realistisch ✅",rc="var(--accent)";
+              let rating="Realistisch ✅",rc="var(--good)";
               if(perDay>1000){rating="Sehr ambitioniert — über 1000 kcal/Tag ⚠️";rc="var(--amber)";}
               else if(perDay>750){rating="Ambitioniert — über 750 kcal/Tag ⚡";rc="var(--amber)";}
               else if(perDay<300){rating="Sehr gemächlich 🐢";rc="var(--ink2)";}
@@ -4370,7 +4396,7 @@ function DayDetailSheet({date,data,mSet,onSaveWeight,onOpenMealDetail,onOpenActi
     <Sheet onClose={onClose} title={d+". "+MN[m]+" "+y}>
       {tdee!=null&&bal!=null&&(eaten>0||burned>0)&&(
         <div className="card" style={{textAlign:"center",padding:"20px 18px",marginBottom:14}}>
-          <div className="num" style={{fontSize:32,fontWeight:700,color:bal<0?"var(--accent)":"var(--amber)"}}>{bal<0?"−":"+"}{Math.abs(bal)}</div>
+          <div className="num" style={{fontSize:32,fontWeight:700,color:bal<0?"var(--good)":"var(--amber)"}}>{bal<0?"−":"+"}{Math.abs(bal)}</div>
           <div className="sub">{bal<0?"kcal Defizit":"kcal Überschuss"}</div>
           <div style={{display:"flex",justifyContent:"center",gap:22,marginTop:12}}>
             {[["Gegessen",eaten],["Bedarf",tdee],["Verbrannt",burned]].map(([l,v])=>(
@@ -5342,8 +5368,8 @@ function StatsSheet({data,mSet,init,onClose}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
             {[
               ["Tage geloggt",lg.length+"/"+dim,"var(--ink)"],
-              ["Bilanz",(def<0?"−":"+")+Math.abs(def)+" kcal",def<0?"var(--accent)":"var(--amber)"],
-              ["Fett",(def<0?"−":"+")+(Math.abs(def)/KCAL_PER_KG).toFixed(2)+" kg",def<0?"var(--accent)":"var(--amber)"],
+              ["Bilanz",(def<0?"−":"+")+Math.abs(def)+" kcal",def<0?"var(--good)":"var(--amber)"],
+              ["Fett",(def<0?"−":"+")+(Math.abs(def)/KCAL_PER_KG).toFixed(2)+" kg",def<0?"var(--good)":"var(--amber)"],
               ["Sport",km.toFixed(1)+" km"+(gym>0?" · "+fmtGym(gym):""),"var(--ink)"],
             ].map(([l,v,c])=>(
               <div key={l} className="mini"><div className="num" style={{fontSize:15,fontWeight:700,color:c}}>{v}</div><div className="sub" style={{fontSize:11}}>{l}</div></div>
@@ -5355,13 +5381,13 @@ function StatsSheet({data,mSet,init,onClose}){
               return(
                 <div key={kw} className="row" style={{padding:"9px 0",borderBottom:i<arr.length-1?"1px solid var(--line)":"none"}}>
                   <span className="sub">KW {kw}</span>
-                  <span className="num" style={{fontWeight:700,color:wd<0?"var(--accent)":"var(--amber)"}}>{wd<0?"−":"+"}{Math.abs(wd)} kcal</span>
+                  <span className="num" style={{fontWeight:700,color:wd<0?"var(--good)":"var(--amber)"}}>{wd<0?"−":"+"}{Math.abs(wd)} kcal</span>
                 </div>
               );
             })}
           </div>
-          <div style={{padding:14,borderRadius:16,background:def<0?"var(--accent-soft)":"var(--amber-soft)",textAlign:"center",marginBottom:12}}>
-            <div style={{fontWeight:700,color:def<0?"var(--accent)":"var(--amber)"}}>
+          <div style={{padding:14,borderRadius:16,background:def<0?"var(--good-soft)":"var(--amber-soft)",textAlign:"center",marginBottom:12}}>
+            <div style={{fontWeight:700,color:def<0?"var(--good)":"var(--amber)"}}>
               {def<0?"Starker Monat — im Defizit!":def===0?"Ausgeglichen":"Nächsten Monat wird's besser!"}
             </div>
             {def<0&&<div className="sub">≈ {(Math.abs(def)/KCAL_PER_KG).toFixed(2)} kg Fett abgebaut</div>}
