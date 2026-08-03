@@ -39,9 +39,12 @@ async function testScenario(label, goalSetup, dailyOverrides, expectations){
   check(!!kw32, label+": KW-32-Karte gefunden");
   if(!kw32) return;
 
-  // "Fettverlust" darf nirgends mehr vorkommen, "Theoretische Gewichtsänderung" muss da sein
-  check(!d.body.textContent.includes("Fettverlust"), label+": 'Fettverlust' wurde entfernt");
-  check(kw32.textContent.toLowerCase().includes("theoretische gewichtsänderung"), label+": neue Bezeichnung vorhanden");
+  // Die alten Kennzahlen-Labels duerfen auf der Wochenkarte nirgends mehr vorkommen —
+  // rechts steht nur noch die kcal-Zahl oben und die kg-Zahl darunter.
+  ["Fettverlust","Fettzunahme","Kalorienbilanz","Theoretische Gewichtsänderung"].forEach(label2=>{
+    check(!kw32.textContent.includes(label2), label+": '"+label2+"' kommt auf der Wochenkarte nicht mehr vor");
+  });
+  check(kw32.textContent.includes("/7 Tage geloggt"), label+": Anzeige als 'X/7 Tage geloggt'");
 
   const bars = [...kw32.querySelectorAll("div")].filter(e=>e.style.height==="6px");
   expectations.forEach(exp=>{
@@ -53,7 +56,12 @@ async function testScenario(label, goalSetup, dailyOverrides, expectations){
 }
 
 (async()=>{
-  const GREEN="var(--accent)", ORANGE="var(--amber)", GRAY="var(--card2)";
+  // GREEN/ORANGE bilden die fachliche Zielbewertung ab (var(--good)/var(--amber)) —
+  // getrennt von var(--accent), das seit dem UI-Rebrand die neue blaue
+  // Akzentfarbe ist und mit der Gruen/Orange-Logik nichts mehr zu tun hat.
+  // GRAY gilt hier fuer "im Monat, aber nicht geloggt" (var(--day-muted));
+  // Tage ausserhalb des Monats waeren var(--day-ext).
+  const GREEN="var(--good)", ORANGE="var(--amber)", GRAY="var(--day-muted)";
 
   // Montag=3.8., ..., Sonntag=9.8. (KW32, slotIndex 0-6)
   await testScenario(
