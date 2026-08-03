@@ -48,6 +48,7 @@ const BROWSER_TESTS=[
   "browser-weekcard-reactivity.test.js",
   "browser-weekcard-acceptance-kw31.test.js",
   "browser-retroactive-tdee-setup.test.js",
+  "browser-live-prognose-crossmonth.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}

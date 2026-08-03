@@ -316,15 +316,22 @@ console.log("========== TEST 25: Ziel Halten (Toleranzbereich) ==========");
   assertEq(outside.goalReached,false,"Test25b: 81.5 ausserhalb ±1.0kg von 80.0");
 }
 
-console.log("========== TEST 26: Monatswechsel in lokaler Zeitzone -> richtiger Monat/Bedarf ==========");
+console.log("========== TEST 26: Monatswechsel in lokaler Zeitzone -> Live-Prognose bleibt kalenderuebergreifend, jeder Tag nutzt seinen EIGENEN Monatsbedarf ==========");
 {
-  const dailyData = mkDailyData(dailySeries(new Date(2026,7,1),14,2700,-500)); // Log-Tage enden am 1.8., reichen zurueck in den Juli
+  const dailyData = mkDailyData(dailySeries(new Date(2026,7,1),14,2700,-500)); // Log-Tage enden am 1.8., reichen zurueck in den Juli (19.7.-1.8., 14 Tage)
   const monthlySettings = mkMonthlySettings({"2026-07":2600, "2026-08":2700});
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:1,weight:84.2}]);
   const r = E.calculateCurrentMonthForecast({now:new Date(2026,7,1),dailyData,monthlySettings,weightEntries});
-  // getRecentValidBalanceDays ist bewusst auf den LAUFENDEN Kalendermonat begrenzt (Abschnitt 6) ->
-  // am 1. August sollte nur der 1.August selbst als gueltiger Tag zaehlen.
-  assertEq(r.status,"insufficient_data","Test26: am ersten Tag des Monats reicht 1 Tag nicht fuer 7 noetige");
+  // getRecentValidBalanceDays sucht rueckwaerts UEBER die Monatsgrenze hinweg (Abschnitt 1 der
+  // Datenauswahl-Korrektur) -> am 1. August zaehlen alle 14 zurueckliegenden, tatsaechlich
+  // gueltig geloggten Tage (13x Juli + 1x August), nicht nur der 1.August selbst.
+  assertEq(r.status,"ok","Test26: 14 kalenderuebergreifende gueltige Tage reichen fuer eine reguläre Prognose");
+  assertEq(r.validBalanceDays,14,"Test26: alle 14 Tage (Juli+August) zaehlen als gueltig");
+  assertEq(r.confidenceStage,"regular","Test26: 14 gueltige Tage -> reguläre (keine vorlaeufige) Prognose");
+  // Juli-Tage: kcalIn 2200 - Juli-TDEE 2600 = -400 kcal; August-Tag (1.8.): 2200 - August-TDEE 2700 = -500 kcal.
+  // Gewichteter robuster Durchschnitt (7 Tage Gewicht 1.0, 7 Tage Gewicht 0.65, keine Winsorisierung noetig): -409 kcal/Tag.
+  assertEq(r.averageDailyBalanceKcal,-409,"Test26: robuster Durchschnitt nutzt je Tag den EIGENEN Monatsbedarf (Juli- und August-TDEE gemischt)");
+  assertEq(r.forecastDate,"2026-08-31","Test26: Prognoseziel bleibt Ende des laufenden Monats (August)");
 }
 
 console.log("========== TEST 27: Mehrere Gewichtseintraege am selben Tag -> letzter gueltiger wird verwendet ==========");
@@ -369,6 +376,103 @@ console.log("========== TEST 30: Heute = letzter Tag des Monats -> keine doppelt
   const r = E.calculateCurrentMonthForecast({now:lastDay,dailyData,monthlySettings,weightEntries});
   assertEq(r.status,"ok","Test30: Prognose funktioniert noch am letzten Tag");
   assertEq(r.projectedFutureBalanceKcal,0,"Test30: keine zukuenftigen Tage mehr, projizierte Bilanz = 0");
+}
+
+console.log("========== TEST 31: Akzeptanztest — 6 kalenderuebergreifende gueltige Tage (29.7.-3.8., heute 3.8.2026) ==========");
+{
+  const now = new Date(2026,7,3);
+  const dailyData = mkDailyData(dailySeries(now,6,2700,-500)); // 29.7.,30.7.,31.7.,1.8.,2.8.,3.8.
+  const monthlySettings = mkMonthlySettings({"2026-07":2600, "2026-08":2700});
+
+  const recent = E.getRecentValidBalanceDays(dailyData, now, monthlySettings, E.FORECAST_CONFIG.maxRecentValidDays);
+  assertEq(recent.length,6,"Test31: alle 6 Tage (3x Juli + 3x August) zaehlen als gueltig, nicht nur 1");
+  // recent ist chronologisch aufsteigend: 29.7.,30.7.,31.7.,1.8.,2.8.,3.8.
+  assertEq(recent[0].originalBalance,-400,"Test31: 29.7. nutzt Juli-TDEE (2200-2600=-400)");
+  assertEq(recent[2].originalBalance,-400,"Test31: 31.7. nutzt ebenfalls Juli-TDEE");
+  assertEq(recent[3].originalBalance,-500,"Test31: 1.8. nutzt August-TDEE (2200-2700=-500)");
+  assertEq(recent[5].originalBalance,-500,"Test31: 3.8. nutzt ebenfalls August-TDEE");
+
+  const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
+  const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
+  assertEq(r.status,"insufficient_data","Test31: 6 gueltige Tage reichen noch nicht fuer die Mindestanzahl 7");
+  assert(r.reasons.includes("not_enough_valid_log_days"),"Test31: richtiger Grund");
+  assertEq(r.requirements.validDaysRequired,7,"Test31: Mindestanzahl bleibt 7");
+  assertEq(r.requirements.validDaysAvailable,6,"Test31: 6 kalenderuebergreifende gueltige Tage erkannt (Meldung darf nicht '1' zeigen)");
+}
+
+console.log("========== TEST 32: Ein weiterer gueltiger Tag (28.7. dazu, 7 insgesamt) -> vorlaeufige Prognose erscheint ==========");
+{
+  const now = new Date(2026,7,3);
+  const dailyData = mkDailyData(dailySeries(now,7,2700,-500)); // 28.7.-3.8.
+  const monthlySettings = mkMonthlySettings({"2026-07":2600, "2026-08":2700});
+  const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
+  const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
+  assertEq(r.status,"ok","Test32: 7 kalenderuebergreifende gueltige Tage reichen fuer eine erste Prognose");
+  assertEq(r.validBalanceDays,7,"Test32: 7 gueltige Tage");
+  assertEq(r.confidenceStage,"provisional","Test32: 7 Tage -> vorlaeufige, noch keine reguläre Prognose");
+}
+
+console.log("========== TEST 33: Fehlender Vormonats-TDEE -> nur die betroffenen Tage werden uebersprungen, Berechnung bricht nicht ab ==========");
+{
+  const now = new Date(2026,7,3);
+  // Juli ist NICHT eingerichtet (kein TDEE) — trotzdem im Juli durchgehend geloggt.
+  const monthlySettings = mkMonthlySettings({"2026-08":2700});
+  const dailyData = mkDailyData([
+    {y:2026,m:6,d:29,kcalIn:2200,kcalBurned:0,logged:true}, // Juli, kein TDEE -> muss uebersprungen werden
+    {y:2026,m:6,d:30,kcalIn:2200,kcalBurned:0,logged:true},
+    {y:2026,m:6,d:31,kcalIn:2200,kcalBurned:0,logged:true},
+    {y:2026,m:7,d:1, kcalIn:2200,kcalBurned:0,logged:true}, // August, TDEE vorhanden -> gueltig
+    {y:2026,m:7,d:2, kcalIn:2200,kcalBurned:0,logged:true},
+    {y:2026,m:7,d:3, kcalIn:2200,kcalBurned:0,logged:true},
+  ]);
+  const recent = E.getRecentValidBalanceDays(dailyData, now, monthlySettings, E.FORECAST_CONFIG.maxRecentValidDays);
+  assertEq(recent.length,3,"Test33: nur die 3 August-Tage zaehlen, die 3 Juli-Tage werden mangels TDEE uebersprungen (keine Ausnahme/Abbruch)");
+  assert(recent.every(d=>d.date.getMonth()===7),"Test33: alle gezaehlten Tage liegen tatsaechlich im August");
+
+  const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
+  const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
+  assertEq(r.status,"insufficient_data","Test33b: Gesamtberechnung laeuft weiter (kein Absturz) und liefert ein normales insufficient_data-Ergebnis");
+  assertEq(r.requirements.validDaysAvailable,3,"Test33b: nur die 3 gueltigen August-Tage werden gezaehlt");
+}
+
+console.log("========== TEST 34: Monatswechsel veraendert die Anzahl gueltiger Tage nicht sprunghaft ==========");
+{
+  const monthlySettings = mkMonthlySettings({"2026-07":2600, "2026-08":2700});
+  // Durchgehend geloggt von 10.7. bis 1.8. (23 Tage) -> genug fuer beide Betrachtungszeitpunkte.
+  const dailyData = mkDailyData(dailySeries(new Date(2026,7,1),23,2700,-500));
+  const recentJul31 = E.getRecentValidBalanceDays(dailyData, new Date(2026,6,31), monthlySettings, E.FORECAST_CONFIG.maxRecentValidDays);
+  const recentAug1 = E.getRecentValidBalanceDays(dailyData, new Date(2026,7,1), monthlySettings, E.FORECAST_CONFIG.maxRecentValidDays);
+  assertEq(recentJul31.length,14,"Test34: 31.7. sieht 14 gueltige Tage");
+  assertEq(recentAug1.length,14,"Test34: 1.8. sieht ebenfalls 14 gueltige Tage — kein Einbruch durch den Monatswechsel");
+}
+
+console.log("========== TEST 35: Keine Doppelzaehlung seit dem Gewichtsanker ==========");
+{
+  const now = new Date(2026,7,10);
+  const monthlySettings = mkMonthlySettings({"2026-08":2700});
+  const dailyData = mkDailyData(dailySeries(now,10,2700,-500)); // 1.8.-10.8., je -500 kcal/Tag
+  const weightEntries = mkWeightEntries([{y:2026,m:7,d:7,weight:84.0}]); // Anker vor 3 Tagen (7.8.)
+  const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
+  assertEq(r.status,"ok","Test35: Prognose verfuegbar");
+  // Tatsaechliche Bilanz seit Anker: NUR 8.8./9.8./10.8. (3 Tage a -500 kcal) — unabhaengig davon,
+  // dass dieselben Tage auch Teil der Stichprobe fuer den robusten Tages-Durchschnitt sind.
+  assertEq(r.actualBalanceSinceAnchorKcal,-1500,"Test35: tatsaechliche Bilanz seit Anker = genau 3 Tage a -500 kcal");
+  // Der robuste Durchschnitt (-500 kcal/Tag) wird ausschliesslich auf die 21 ZUKUENFTIGEN Tage
+  // (11.8.-31.8.) angewendet — nicht zusaetzlich auf die bereits in actualBalanceSinceAnchorKcal
+  // gezaehlten Tage 8.-10.8.
+  assertEq(r.averageDailyBalanceKcal,-500,"Test35: robuster Tagesdurchschnitt");
+  assertEq(r.projectedFutureBalanceKcal,-10500,"Test35: projizierte Zukunftsbilanz = -500 kcal x 21 zukuenftige Tage, keine Ueberschneidung mit actualBalanceSinceAnchorKcal");
+  assertEq(r.forecastWeightKg,82.4,"Test35: Gesamtergebnis ohne Doppelzaehlung (84.0 + (-1500-10500)/7700)");
+}
+
+console.log("========== TEST 36: Forecast-Zieldatum bleibt Monatsende des aktuellen Monats ==========");
+{
+  const now = new Date(2026,7,3);
+  const dailyData = mkDailyData(dailySeries(now,7,2700,-500));
+  const monthlySettings = mkMonthlySettings({"2026-07":2600, "2026-08":2700});
+  const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
+  const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
+  assertEq(r.forecastDate,"2026-08-31","Test36: Prognoseziel bleibt der letzte Tag des AKTUELLEN Monats, auch wenn die Datenbasis in den Vormonat zurueckreicht");
 }
 
 console.log("\n================================");
