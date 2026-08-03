@@ -51,18 +51,27 @@ function createApp(seedFn, opts){
 
   if(seedFn) seedFn(window);
 
-  /* Spiegelt die <script src="date-utils.js/format.js/storage.js">-Tags aus
-     index.html: in echten Browsern laufen diese als normale globale
-     Skripte VOR dem Babel-App-Code (siehe Phase 1 des Migrationsplans).
-     Hier werden sie deshalb ebenfalls vor dem eval() des App-Codes in
-     dasselbe Window ausgewertet — sonst waeren daysIn/load/fmtNum & Co.
-     im Test unbekannt, obwohl sie im echten Browser da sind. */
-  ["date-utils.js","format.js","storage.js"].forEach(file=>{
-    dom.window.eval(fs.readFileSync(path.join(__dirname,file),"utf-8"));
-  });
+  /* Spiegelt die <script src="date-utils.js/format.js/storage.js/
+     week-engine.js">-Tags aus index.html: in echten Browsern laufen diese
+     als normale globale Skripte VOR dem Babel-App-Code (siehe Phase 1/2A
+     des Migrationsplans) und teilen sich dort mit allen anderen <script>-
+     Elementen der Seite EINE gemeinsame globale Umgebung — auch fuer
+     Top-Level "const"/"let" (nicht nur "var"/Funktionsdeklarationen).
+     jsdom/Node's window.eval() bildet das bei MEHREREN separaten
+     eval()-Aufrufen NICHT nach: jeder eval()-Aufruf bekaeme sein eigenes
+     lexikalisches Top-Level-Scope, wodurch z.B. ein in index.html per
+     "const" definierter Wert (KCAL_PER_KG) fuer eine bereits vorher per
+     eval() geladene Funktion (z.B. buildIsoWeekSummary aus week-engine.js)
+     unsichtbar bliebe — im echten Browser waere er es nicht. Deshalb
+     werden alle Vor-Skripte + der App-Code hier zu EINEM einzigen
+     eval()-Aufruf zusammengefuegt, in exakt derselben Reihenfolge wie die
+     <script>-Tags in index.html. */
+  const preScripts = ["date-utils.js","format.js","storage.js","week-engine.js"]
+    .map(file=>fs.readFileSync(path.join(__dirname,file),"utf-8"));
+  const combinedSource = [...preScripts, appSource].join("\n;\n");
 
   try{
-    dom.window.eval(appSource);
+    dom.window.eval(combinedSource);
   }catch(e){
     console.error("[eval error]", e.message);
     console.error(e.stack.split("\n").slice(0,15).join("\n"));
