@@ -144,8 +144,8 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
 });
 
 // ========== 2b. Syntax-Check ausgelagerte Utility-/Engine-Skripte ==========
-section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js");
-["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js"].forEach(file=>{
+section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js");
+["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js"].forEach(file=>{
   runStep(file+": Syntax ok (node --check)", ()=>{
     execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
   });
