@@ -1590,23 +1590,27 @@ function buildWeekSlots(data,mSet,start,sy,sm){
    fachliche Farbe (var(--good) bei unterstuetztem, var(--amber) bei nicht
    unterstuetztem Ziel) — dieselbe Funktion, die die Wochenbilanz-Zahl
    einfaerbt.
-     Prinzip wie in der urspruenglichen Wochenkarte: die Statusfarbe (Grau/
-   Gruen/Orange) kommt AUSSCHLIESSLICH aus dem fachlichen Status. Die
+     Prinzip wie in der urspruenglichen Wochenkarte UND wie die Wochenbilanz
+   (wd/wavg) es bereits vormacht: NUR DREI Zustaende — nicht geloggt (Grau),
+   geloggt+Ziel unterstuetzt (Gruen), geloggt+Ziel nicht unterstuetzt
+   (Orange). Es gibt bewusst KEINE vierte "geloggt, aber nicht bewertbar"-
+   Sonderfarbe mehr: die Bilanz nutzt fuer ein fehlendes TDEE denselben
+   "||0"-Fallback wie die Wochenbilanz weiter oben (wd-Berechnung), statt
+   den Tag grau zu belassen — ein geloggter Tag ist IMMER farbig. Die
    Monatszugehoerigkeit (ext) veraendert NIEMALS die Farbe selbst, sondern
-   ausschliesslich die Deckkraft (einheitlich fuer alle drei Status, genau
-   wie frueher "opacity:x&&x.ext?.5:1"). Es gibt bewusst KEINE vierte
-   Sonderfarbe: ist ein Tag geloggt, aber mangels TDEE fuer seinen Monat
-   keine Bilanz berechenbar, faellt er auf dieselbe Grau-Darstellung zurueck
-   wie ein nicht geloggter Tag (statt faelschlich Weiss oder Blau zu
-   bekommen — Blau ist ausschliesslich UI-Akzentfarbe fuer Tabs/Navigation,
-   nie fuer Tagesbalken). */
+   ausschliesslich die Deckkraft (einheitlich fuer Grau/Gruen/Orange, genau
+   wie frueher "opacity:x&&x.ext?.5:1"). Blau ist ausschliesslich
+   UI-Akzentfarbe fuer Tabs/Navigation, nie fuer Tagesbalken. */
 function getWeekDayVisualState(day,dayGoalColorFn){
   const logged=isDayLogged(day);
-  const bilanz=(logged&&day.tdee)?(day.kcalIn||0)-day.tdee-(day.kcalBurned||0):null;
   const isExternalMonth=!!(day&&day.ext);
-  const rated=bilanz!=null;
-  const background=rated?dayGoalColorFn(bilanz):"var(--day-muted)";
-  return {logged,rated,supportsGoal:rated?background==="var(--good)":null,isExternalMonth,
+  if(!logged){
+    return {logged:false,supportsGoal:null,isExternalMonth,
+      background:"var(--day-muted)",opacity:isExternalMonth?0.5:1};
+  }
+  const bilanz=(day.kcalIn||0)-(day.tdee||0)-(day.kcalBurned||0);
+  const background=dayGoalColorFn(bilanz);
+  return {logged:true,supportsGoal:background==="var(--good)",isExternalMonth,
     background,opacity:isExternalMonth?0.5:1};
 }
 /* Letztes eingetragenes Gewicht (bis 60 Tage zurueck) */
@@ -3185,7 +3189,7 @@ function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,onClose}){
   );
 }
 
-function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openStats}){
+function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openStats,openSetup}){
   const [seg,setSeg]=useState(initialSeg||"Kalender");
   const [sy,setSy]=useState(NOW.getFullYear());
   const [sm,setSm]=useState(NOW.getMonth());
@@ -3254,6 +3258,16 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
       {seg==="Kalender"&&(
         <div>
           <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)}/>
+          {/* Grundbedarf laesst sich hier auch nachtraeglich fuer JEDEN
+              navigierten Monat einrichten (nicht nur den aktuellen) — ohne
+              TDEE lassen sich Tagesbilanzen fuer diesen Monat nicht sinnvoll
+              bewerten. */}
+          {!tdee&&(
+            <div className="card card-compact" style={{textAlign:"center",marginBottom:14}}>
+              <div className="sub" style={{marginBottom:10}}>Für {MN[sm]} {sy} ist noch kein Grundbedarf eingerichtet — Tagesbilanzen für diesen Monat können erst danach berechnet werden.</div>
+              <button className="btn btn2" onClick={()=>openSetup(sy,sm)}>Grundbedarf für {MN[sm]} einrichten</button>
+            </div>
+          )}
           {lg.length>0&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
               {[
@@ -3386,7 +3400,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   <div style={{display:"flex",gap:4,marginTop:3}}>
                     {slots.map((x,i)=>{
                       const s=dayStates[i];
-                      return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.rated?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
+                      return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.logged?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
                     })}
                   </div>
                 </div>
@@ -5777,7 +5791,7 @@ function App(){
   return(
     <div className="app">
       {tab==="heute"&&<HeuteView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openDay={openDay} openSetup={openSetup} openActivity={openActivity} openMeal={openMeal} openMealDetail={openMealDetail} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
-      {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openStats={(y,m)=>setStatsT({y,m})}/>}
+      {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openStats={(y,m)=>setStatsT({y,m})} openSetup={openSetup}/>}
       {tab==="ziele"&&<ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals}/>}
       <TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>
