@@ -177,6 +177,66 @@ function getRecentValidBalanceDays(dailyData, now, monthlySettings, maxDays){
   return out.reverse(); // chronologisch aufsteigend
 }
 
+/* ===== TEMPORAERES DIAGNOSE-WERKZEUG (keine Fachlogik, nichts wird
+   dauerhaft gespeichert) =====
+   Durchlaeuft GENAU denselben Suchraum wie getRecentValidBalanceDays()
+   (dieselbe dayKey()-Konvention, derselbe Suchhorizont), scannt aber IMMER
+   den vollen Suchhorizont (statt bei maxDays gueltigen Tagen zu stoppen)
+   und liefert fuer JEDEN geprueften Kalendertag ein vollstaendiges
+   Diagnoseobjekt inkl. Ablehnungsgruenden. Dient ausschliesslich der
+   Fehlersuche (z.B. ueber die Browser-Konsole) und veraendert kein
+   Verhalten der eigentlichen Prognose. */
+function debugRecentForecastDays({now, dailyData, monthlySettings, maxDays}){
+  maxDays = maxDays || FORECAST_CONFIG.maxRecentValidDays;
+  const searchHorizonDays = FORECAST_CONFIG.recentValidDaysSearchHorizonDays;
+  const out=[];
+  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let validCount = 0;
+  for(let scannedDays=0; scannedDays<searchHorizonDays; scannedDays++){
+    const y=cursor.getFullYear(), m=cursor.getMonth(), d=cursor.getDate();
+    const key = dayKey(y,m,d);
+    const day = dailyData[key];
+    const monthId = monthIdOf(y,m);
+    const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
+    const dayExists = !!day;
+    const logged = dayExists && day.logged===true;
+    const kcalIn = dayExists ? day.kcalIn : undefined;
+    const kcalBurned = dayExists ? day.kcalBurned : undefined;
+    const valid = isValidForecastDay(day, monthlyTdee);
+    const rejectionReasons=[];
+    if(!valid){
+      if(!dayExists){
+        rejectionReasons.push("missing_day");
+      }else{
+        if(!logged) rejectionReasons.push("not_logged");
+        if(!(isFinite(kcalIn)&&kcalIn>0)) rejectionReasons.push("missing_or_invalid_kcal_in");
+        if(kcalBurned!=null && (!isFinite(kcalBurned)||kcalBurned<0)) rejectionReasons.push("invalid_kcal_burned");
+      }
+      if(monthlyTdee==null) rejectionReasons.push("missing_monthly_tdee");
+    }
+    // Wuerde dieser (gueltige) Tag tatsaechlich in getRecentValidBalanceDays()
+    // landen, oder ist er zwar gueltig, aber weil bereits maxDays neuere
+    // gueltige Tage gefunden wurden, gar nicht mehr Teil der Stichprobe?
+    const usedByForecast = valid && validCount<maxDays;
+    if(valid) validCount++;
+    out.push({
+      date: new Date(cursor),
+      dayKey: key,
+      dayExists,
+      logged,
+      kcalIn: kcalIn==null?null:kcalIn,
+      kcalBurned: kcalBurned==null?null:kcalBurned,
+      monthId,
+      monthlyTdee,
+      valid,
+      usedByForecast,
+      rejectionReasons
+    });
+    cursor.setDate(cursor.getDate()-1);
+  }
+  return out.reverse(); // chronologisch aufsteigend
+}
+
 /* ===== 6. Robuster, zeitgewichteter Durchschnitt (Median + Winsorisierung) ===== */
 function calculateRobustAverageBalance(validDays, config){
   config = config || FORECAST_CONFIG;
@@ -1012,7 +1072,7 @@ if(typeof module!=="undefined" && module.exports){
   module.exports = {
     FORECAST_CONFIG, round1, round2, round4, monthIdOf, dateToIso, parseLocalIsoDate, dayKey, addMonthsSimple,
     getMonthlyTdee, calculateDailyEnergyBalance, isValidForecastDay, sanitizeBalanceForForecast,
-    getRecentValidBalanceDays, calculateRobustAverageBalance,
+    getRecentValidBalanceDays, debugRecentForecastDays, calculateRobustAverageBalance,
     validateWeightEntry, evaluateWeightEntryContext, classifyWeightEntries,
     weightEntryConfirmationKey, isEntryConfirmed, recordWeightConfirmation, removeWeightConfirmation,
     getLatestValidWeightEntry,
