@@ -1,9 +1,16 @@
 const { JSDOM, VirtualConsole } = require("jsdom");
 const fs = require("fs");
+const { installFixedDate } = require("./test-utils/fixed-date.js");
 
 const appSource = fs.readFileSync(process.env.APP_SOURCE_PATH||"/tmp/app_compiled.js", "utf-8");
 
-function createApp(seedFn){
+/* opts.now (optional): fixiert die Systemzeit dieses Windows auf einen
+   festen Zeitpunkt (new Date(2026,7,2,12,0,0) statt der echten
+   Container-Uhr) — fuer Tests, die ein bestimmtes Kalenderdatum als
+   "heute" voraussetzen und deshalb unabhaengig vom tatsaechlichen
+   Ausfuehrungstag deterministisch bleiben muessen. Ohne opts.now verhaelt
+   sich createApp exakt wie zuvor (echte Systemzeit). */
+function createApp(seedFn, opts){
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("error", (e)=>console.error("[jsdom console.error]", e));
   virtualConsole.on("jsdomError", (e)=>console.error("[jsdom internal error]", e.message, e.detail||""));
@@ -14,6 +21,9 @@ function createApp(seedFn){
     { url: "http://localhost/", pretendToBeVisual: true, storageQuota: 50_000_000, virtualConsole, runScripts:"outside-only" }
   );
   const { window } = dom;
+  /* Muss VOR dem App-Eval passieren (siehe Kommentar an installFixedDate) —
+     window.Date wird hier ueberschrieben, bevor irgendein App-Code laeuft. */
+  if(opts && opts.now) installFixedDate(window, opts.now);
   window.addEventListener("error", (e)=>{
     console.error("[window error]", e.error ? e.error.stack : e.message);
   });

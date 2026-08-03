@@ -8,7 +8,12 @@ function check(cond, label){
 }
 
 function seedStorage(win){
+  // Juli ("2026-6") UND August ("2026-7") brauchen einen Grundbedarf: die
+  // Seed-Daten loggen 12 Tage im Juli (20.-31.) — ohne Juli-TDEE gelten die
+  // fuer die Kalibrierung als "nicht genug Log-Tage" und es entsteht nie
+  // ein tracker_forecast_calibration-Profil (unabhaengig vom Testdatum).
   win.localStorage.setItem("tracker_mset", JSON.stringify({
+    "2026-6": {weight:90, fat:25, activityIdx:1},
     "2026-7": {weight:90, fat:25, activityIdx:1}
   }));
   const data = {};
@@ -39,7 +44,11 @@ async function main(){
   console.log("# BROWSER-AEHNLICHER TEST — jsdom + echter App-Code");
   console.log("############################################\n");
 
-  const dom = createApp(seedStorage);
+  // Feste Testzeit (kein Bezug zur echten Container-Uhr): Sonntag,
+  // 02.08.2026, 12:00 Uhr lokal — alle Szenarien in dieser Datei setzen
+  // genau diesen Tag als "heute" voraus (z.B. data["2026-7-2"] als
+  // heutiger Tagesschlüssel weiter unten).
+  const dom = createApp(seedStorage, {now:new Date(2026,7,2,12,0,0)});
   await flush(dom);
   const d = dom.window.document;
   const ls = dom.window.localStorage;
