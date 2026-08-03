@@ -249,6 +249,12 @@ const FORECAST_CONFIG = {
   minForecastValidDays: 7,
   regularForecastValidDays: 14,
   maxRecentValidDays: 14,
+  /* Wie viele Kalendertage rueckwaerts (ueber Monatsgrenzen hinweg)
+     hoechstens durchsucht werden duerfen, um die letzten maxRecentValidDays
+     gueltigen Ernaehrungstage zu finden — verhindert unbegrenztes
+     Zurueckscannen bei sehr luckenhaftem Logging oder lange inaktiven
+     Konten (siehe getRecentValidBalanceDays). */
+  recentValidDaysSearchHorizonDays: 60,
 
   idealAnchorAgeDays: 7,
   maxAnchorAgeDays: 14,
@@ -365,17 +371,27 @@ function sanitizeBalanceForForecast(balance, monthlyTdee, config){
   };
 }
 
-/* ===== 6. Juengste gueltige Bilanztage (nur laufender Kalendermonat) ===== */
+/* ===== 6. Juengste gueltige Bilanztage (kalenderuebergreifend) =====
+   Sucht rueckwaerts ab "now" nach den letzten gueltigen Ernaehrungstagen,
+   OHNE an der Monatsgrenze zu stoppen — ein Tag Ende Juli zaehlt genauso
+   wie ein Tag Anfang August, solange fuer SEINEN EIGENEN Kalendermonat ein
+   gueltiger TDEE existiert (jeder Tag nutzt getMonthlyTdee() fuer sein
+   eigenes Jahr/seinen eigenen Monat, nicht den TDEE von "now"). Fehlt fuer
+   einen Monat der TDEE, wird NUR dieser Tag uebersprungen — die Suche geht
+   mit aelteren Tagen weiter, statt komplett abzubrechen. Die Suche stoppt,
+   sobald entweder maxDays gueltige Tage gefunden wurden ODER der maximale
+   Suchhorizont (FORECAST_CONFIG.recentValidDaysSearchHorizonDays
+   Kalendertage rueckwaerts) erreicht ist. */
 function getRecentValidBalanceDays(dailyData, now, monthlySettings, maxDays){
   maxDays = maxDays || FORECAST_CONFIG.maxRecentValidDays;
-  const y=now.getFullYear(), m=now.getMonth();
-  const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
-  if(monthlyTdee==null) return [];
+  const searchHorizonDays = FORECAST_CONFIG.recentValidDaysSearchHorizonDays;
   const out=[];
-  const cursor = new Date(y,m,now.getDate());
-  const monthStart = new Date(y,m,1);
-  while(cursor>=monthStart && out.length<maxDays){
-    const day = dailyData[dayKey(cursor.getFullYear(),cursor.getMonth(),cursor.getDate())];
+  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let scannedDays = 0;
+  while(out.length<maxDays && scannedDays<searchHorizonDays){
+    const y=cursor.getFullYear(), m=cursor.getMonth();
+    const monthlyTdee = getMonthlyTdee(y,m,monthlySettings); // jeder Tag nutzt SEINEN EIGENEN Monatsbedarf
+    const day = dailyData[dayKey(y,m,cursor.getDate())];
     if(isValidForecastDay(day, monthlyTdee)){
       const originalBalance = calculateDailyEnergyBalance(day, monthlyTdee);
       const sanitized = sanitizeBalanceForForecast(originalBalance, monthlyTdee, FORECAST_CONFIG);
@@ -388,6 +404,7 @@ function getRecentValidBalanceDays(dailyData, now, monthlySettings, maxDays){
         clampReason: sanitized.clampReason
       });
     }
+    scannedDays++;
     cursor.setDate(cursor.getDate()-1);
   }
   return out.reverse(); // chronologisch aufsteigend
@@ -693,10 +710,17 @@ function DEFAULT_CALIBRATION_PROFILE(){
   };
 }
 
-/* ===== 22. Aktuelle Datenqualitaet ===== */
+/* ===== 22. Aktuelle Datenqualitaet =====
+   Coverage = gueltige Tage / tatsaechlich betrachtetes Trendfenster (Spanne
+   vom AELTESTEN gefundenen gueltigen Tag bis "now", inklusive). Bewusst
+   NICHT mehr an "Tage seit Monatsanfang" gekoppelt: recentDays kann jetzt
+   kalenderuebergreifend sein (siehe getRecentValidBalanceDays), daher
+   wuerde eine Kopplung an den laufenden Monat die Qualitaet am
+   Monatsanfang kuenstlich verschlechtern, obwohl dieselben Tage bei
+   Betrachtung vom Vormonat aus voll gezaehlt haetten. */
 function calculateCurrentDataQuality({recentDays, anchorAgeDays, calibrationProfile, now}){
-  const daysElapsedInMonth = now.getDate();
-  const coverage = recentDays.length / Math.max(1, Math.min(daysElapsedInMonth, FORECAST_CONFIG.maxRecentValidDays));
+  const windowSpanDays = recentDays.length>0 ? daysBetween(recentDays[0].date, now)+1 : 0;
+  const coverage = windowSpanDays>0 ? recentDays.length/windowSpanDays : 0;
   let stage = "insufficient";
   if(recentDays.length>=FORECAST_CONFIG.regularForecastValidDays && coverage>=0.5){
     stage = (calibrationProfile.calibratedMonths||0)>=3 ? "personalized" : "good";
