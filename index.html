@@ -14,6 +14,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://unpkg.com/@zxing/browser@latest"></script>
+<!-- Phase 1 (Migrationsplan): reine Hilfsfunktionen aus dem App-Code
+     ausgelagert, als normale globale Skripte VOR dem Babel-App-Code
+     geladen (kein Bundler, keine ES-Module). -->
+<script src="date-utils.js"></script>
+<script src="format.js"></script>
+<script src="storage.js"></script>
 <style>
 /* ===== DESIGN-TOKENS =====
    Alle Farben liegen in CSS-Variablen. Dark Mode tauscht nur die Variablen —
@@ -1444,40 +1450,9 @@ const ACT=[
   {l:"Überwiegend stehen",e:"Handwerker, Kellner",f:1.85},
   {l:"Körperlich anstrengend",e:"Bauarbeiter, Sportler",f:2.2},
 ];
-function daysIn(y,m){return new Date(y,m+1,0).getDate();}
-function firstDay(y,m){let d=new Date(y,m,1).getDay();return d===0?6:d-1;}
-function isoWeek(y,m,d){
-  const dt=new Date(y,m,d);
-  dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);
-  const y1=new Date(dt.getFullYear(),0,4);
-  return 1+Math.round(((dt-y1)/86400000-3+(y1.getDay()+6)%7)/7);
-}
-/* Montag der Woche, die dieses Datum enthaelt — als echtes Datum statt nur
-   einer Wochennummer. Wochennummern allein brechen am Jahreswechsel
-   (KW1 des neuen Jahres ist zahlenmaessig kleiner als KW52 des alten,
-   obwohl sie zeitlich danach liegt) — Sortierung erfolgt daher immer ueber
-   dieses Datum, nie ueber die nackte Nummer. */
-function weekStartDate(y,m,d){
-  const dt=new Date(y,m,d);
-  const wd=(dt.getDay()+6)%7; // 0=Montag
-  dt.setDate(dt.getDate()-wd);
-  dt.setHours(0,0,0,0);
-  return dt;
-}
-/* Gruppiert Tage nach Kalenderwoche und sortiert die Gruppen ueber das
-   tatsaechliche Wochen-Startdatum (nicht die Wochennummer) — funktioniert
-   dadurch auch korrekt ueber Jahreswechsel hinweg. */
-function groupByWeekSorted(daysArr,getYMD){
-  const map={};
-  daysArr.forEach(x=>{
-    const {y,m,d}=getYMD(x);
-    const start=weekStartDate(y,m,d).getTime();
-    const kw=isoWeek(y,m,d);
-    if(!map[start])map[start]={kw,start,items:[]};
-    map[start].items.push(x);
-  });
-  return Object.values(map).sort((a,b)=>a.start-b.start);
-}
+/* daysIn, firstDay, isoWeek, weekStartDate, groupByWeekSorted: siehe
+   date-utils.js (Phase 1 des Migrationsplans, per <script src> vor diesem
+   Block geladen). */
 /* Liefert alle Tage eines Monats als VOLLSTAENDIGE Montag-Sonntag-Wochen —
    Tage aus dem Vor-/Folgemonat werden mit "own:false" ergaenzt und in der
    Anzeige nur ausgegraut, statt den Kalender an Wochenraendern abzuschneiden. */
@@ -1523,8 +1498,7 @@ function macroTargets(weight,fat,budgetKcal){
   const carbs=Math.round(remainingKcal/4);
   return {carbs,protein,fat:fatG};
 }
-function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
-function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+/* load, save: siehe storage.js (Phase 1 des Migrationsplans). */
 const dk=(y,m,d)=>y+"-"+m+"-"+d;
 function dayData(data,y,m,d){return data[dk(y,m,d)]||{};}
 /* EINZIGE Quelle dafuer, ob ein Kalendertag als "geloggt" gilt. JEDE Stelle
@@ -1654,7 +1628,7 @@ function lastWeightEntry(data){
   }
   return null;
 }
-function fmtGym(mins){return Math.floor(mins/60)+"h "+Math.round(mins%60)+"min";}
+/* fmtGym: siehe format.js (Phase 1 des Migrationsplans). */
 
 /* ===== ZEITRAUM-SYSTEM FUER DIE GEWICHTSANALYSE =====
    Zentrale Konfiguration + Hilfsfunktionen — bewusst an EINER Stelle, damit
@@ -1673,11 +1647,7 @@ const WEIGHT_RANGES=[
    gewaehlten Zeitraum. */
 const WEIGHT_STAT_DELTA_LABEL={week:"Woche",month:"Monat",quarter:"Quartal",halfYear:"Halbjahr",year:"Jahr",all:"Gesamt"};
 const RANGE_STEP={month:1,quarter:3,halfYear:6,year:12,all:0}; // "week" steppt separat in Tagen
-function addMonths(y,m,delta){
-  const total=y*12+m+delta;
-  return {y:Math.floor(total/12),m:((total%12)+12)%12};
-}
-function daysInMonthOf(y,m){return new Date(y,m+1,0).getDate();}
+/* addMonths, daysInMonthOf: siehe date-utils.js (Phase 1 des Migrationsplans). */
 /* Liefert IMMER vollstaendige Start-/End-TAGE (sy/sm/sd bis ey/em/ed) eines
    Zeitraums — nicht nur Monate. Fuer "Woche" zaehlt der Tag wirklich (Montag
    bis Sonntag), bei Monat/Quartal/Halbjahr/Jahr ist sd immer 1 und ed immer
@@ -1865,18 +1835,7 @@ const NUT_OTHER=[
 const NUT_ALL=[...NUT_MAIN,...NUT_FAT_EXTRA,...NUT_VIT_BASE,...NUT_VIT_MORE,
   ...NUT_MIN_BASE,...NUT_MIN_MORE,...NUT_OTHER];
 
-/* Zahlen-Eingabe: erlaubt Komma UND Punkt, keine negativen Werte. */
-function parseNum(v){
-  if(v===""||v==null)return null;
-  const n=parseFloat(String(v).replace(",","."));
-  if(isNaN(n)||n<0)return null;
-  return n;
-}
-function fmtNum(n,dec=1){
-  if(n==null)return "0";
-  const r=Math.round(n*Math.pow(10,dec))/Math.pow(10,dec);
-  return String(r).replace(".",",");
-}
+/* parseNum, fmtNum: siehe format.js (Phase 1 des Migrationsplans). */
 
 /* ===== EIGENE PRODUKTBIBLIOTHEK =====
    Persoenliche, geraeteweise gespeicherte Lebensmittel. Komplett lokal,

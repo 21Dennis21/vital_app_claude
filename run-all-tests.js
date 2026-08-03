@@ -143,6 +143,14 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
   execFileSync(process.execPath,["--check",compiledAppPath],{stdio:"pipe"});
 });
 
+// ========== 2b. Syntax-Check ausgelagerte Utility-Skripte (Phase 1) ==========
+section("2b. Syntax-Check date-utils.js / format.js / storage.js");
+["date-utils.js","format.js","storage.js"].forEach(file=>{
+  runStep(file+": Syntax ok (node --check)", ()=>{
+    execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
+  });
+});
+
 // ========== 3. Forecast-Engine Node-Unit-Tests ==========
 section("3. Forecast-Engine Node-Unit-Tests");
 ENGINE_TESTS.forEach(file=>{

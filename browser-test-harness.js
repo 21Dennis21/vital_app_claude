@@ -1,5 +1,6 @@
 const { JSDOM, VirtualConsole } = require("jsdom");
 const fs = require("fs");
+const path = require("path");
 const { installFixedDate } = require("./test-utils/fixed-date.js");
 
 const appSource = fs.readFileSync(process.env.APP_SOURCE_PATH||"/tmp/app_compiled.js", "utf-8");
@@ -49,6 +50,16 @@ function createApp(seedFn, opts){
   window.ReactDOM = ReactDOMClient;
 
   if(seedFn) seedFn(window);
+
+  /* Spiegelt die <script src="date-utils.js/format.js/storage.js">-Tags aus
+     index.html: in echten Browsern laufen diese als normale globale
+     Skripte VOR dem Babel-App-Code (siehe Phase 1 des Migrationsplans).
+     Hier werden sie deshalb ebenfalls vor dem eval() des App-Codes in
+     dasselbe Window ausgewertet — sonst waeren daysIn/load/fmtNum & Co.
+     im Test unbekannt, obwohl sie im echten Browser da sind. */
+  ["date-utils.js","format.js","storage.js"].forEach(file=>{
+    dom.window.eval(fs.readFileSync(path.join(__dirname,file),"utf-8"));
+  });
 
   try{
     dom.window.eval(appSource);
