@@ -66,7 +66,7 @@ function createApp(seedFn, opts){
      werden alle Vor-Skripte + der App-Code hier zu EINEM einzigen
      eval()-Aufruf zusammengefuegt, in exakt derselben Reihenfolge wie die
      <script>-Tags in index.html. */
-  const preScripts = ["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js"]
+  const preScripts = ["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js"]
     .map(file=>fs.readFileSync(path.join(__dirname,file),"utf-8"));
   const combinedSource = [...preScripts, appSource].join("\n;\n");
 
