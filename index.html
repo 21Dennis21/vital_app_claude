@@ -410,15 +410,66 @@ function getRecentValidBalanceDays(dailyData, now, monthlySettings, maxDays){
   return out.reverse(); // chronologisch aufsteigend
 }
 
+/* ===== TEMPORAERE DIAGNOSE-KENNUNG =====
+   Rein informativer Marker OHNE jeden Einfluss auf die Berechnung — dient
+   ausschliesslich dazu, in einer veroeffentlichten Umgebung nachweisen zu
+   koennen, ob dort wirklich der aktuelle Engine-Stand (kalenderuebergreifende
+   Datenauswahl, siehe getRecentValidBalanceDays) laeuft oder noch ein
+   aelterer/gecachter Build. Erscheint als forecastBuildId im Ergebnis von
+   calculateCurrentMonthForecast() (siehe dort) — KEINE zweite Berechnung,
+   nur ein zusaetzliches Feld auf demselben Objekt. Kann nach Abschluss der
+   Fehlersuche wieder entfernt werden. */
+const FORECAST_BUILD_ID = "cross-month-valid-days-v1";
+
 /* ===== TEMPORAERES DIAGNOSE-WERKZEUG (keine Fachlogik, nichts wird
    dauerhaft gespeichert) =====
-   Durchlaeuft GENAU denselben Suchraum wie getRecentValidBalanceDays()
+   buildDayForecastDiagnostic() bewertet GENAU EINEN Kalendertag exakt nach
+   denselben Regeln wie isValidForecastDay()/getMonthlyTdee() und liefert
+   dazu ein vollstaendiges Diagnoseobjekt inkl. Ablehnungsgruenden — nutzbar
+   sowohl fuer einen fortlaufenden Suchhorizont (debugRecentForecastDays)
+   als auch fuer gezielt einzeln abgefragte, feste Kalendertage (z.B. einen
+   konkret gemeldeten Zeitraum), unabhaengig vom aktuellen "now". */
+function buildDayForecastDiagnostic(y, m, d, dailyData, monthlySettings){
+  const key = dayKey(y,m,d);
+  const day = dailyData[key];
+  const monthId = monthIdOf(y,m);
+  const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
+  const dayExists = !!day;
+  const logged = dayExists && day.logged===true;
+  const kcalIn = dayExists ? day.kcalIn : undefined;
+  const kcalBurned = dayExists ? day.kcalBurned : undefined;
+  const valid = isValidForecastDay(day, monthlyTdee);
+  const rejectionReasons=[];
+  if(!valid){
+    if(!dayExists){
+      rejectionReasons.push("missing_day");
+    }else{
+      if(!logged) rejectionReasons.push("not_logged");
+      if(!(isFinite(kcalIn)&&kcalIn>0)) rejectionReasons.push("missing_or_invalid_kcal_in");
+      if(kcalBurned!=null && (!isFinite(kcalBurned)||kcalBurned<0)) rejectionReasons.push("invalid_kcal_burned");
+    }
+    if(monthlyTdee==null) rejectionReasons.push("missing_monthly_tdee");
+  }
+  return {
+    date: new Date(y,m,d),
+    dayKey: key,
+    dayExists,
+    logged,
+    kcalIn: kcalIn==null?null:kcalIn,
+    kcalBurned: kcalBurned==null?null:kcalBurned,
+    monthId,
+    monthlyTdee,
+    valid,
+    rejectionReasons
+  };
+}
+/* Durchlaeuft GENAU denselben Suchraum wie getRecentValidBalanceDays()
    (dieselbe dayKey()-Konvention, derselbe Suchhorizont), scannt aber IMMER
    den vollen Suchhorizont (statt bei maxDays gueltigen Tagen zu stoppen)
-   und liefert fuer JEDEN geprueften Kalendertag ein vollstaendiges
-   Diagnoseobjekt inkl. Ablehnungsgruenden. Dient ausschliesslich der
-   Fehlersuche (z.B. ueber die Browser-Konsole) und veraendert kein
-   Verhalten der eigentlichen Prognose. */
+   und liefert fuer JEDEN geprueften Kalendertag das Diagnoseobjekt aus
+   buildDayForecastDiagnostic(). Dient ausschliesslich der Fehlersuche
+   (z.B. ueber die Browser-Konsole oder ein Diagnose-Sheet) und veraendert
+   kein Verhalten der eigentlichen Prognose. */
 function debugRecentForecastDays({now, dailyData, monthlySettings, maxDays}){
   maxDays = maxDays || FORECAST_CONFIG.maxRecentValidDays;
   const searchHorizonDays = FORECAST_CONFIG.recentValidDaysSearchHorizonDays;
@@ -426,45 +477,13 @@ function debugRecentForecastDays({now, dailyData, monthlySettings, maxDays}){
   const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let validCount = 0;
   for(let scannedDays=0; scannedDays<searchHorizonDays; scannedDays++){
-    const y=cursor.getFullYear(), m=cursor.getMonth(), d=cursor.getDate();
-    const key = dayKey(y,m,d);
-    const day = dailyData[key];
-    const monthId = monthIdOf(y,m);
-    const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
-    const dayExists = !!day;
-    const logged = dayExists && day.logged===true;
-    const kcalIn = dayExists ? day.kcalIn : undefined;
-    const kcalBurned = dayExists ? day.kcalBurned : undefined;
-    const valid = isValidForecastDay(day, monthlyTdee);
-    const rejectionReasons=[];
-    if(!valid){
-      if(!dayExists){
-        rejectionReasons.push("missing_day");
-      }else{
-        if(!logged) rejectionReasons.push("not_logged");
-        if(!(isFinite(kcalIn)&&kcalIn>0)) rejectionReasons.push("missing_or_invalid_kcal_in");
-        if(kcalBurned!=null && (!isFinite(kcalBurned)||kcalBurned<0)) rejectionReasons.push("invalid_kcal_burned");
-      }
-      if(monthlyTdee==null) rejectionReasons.push("missing_monthly_tdee");
-    }
+    const diag = buildDayForecastDiagnostic(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), dailyData, monthlySettings);
     // Wuerde dieser (gueltige) Tag tatsaechlich in getRecentValidBalanceDays()
     // landen, oder ist er zwar gueltig, aber weil bereits maxDays neuere
     // gueltige Tage gefunden wurden, gar nicht mehr Teil der Stichprobe?
-    const usedByForecast = valid && validCount<maxDays;
-    if(valid) validCount++;
-    out.push({
-      date: new Date(cursor),
-      dayKey: key,
-      dayExists,
-      logged,
-      kcalIn: kcalIn==null?null:kcalIn,
-      kcalBurned: kcalBurned==null?null:kcalBurned,
-      monthId,
-      monthlyTdee,
-      valid,
-      usedByForecast,
-      rejectionReasons
-    });
+    const usedByForecast = diag.valid && validCount<maxDays;
+    if(diag.valid) validCount++;
+    out.push({...diag, usedByForecast});
     cursor.setDate(cursor.getDate()-1);
   }
   return out.reverse(); // chronologisch aufsteigend
@@ -829,28 +848,35 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
 
   const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
   if(monthlyTdee==null){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["no_monthly_tdee"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["no_monthly_tdee"], forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const monthEnd = new Date(y,m+1,0);
   if(startOfDay(now)>startOfDay(monthEnd)){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["month_already_ended"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["month_already_ended"], forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const anchor = getLatestValidWeightEntry(weightEntries, now, FORECAST_CONFIG, dailyData, monthlySettings, weightConfirmations);
   if(!anchor){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["missing_anchor_weight"]};
+    return {status:"insufficient_data", forecastWeightKg:null, reasons:["missing_anchor_weight"], forecastBuildId:FORECAST_BUILD_ID};
   }
   const anchorAgeDays = daysBetween(anchor.date, now);
   if(anchorAgeDays>FORECAST_CONFIG.maxAnchorAgeDays){
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["anchor_weight_too_old"],
-      requirements:{maxAnchorAgeDays:FORECAST_CONFIG.maxAnchorAgeDays, anchorAgeDays}};
+      requirements:{maxAnchorAgeDays:FORECAST_CONFIG.maxAnchorAgeDays, anchorAgeDays},
+      anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const recentDays = getRecentValidBalanceDays(dailyData, now, monthlySettings, FORECAST_CONFIG.maxRecentValidDays);
   if(recentDays.length<FORECAST_CONFIG.minForecastValidDays){
+    // anchorDate/anchorWeightKg werden HIER absichtlich mit ausgegeben, obwohl
+    // status "insufficient_data" ist: der Anker wurde oben bereits gefunden
+    // (sonst waere schon "missing_anchor_weight" zurueckgegeben worden) -- es
+    // ist keine zweite/neue Berechnung, nur dieselben bereits vorhandenen
+    // Werte auch in diesem Rueckgabezweig sichtbar zu machen (Diagnose).
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["not_enough_valid_log_days"],
-      requirements:{validDaysRequired:FORECAST_CONFIG.minForecastValidDays, validDaysAvailable:recentDays.length}};
+      requirements:{validDaysRequired:FORECAST_CONFIG.minForecastValidDays, validDaysAvailable:recentDays.length},
+      anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
   }
 
   const robust = calculateRobustAverageBalance(recentDays, FORECAST_CONFIG);
@@ -899,7 +925,8 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
     calibratedMonths: calibrationProfile.calibratedMonths||0,
     dataQuality: quality,
     uncertainty,
-    reasons: []
+    reasons: [],
+    forecastBuildId: FORECAST_BUILD_ID
   };
 }
 
@@ -1305,7 +1332,7 @@ if(typeof module!=="undefined" && module.exports){
   module.exports = {
     FORECAST_CONFIG, round1, round2, round4, monthIdOf, dateToIso, parseLocalIsoDate, dayKey, addMonthsSimple,
     getMonthlyTdee, calculateDailyEnergyBalance, isValidForecastDay, sanitizeBalanceForForecast,
-    getRecentValidBalanceDays, debugRecentForecastDays, calculateRobustAverageBalance,
+    getRecentValidBalanceDays, debugRecentForecastDays, buildDayForecastDiagnostic, FORECAST_BUILD_ID, calculateRobustAverageBalance,
     validateWeightEntry, evaluateWeightEntryContext, classifyWeightEntries,
     weightEntryConfirmationKey, isEntryConfirmed, recordWeightConfirmation, removeWeightConfirmation,
     getLatestValidWeightEntry,
@@ -2858,11 +2885,141 @@ function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,weekGoalColor,on
   );
 }
 
+/* ===== TEMPORAERES DIAGNOSE-SHEET fuer die Live-Prognose =====
+   Nur zur Fehlersuche der kalenderuebergreifenden Datenauswahl gedacht —
+   NACH ABSCHLUSS DER FEHLERSUCHE WIEDER ENTFERNEN (inkl. der antippbaren
+   "Live-Prognose"-Ueberschrift in VerlaufView, showForecastDiag-State,
+   debugRecentForecastDays/buildDayForecastDiagnostic/FORECAST_BUILD_ID in
+   forecast-engine.js). Liest tracker_data/tracker_mset/
+   tracker_forecast_calibration/tracker_weight_confirmations DIREKT per
+   load() aus localStorage — unabhaengig von React-Props/State, damit
+   zweifelsfrei die tatsaechlich gespeicherten Rohdaten gezeigt werden statt
+   einer moeglicherweise veralteten Zwischenkopie. Zeigt NUR an, veraendert
+   nichts. "forecast" wird NICHT neu berechnet, sondern 1:1 als Prop
+   uebernommen — exakt dasselbe Objekt, aus dem auch die sichtbare
+   Live-Prognose-Karte bzw. der Leerzustand-Text erzeugt werden. */
+function ForecastDiagnosticSheet({forecast,currentDay,onClose}){
+  const rawData=load("tracker_data",{});
+  const rawMSet=load("tracker_mset",{});
+  const rawCalib=load("tracker_forecast_calibration",null);
+  const rawConfirmations=load("tracker_weight_confirmations",[]);
+  const {dailyData,monthlySettings}=buildEngineInputsFor(currentDay,rawData,rawMSet);
+  const trace=debugRecentForecastDays({now:currentDay,dailyData,monthlySettings});
+
+  const curY=currentDay.getFullYear(),curM=currentDay.getMonth();
+  const prevYM=addMonthsSimple(curY,curM,-1);
+  const monthInfo=(y,m)=>({
+    label:MN[m]+" "+y, monthId:monthIdOf(y,m),
+    presentInTrackerMSet:!!rawMSet[y+"-"+m],
+    tdee:getMonthlyTdee(y,m,monthlySettings),
+  });
+  const curMonthInfo=monthInfo(curY,curM);
+  const prevMonthInfo=monthInfo(prevYM.y,prevYM.m);
+
+  // Fest benannter, konkret gemeldeter Zeitraum.
+  const KNOWN_DATES=[{y:2026,m:6,d:29},{y:2026,m:6,d:30},{y:2026,m:6,d:31},{y:2026,m:7,d:1},{y:2026,m:7,d:2},{y:2026,m:7,d:3}];
+  const knownChecks=KNOWN_DATES.map(({y,m,d})=>{
+    const diag=buildDayForecastDiagnostic(y,m,d,dailyData,monthlySettings);
+    const otherM=m===6?7:6;
+    const altKey=dayKey(y,otherM,d);
+    const altRecord=rawData[altKey];
+    return {...diag,label:String(d).padStart(2,"0")+"."+String(m+1).padStart(2,"0")+"."+y,altKey,altRecordExists:!!altRecord};
+  });
+
+  const KV=({k,v})=>(
+    <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"3px 0",fontSize:12}}>
+      <span className="sub">{k}</span><span style={{fontWeight:600,textAlign:"right",wordBreak:"break-all"}}>{String(v)}</span>
+    </div>
+  );
+
+  return(
+    <Sheet onClose={onClose} title="🩺 Live-Prognose Diagnose (temporär)">
+      <div className="sub" style={{marginBottom:14}}>
+        Nur zur Fehlersuche. Zeigt ausschließlich bereits gespeicherte Daten — nichts wird verändert.
+      </div>
+
+      <div className="card" style={{marginBottom:12,padding:"12px 14px"}}>
+        <div className="lbl" style={{marginBottom:6}}>Engine-Status (exakt dasselbe forecast-Objekt wie die Karte)</div>
+        <KV k="Engine-Datum (currentDay)" v={currentDay.toString()}/>
+        <KV k="forecastBuildId" v={forecast.forecastBuildId||"(fehlt — alter Build?)"}/>
+        <KV k="modelVersion" v={forecast.modelVersion!=null?forecast.modelVersion:"–"}/>
+        <KV k="status" v={forecast.status}/>
+        <KV k="reasons" v={(forecast.reasons||[]).join(", ")||"–"}/>
+        <KV k="validDaysRequired" v={forecast.requirements?forecast.requirements.validDaysRequired:"–"}/>
+        <KV k="validDaysAvailable" v={forecast.requirements?forecast.requirements.validDaysAvailable:"–"}/>
+        <KV k="Ankerdatum (anchorDate)" v={forecast.anchorDate||"–"}/>
+        <KV k="Ankergewicht (anchorWeightKg)" v={forecast.anchorWeightKg!=null?forecast.anchorWeightKg+" kg":"–"}/>
+        <KV k="Suchhorizont (Kalendertage rückwärts)" v={FORECAST_CONFIG.recentValidDaysSearchHorizonDays}/>
+        <KV k="Sichtbarer Text" v={forecast.status!=="ok"?forecastEmptyStateText(forecast):"(reguläre Karte, kein Leerzustand-Text)"}/>
+      </div>
+
+      <div className="card" style={{marginBottom:12,padding:"12px 14px"}}>
+        <div className="lbl" style={{marginBottom:6}}>Monatseinstellungen (buildEngineMonthlySettings)</div>
+        {[curMonthInfo,prevMonthInfo].map(mi=>(
+          <div key={mi.monthId} style={{marginBottom:8,paddingBottom:8,borderBottom:"1px solid var(--line)"}}>
+            <div style={{fontWeight:700,fontSize:13}}>{mi.label} ({mi.monthId})</div>
+            <KV k="in tracker_mset vorhanden" v={mi.presentInTrackerMSet?"ja":"NEIN"}/>
+            <KV k="TDEE (getMonthlyTdee)" v={mi.tdee!=null?mi.tdee+" kcal":"fehlt"}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{marginBottom:12,padding:"12px 14px"}}>
+        <div className="lbl" style={{marginBottom:6}}>Gemeldeter Zeitraum 29.07.–03.08.2026 im Detail</div>
+        {knownChecks.map(c=>(
+          <div key={c.dayKey} style={{marginBottom:8,paddingBottom:8,borderBottom:"1px solid var(--line)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:13}}>{c.label}</span>
+              <span style={{fontWeight:700,fontSize:12,color:c.valid?"var(--good)":"var(--amber)"}}>{c.valid?"✔ gültig":"✖ abgelehnt"}</span>
+            </div>
+            <KV k="erwarteter dayKey" v={c.dayKey}/>
+            <KV k="monthId" v={c.monthId}/>
+            <KV k="Datensatz vorhanden" v={c.dayExists?"ja":"NEIN"}/>
+            <KV k="logged" v={String(c.logged)}/>
+            <KV k="kcalIn" v={c.kcalIn==null?"–":c.kcalIn}/>
+            <KV k="kcalBurned" v={c.kcalBurned==null?"–":c.kcalBurned}/>
+            <KV k="Monats-TDEE" v={c.monthlyTdee==null?"fehlt":c.monthlyTdee}/>
+            {!c.valid&&<KV k="Ablehnungsgrund(e)" v={c.rejectionReasons.join(", ")}/>}
+            <KV k={"Prüfung auf falschen Monat ("+c.altKey+")"} v={c.altRecordExists?"⚠️ Datensatz unter diesem Key gefunden":"kein Datensatz unter diesem Key"}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{padding:"12px 14px"}}>
+        <div className="lbl" style={{marginBottom:6}}>Alle geprüften Tage im 60-Tage-Suchhorizont ({trace.length})</div>
+        {trace.slice().reverse().map(t=>(
+          <div key={t.dayKey} style={{display:"flex",justifyContent:"space-between",gap:6,padding:"4px 0",borderBottom:"1px solid var(--line)",fontSize:11}}>
+            <span style={{flexShrink:0,width:74}}>{t.date.getDate()+"."+(t.date.getMonth()+1)+"."+t.date.getFullYear()}</span>
+            <span className="sub" style={{flexShrink:0,width:64}}>{t.dayKey}</span>
+            <span className="sub" style={{flexShrink:0,width:56}}>{t.monthId}</span>
+            <span style={{flexShrink:0,width:16,textAlign:"center"}}>{t.dayExists?"✓":"–"}</span>
+            <span style={{flex:1,textAlign:"right",fontWeight:600,color:t.valid?"var(--good)":(t.dayExists?"var(--amber)":"var(--ink3)")}}>
+              {t.valid?"gültig":(t.dayExists?t.rejectionReasons.join(","):"–")}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{marginTop:12,padding:"12px 14px"}}>
+        <div className="lbl" style={{marginBottom:6}}>Rohdaten (nur Anzeige)</div>
+        <KV k="tracker_forecast_calibration vorhanden" v={rawCalib?"ja":"nein"}/>
+        <KV k="tracker_weight_confirmations Anzahl" v={(rawConfirmations||[]).length}/>
+        <KV k="tracker_data Anzahl Tage gesamt" v={Object.keys(rawData).length}/>
+        <KV k="tracker_mset Anzahl Monate gesamt" v={Object.keys(rawMSet).length}/>
+      </div>
+    </Sheet>
+  );
+}
+
 function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openStats,openSetup}){
   const [seg,setSeg]=useState(initialSeg||"Kalender");
   const [sy,setSy]=useState(NOW.getFullYear());
   const [sm,setSm]=useState(NOW.getMonth());
   const [sport,setSport]=useState("bike");
+  /* TEMPORAER (Fehlersuche kalenderuebergreifende Live-Prognose): "Live-
+     Prognose"-Ueberschrift antippbar, oeffnet ein Diagnose-Sheet. Nach
+     Abschluss der Fehlersuche wieder entfernen (siehe ForecastDiagnosticSheet). */
+  const [showForecastDiag,setShowForecastDiag]=useState(false);
   /* Detailansicht einer einzelnen Kalenderwoche im Rückblick — Architektur
      bewusst schon jetzt vorbereitet (antippbare Wochenkarte), die
      eigentliche Detailansicht bleibt hier absichtlich noch einfach
@@ -3174,7 +3331,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           {(()=>{
             if(forecast.status!=="ok")return(
               <div className="card" style={{animation:"fadeUp .2s cubic-bezier(.32,.72,.28,1)"}}>
-                <div className="lbl" style={{marginBottom:6}}>Live-Prognose</div>
+                <div className="lbl" style={{marginBottom:6,cursor:"pointer"}} onClick={()=>setShowForecastDiag(true)}>Live-Prognose</div>
                 <div className="sub" style={{fontWeight:600}}>{forecastEmptyStateText(forecast)}</div>
               </div>
             );
@@ -3205,7 +3362,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
 
             return(
               <div className="card" style={{animation:"fadeUp .2s cubic-bezier(.32,.72,.28,1)"}}>
-                <div className="lbl" style={{marginBottom:2}}>Live-Prognose</div>
+                <div className="lbl" style={{marginBottom:2,cursor:"pointer"}} onClick={()=>setShowForecastDiag(true)}>Live-Prognose</div>
                 <div className="sub" style={{marginBottom:12}}>Basis: Ø der letzten {forecast.validBalanceDays} geloggten Tage — je mehr Daten, desto verlässlicher.</div>
                 <div className="row" style={{padding:"8px 0",borderBottom:"1px solid var(--line)"}}>
                   <span className="sub">Ø Bilanz / Tag</span>
@@ -3415,6 +3572,9 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           })()}
         </div>
       )}
+      {/* TEMPORAER: Diagnose-Sheet fuer die kalenderuebergreifende
+          Live-Prognose, siehe ForecastDiagnosticSheet weiter unten. */}
+      {showForecastDiag&&<ForecastDiagnosticSheet forecast={forecast} currentDay={currentDay} onClose={()=>setShowForecastDiag(false)}/>}
     </div>
   );
 }
