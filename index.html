@@ -22,6 +22,8 @@
 <script src="storage.js"></script>
 <!-- Phase 2C (Migrationsplan): reine Gewichts-/BMR-Logik ausgelagert. -->
 <script src="weight-engine.js"></script>
+<!-- Phase 2D (Migrationsplan): reine Sport-Aggregationslogik ausgelagert. -->
+<script src="sport-engine.js"></script>
 <!-- Phase 2B (Migrationsplan): reine Kalender-/Tagesdaten-Logik ausgelagert. -->
 <script src="calendar-engine.js"></script>
 <!-- Phase 2A (Migrationsplan): reine Wochenlogik ausgelagert. -->
@@ -1477,23 +1479,7 @@ function macroTargets(weight,fat,budgetKcal){
 /* load, save: siehe storage.js (Phase 1 des Migrationsplans). */
 /* dk, dayData: siehe calendar-engine.js (Phase 2B des Migrationsplans). */
 /* isDayLogged: siehe week-engine.js (Phase 2A des Migrationsplans). */
-/* km eines Tages — versteht neues (sports-Array) und altes (sportKm) Format */
-function dayKm(x,type){
-  if(x.sports&&x.sports.length>0)
-    return x.sports.filter(s=>s.type!=="gym"&&(!type||s.type===type)).reduce((s,v)=>s+(v.km||0),0);
-  if(x.sportKm>0&&(!type||x.sportType===type))return x.sportKm;
-  return 0;
-}
-function dayGymMins(x){
-  if(!x.sports)return 0;
-  return x.sports.filter(s=>s.type==="gym").reduce((s,v)=>s+(parseFloat(v.hours)||0)*60+(parseFloat(v.minutes)||0),0);
-}
-function monthKm(data,type,y,m){
-  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(isDayLogged(x))s+=dayKm(x,type);}return s;
-}
-function gymMonthMins(data,y,m){
-  let s=0;for(let d=1;d<=daysIn(y,m);d++){const x=dayData(data,y,m,d);if(isDayLogged(x))s+=dayGymMins(x);}return s;
-}
+/* dayKm, dayGymMins, monthKm, gymMonthMins: siehe sport-engine.js (Phase 2D des Migrationsplans). */
 /* settingsOf, tdeeOf: siehe calendar-engine.js (Phase 2B des Migrationsplans). */
 /* buildWeekSlots, getWeekDayVisualState, buildIsoWeekSummary: siehe
    week-engine.js (Phase 2A des Migrationsplans, per <script src> vor
