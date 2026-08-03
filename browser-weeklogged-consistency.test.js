@@ -12,17 +12,17 @@ const { clickByText } = require("./dom-test-helpers.js");
    2. Der erste Fix ersetzte das faelschlich durch eine "neutrale" Ink-Farbe
       fuer diesen Fall — die im Dark Mode aber quasi WEISS ist, also eine
       neue, verbotene Sonderfarbe fuer den Balken erzeugte.
-   3. Der finale Fix (getWeekDayVisualState) uebernimmt den Mechanismus der
-      urspruenglichen Wochenkarte 1:1: GENAU EINE Graufarbe (--day-muted)
-      fuer "nicht bewertbar" (nicht geloggt ODER geloggt ohne TDEE), dazu
-      Gruen/Orange fuer bewertete Tage — nie eine vierte Farbe (kein Weiss,
-      kein Blau). Die Monatszugehoerigkeit (ext) aendert NIE die Farbe,
-      sondern ausschliesslich die Deckkraft (opacity 0.5 statt 1 — wie
-      frueher "opacity:x&&x.ext?.5:1"), einheitlich fuer alle drei Status.
-      Das Bottom Sheet zeigt fuer den TDEE-losen Tag trotzdem weiterhin ✔,
-      weil "geloggt" (fuer Haken/X-7-Zaehler) und "eine Bilanz bewertbar"
-      (fuer die Balkenfarbe) zwei verschiedene Fragen sind — dieser eine
-      schmale Sonderfall ist bewusst dokumentiert, nicht versteckt. */
+   3. Der finale Fix (getWeekDayVisualState) kennt nur noch DREI Zustaende:
+      nicht geloggt (Grau/--day-muted), geloggt+Ziel unterstuetzt (Gruen),
+      geloggt+Ziel nicht unterstuetzt (Orange) — nie eine vierte Farbe
+      (kein Weiss, kein Blau). Ein geloggter Tag OHNE TDEE fuer seinen Monat
+      ist NICHT mehr grau: die Bilanz nutzt denselben "||0"-Fallback wie die
+      Wochenbilanz (wd-Berechnung) es schon immer tut, statt den Tag als
+      "nicht bewertbar" zu behandeln — ein geloggter Tag ist IMMER farbig,
+      exakt wie Zaehler/Bilanz/Bottom Sheet es fuer ihn bereits zeigen. Die
+      Monatszugehoerigkeit (ext) aendert NIE die Farbe, sondern
+      ausschliesslich die Deckkraft (opacity 0.5 statt 1 — wie frueher
+      "opacity:x&&x.ext?.5:1"), einheitlich fuer alle drei Status. */
 
 let passed=0, failed=0;
 function check(cond, label){
@@ -61,14 +61,17 @@ function check(cond, label){
 
   const bars = [...kw31.querySelectorAll("div")].filter(e=>e.style.height==="6px");
   // Mo=27(0) Di=28(1) Mi=29(2) Do=30(3) Fr=31(4) Sa=1.8.(5) So=2.8.(6)
-  const GREEN="var(--good)", DAY_MUTED="var(--day-muted)";
-  const FORBIDDEN=["#fff","#ffffff","white","var(--accent)"]; // kein Weiss, kein Blau am Balken
+  const GREEN="var(--good)", ORANGE="var(--amber)", DAY_MUTED="var(--day-muted)";
+  const FORBIDDEN=["#fff","#ffffff","white","var(--accent)","var(--day-muted)"]; // kein Weiss, kein Blau, kein Grau am Balken eines geloggten Tages
 
-  const jul31Bar = bars[4]; // geloggt, aber Juli hat kein TDEE -> nicht bewertbar
+  // 31.7.: kcalIn=2000, Juli hat KEIN TDEE -> Bilanz faellt auf "kcalIn-0-0"
+  // zurueck (derselbe "||0"-Fallback wie bei der Wochenbilanz) = +2000
+  // Ueberschuss -> bei Ziel "abnehmen" NICHT unterstuetzt -> Orange.
+  const jul31Bar = bars[4];
   check(!!jul31Bar && !FORBIDDEN.includes((jul31Bar.style.background||"").toLowerCase()),
-    "31.7. (geloggt, kein TDEE fuer Juli) hat KEINE weisse/blaue Sonderfarbe (erhalten: "+(jul31Bar&&jul31Bar.style.background)+")");
-  check(!!jul31Bar && jul31Bar.style.background===DAY_MUTED,
-    "31.7. (geloggt, aber keine Bilanz berechenbar) faellt auf dieselbe Grau-Farbe wie 'nicht geloggt' zurueck — bewusst, statt einer vierten Sonderfarbe");
+    "31.7. (geloggt, kein TDEE fuer Juli) ist trotzdem FARBIG, nicht grau/weiss/blau (erhalten: "+(jul31Bar&&jul31Bar.style.background)+")");
+  check(!!jul31Bar && jul31Bar.style.background===ORANGE,
+    "31.7. (geloggt, TDEE-Fallback auf 0 -> Ueberschuss) ist orange, wie die Wochenbilanz es fuer denselben Tag schon zeigt");
   check(!!jul31Bar && jul31Bar.style.opacity==="0.5",
     "31.7. ist externer Monat -> Deckkraft 0.5 (Farbe bleibt gleich, nur die Deckkraft aendert sich)");
 
