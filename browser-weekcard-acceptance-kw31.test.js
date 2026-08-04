@@ -4,9 +4,9 @@ const { clickByText, setNativeInputValue, blurInput, findInput } = require("./do
 /* Konkreter Akzeptanztest aus der Fehlermeldung: KW 31 (27.7.-2.8.), beide
    Monate (Juli+August) haben einen Grundbedarf. 31.7. wird nachtraeglich
    mit 500 kcal befuellt, 2.8. wird vollstaendig gespeichert. Prueft, dass
-   Zaehler/Bilanz/Durchschnitt/Balken/Bottom Sheet ueberall uebereinstimmen,
-   dass die Ansicht in Juli UND August identisch ist, und dass Loeschen den
-   Tag sofort ueberall wieder auf "nicht geloggt" zuruecksetzt. */
+   Zaehler/Bilanz/Durchschnitt/Balken ueberall uebereinstimmen, dass die
+   Ansicht in Juli UND August identisch ist, und dass Loeschen den Tag
+   sofort ueberall wieder auf "nicht geloggt" zuruecksetzt. */
 
 let passed=0, failed=0;
 function check(cond, label){
@@ -57,15 +57,7 @@ function barsOf(card){
   check(bars && bars[6].style.background!==GRAY, "August-Ansicht: 2.8.-Balken ist farbig");
   const augustJul31Color = bars[4].style.background;
   const augustAug2Color = bars[6].style.background;
-
-  kw31.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
-  await flush(dom);
-  let sheetRows = [...d.querySelectorAll(".sub")].filter(e=>/^(Mo|Di|Mi|Do|Fr|Sa|So) · /.test(e.textContent));
-  const isChecked=(txt)=>{const r=sheetRows.find(r=>r.textContent.includes(txt));return r&&r.parentElement.textContent.includes("✔");};
-  check(isChecked("31.7."), "Bottom Sheet (August-Ansicht): 31.7. ist ✔");
-  check(isChecked("2.8."), "Bottom Sheet (August-Ansicht): 2.8. ist ✔");
-  clickByText(d, "KW 31"); // Sheet wieder schliessen (Overlay-Klick alternativ)
-  await flush(dom);
+  check(!kw31.className.includes("dc"), "August-Ansicht: Wochenkarte hat keine Tap-Feedback-Klasse (\"dc\") mehr");
 
   // --- Julansicht: dieselbe Woche muss identisch aussehen ---
   clickByText(d, "Kalender");
@@ -111,13 +103,6 @@ function barsOf(card){
     "nach Loeschen von 31.7.: Bilanz/Durchschnitt/kg werden sofort auf nur noch 2.8. zurückgerechnet (erhalten: "+(kw31&&kw31.textContent)+")");
   bars = kw31 && barsOf(kw31);
   check(bars && bars[4].style.background===GRAY, "nach Loeschen von 31.7.: Balken ist sofort wieder grau");
-
-  kw31.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
-  await flush(dom);
-  sheetRows = [...d.querySelectorAll(".sub")].filter(e=>/^(Mo|Di|Mi|Do|Fr|Sa|So) · /.test(e.textContent));
-  const jul31RowAfterDelete = sheetRows.find(r=>r.textContent.includes("31.7."));
-  check(!!jul31RowAfterDelete && !jul31RowAfterDelete.parentElement.textContent.includes("✔"),
-    "Bottom Sheet zeigt 31.7. nach dem Loeschen sofort NICHT mehr als ✔");
 
   dom.window.close();
 

@@ -2845,46 +2845,6 @@ function forecastEmptyStateText(forecast){
   }
 }
 
-/* Detailansicht einer einzelnen Kalenderwoche, geoeffnet per Antippen einer
-   Wochenkarte im Rueckblick. Bewusst schlank gehalten (nur KW + Wochentage
-   mit Haken/Kreuz, wie im Auftrag vorgegeben) — die vollstaendigen
-   Tagesdaten (ds/slots) sind aber bereits vorhanden, sodass eine spaetere
-   Erweiterung um Kalorien/Gewicht/Training/Schritte/Notizen pro Tag keine
-   neue Architektur braucht, nur zusaetzliche Zeilen in dieser Komponente. */
-function WeekDetailSheet({kw,start,data,mSet,sy,sm,dayGoalColor,weekGoalColor,onClose}){
-  /* Keine eigene/eingefrorene Kopie der Wochendaten — slots/summary werden
-     bei JEDEM Render frisch aus den aktuellen data/mSet ueber dieselben
-     Funktionen gebaut, die auch die Wochenkarte fuellen (buildWeekSlots +
-     buildIsoWeekSummary). Solange dieses Sheet offen ist und sich data
-     aendert (z.B. weil anderswo ein Eintrag gespeichert wurde), rendert es
-     beim naechsten Update automatisch den aktuellen Stand — es gibt keinen
-     Zwischenspeicher, der veralten koennte. dayGoalColor/weekGoalColor
-     kommen von VerlaufView (dieselben Funktionen wie fuer die
-     Wochenkarten), damit die Haken hier garantiert genau dann erscheinen,
-     wenn auch der Tagesbalken farbig ist. */
-  const slots=buildWeekSlots(data,mSet,start,sy,sm);
-  const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
-  return(
-    <Sheet onClose={onClose} title={"KW "+kw}>
-      {slots.map((x,i)=>{
-        const s=summary.dayStates[i];
-        return(
-        <div key={i} className="row" style={{padding:"10px 0",borderBottom:i<6?"1px solid var(--line)":"none"}}>
-          <span className="sub">{DS[i]}{x?" · "+x.d+"."+(x.m+1)+".":""}</span>
-          {x&&s.logged?(
-            <span style={{fontWeight:700,color:"var(--accent)"}}>✔</span>
-          ):x?(
-            <span style={{fontWeight:700,color:"var(--ink3)"}}>✖</span>
-          ):(
-            <span className="sub">–</span>
-          )}
-        </div>
-        );
-      })}
-    </Sheet>
-  );
-}
-
 /* ===== TEMPORAERES DIAGNOSE-SHEET fuer die Live-Prognose =====
    Nur zur Fehlersuche der kalenderuebergreifenden Datenauswahl gedacht —
    NACH ABSCHLUSS DER FEHLERSUCHE WIEDER ENTFERNEN (inkl. der antippbaren
@@ -3020,16 +2980,6 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
      Prognose"-Ueberschrift antippbar, oeffnet ein Diagnose-Sheet. Nach
      Abschluss der Fehlersuche wieder entfernen (siehe ForecastDiagnosticSheet). */
   const [showForecastDiag,setShowForecastDiag]=useState(false);
-  /* Detailansicht einer einzelnen Kalenderwoche im Rückblick — Architektur
-     bewusst schon jetzt vorbereitet (antippbare Wochenkarte), die
-     eigentliche Detailansicht bleibt hier absichtlich noch einfach
-     (KW-Nummer + Wochentage mit Haken/Kreuz), wie angefordert. */
-  /* Nur die leichtgewichtige Woechenidentitaet (kw + Montags-Datum) wird
-     gemerkt, NIE die Tagesdaten selbst — das Sheet baut slots bei jedem
-     Render live ueber buildWeekSlots() aus data/mSet neu auf, damit hier
-     kein zwischengespeichertes, potenziell veraltendes Wochenobjekt
-     entstehen kann. */
-  const [weekDetail,setWeekDetail]=useState(null); // {kw, start}
   /* Zeitraum-Auswahl der Gewichtsanalyse — eigener, von der Monats-Navigation
      (sy/sm, von Kalender/Sport/Jahr mitgenutzt) UNABHAENGIGER Anker, damit
      das Umschalten auf Quartal/Halbjahr/Jahr die anderen Verlauf-Reiter
@@ -3110,7 +3060,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             </div>
           )}
           <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-            {[["Gewicht","var(--amber)"],["Sport","#4E93AE"],["Defizit","var(--good)"]].map(([l,c])=>(
+            {[["Gewicht","var(--amber)"],["Defizit","var(--good)"]].map(([l,c])=>(
               <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
                 <div style={{width:7,height:7,borderRadius:99,background:c}}/>
                 <span className="sub" style={{fontSize:11}}>{l}</span>
@@ -3123,8 +3073,6 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:14}}>
             {monthGridDays(sy,sm,data).map((x,i)=>{
               const def=isDayLogged(x)&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
-              const km=dayKm(x);            // Sport-km gesamt (neues + altes Format)
-              const gym=dayGymMins(x);      // Gym-Minuten gesamt
               const isT=x.own&&isToday(x.d);
               return(
                 <div key={i} className="cell" onClick={()=>{if(x.own){tapH();openDay(sy,sm,x.d);}}}
@@ -3132,13 +3080,21 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                     ...(isT?{boxShadow:"0 0 0 2px var(--accent)"}:{})}}>
                   <div style={{fontSize:13,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
                   {x.weight>0&&<div className="num" style={{fontSize:10,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
-                  {km>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.bike}}>{km.toFixed(km<10?1:0)}km</div>}
-                  {km===0&&gym>0&&<div className="num" style={{fontSize:9,fontWeight:600,color:SPORT_COLORS.gym}}>{Math.round(gym)}min</div>}
                   {def!==null&&<div className="num" style={{fontSize:11,fontWeight:700,marginTop:"auto",color:def<0?"var(--good)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
                 </div>
               );
             })}
           </div>
+
+          {/* --- ABSCHNITT "WOCHENÜBERSICHT" ---
+              UX-Verbesserung: klare optische Trennung zwischen Kalender und
+              Wochenkarten, damit diese nicht mehr direkt am Kalender
+              "kleben". Gleiche visuelle Hierarchie wie andere
+              Abschnittsueberschriften der App (siehe z.B. "Live-Prognose"),
+              linksbuendig, dezent. Abstand zum Kalender ergibt sich aus dem
+              marginBottom des Kalendergitters (14px) + marginTop hier
+              (16px) = 30px, innerhalb des 8px-Rasters. */}
+          <div className="lbl" style={{marginTop:"var(--sp-2)",marginBottom:"var(--sp-2)"}}>Wochenübersicht</div>
 
           {/* --- WOCHENKARTEN (vormals eigener Tab "Rückblick") ---
               UI-Refactoring: der Kalender ist jetzt die vollstaendige
@@ -3147,7 +3103,10 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               hat sich geaendert, keine Berechnung/Komponente wurde neu
               gebaut oder dupliziert. Der eigene MonthNav dieses Blocks
               entfaellt bewusst (die Monatsnavigation oben steuert bereits
-              dieselben sy/sm und damit auch diese Wochenkarten). */}
+              dieselben sy/sm und damit auch diese Wochenkarten). Nicht mehr
+              antippbar (siehe unten) — der Logging-Status ist bereits am
+              Tagesbalken sichtbar, das bisherige Week-Detail-Sheet bot
+              keinen ausreichenden Mehrwert. */}
           {(()=>{
             /* Zielrichtung EINMAL pro Ansicht bestimmen (nicht pro Tag) —
                dieselbe Funktion, die auch die Live-Prognose und das
@@ -3162,9 +3121,9 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             /* Reine Bewertungsfunktion: unterstuetzt die Tagesbilanz das
                aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
                Rot — die App bewertet, bestraft aber nicht. Auf Modul-Ebene
-               (VOR der Rueckkehr-JSX) definiert, damit sowohl die Wochenkarten
-               ALS AUCH das weiter unten gerenderte Bottom Sheet (WeekDetailSheet)
-               exakt dieselbe Funktion bekommen — kein zweites Mal implementiert. */
+               (VOR der Rueckkehr-JSX) definiert, damit sowohl die
+               Wochenkarten ALS AUCH die grosse Wochenbilanz-Zahl exakt
+               dieselbe Funktion bekommen — kein zweites Mal implementiert. */
             const dayGoalColor=(bilanz)=>{
               if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
               if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
@@ -3196,7 +3155,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   const slots=buildWeekSlots(data,mSet,start,sy,sm);
                   const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
                   return(
-                    <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
+                    <div key={kw} className="card card-compact">
                       <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
                         <div>
                           <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
@@ -3222,7 +3181,6 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                     </div>
                   );
                 })}
-              {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} weekGoalColor={weekGoalColor} onClose={()=>setWeekDetail(null)}/>}
             </div>
             );
           })()}

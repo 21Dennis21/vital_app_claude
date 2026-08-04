@@ -1,0 +1,102 @@
+const { createApp, flush } = require("./browser-test-harness.js");
+const { clickByText } = require("./dom-test-helpers.js");
+
+/* Test fuer die UX-Verbesserung der Kalender-Monatsansicht (Abschnitt
+   "Wochenübersicht" zwischen Kalender und Wochenkarten, entkoppelter Klick
+   auf Wochenkarten, vereinfachte Tageskacheln ohne Sport-km, angepasste
+   Legende). Prueft ausschliesslich Struktur/Darstellung/Interaktion — keine
+   der zugrunde liegenden Berechnungen (Wochenbilanz, Sport-Auswertung,
+   Monats-KPIs) wird hier veraendert oder neu geprueft. */
+
+let passed=0, failed=0;
+function check(cond, label){
+  if(cond){ passed++; console.log("  ✅", label); }
+  else { failed++; console.error("  ❌", label); }
+}
+
+async function main(){
+  console.log("############################################");
+  console.log("# Kalender-Monatsansicht: UX-Verbesserung");
+  console.log("############################################\n");
+
+  const dom = createApp((win)=>{
+    win.localStorage.setItem("tracker_mset", JSON.stringify({
+      "2026-7":{weight:90,fat:25,activityIdx:1}, // August, TDEE=2651
+    }));
+    const data = {};
+    // 5.8.: vollstaendig geloggt, Gewicht + Defizit + Sport (20km Rad).
+    data["2026-7-5"] = {
+      kcalIn:2000, kcalBurned:0, weight:82,
+      sports:[{type:"bike",km:20}], meals:{}, logged:true,
+    };
+    win.localStorage.setItem("tracker_data", JSON.stringify(data));
+    win.localStorage.setItem("tracker_goals", JSON.stringify([]));
+  }, {now:new Date(2026,7,15,12,0,0)});
+  await flush(dom);
+  const d = dom.window.document;
+
+  clickByText(d, "Verlauf");
+  await flush(dom);
+
+  console.log("\n--- 1. Überschrift 'Wochenübersicht' zwischen Kalender und Wochenkarten ---");
+  const allEls = [...d.querySelectorAll("body *")];
+  const heading = allEls.find(e=>e.children.length===0 && e.textContent.trim()==="Wochenübersicht");
+  check(!!heading, "Überschrift 'Wochenübersicht' ist vorhanden");
+  const grid = d.querySelector(".cell") && d.querySelector(".cell").closest("div").parentElement;
+  const firstWeekCard = [...d.querySelectorAll(".card")].find(c=>c.textContent.includes("KW "));
+  check(!!firstWeekCard, "mindestens eine Wochenkarte vorhanden");
+  if(heading && grid && firstWeekCard){
+    const headingPos = heading.compareDocumentPosition(grid);
+    const cardPos = heading.compareDocumentPosition(firstWeekCard);
+    check(!!(headingPos & dom.window.Node.DOCUMENT_POSITION_PRECEDING), "Kalendergitter steht VOR der Überschrift");
+    check(!!(cardPos & dom.window.Node.DOCUMENT_POSITION_FOLLOWING), "erste Wochenkarte steht NACH der Überschrift");
+  }
+
+  console.log("\n--- 2. Wochenkarte öffnet kein Week-Detail-Sheet mehr ---");
+  check(!d.querySelector(".sheet"), "vor dem Klick: kein Sheet offen");
+  check(!firstWeekCard.className.includes("dc"), "Wochenkarte hat keine Tap-Feedback-Klasse (\"dc\") mehr");
+  firstWeekCard.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
+  await flush(dom);
+  check(!d.querySelector(".sheet"), "nach dem Klick auf die Wochenkarte: weiterhin kein Sheet offen");
+
+  console.log("\n--- 3. Tageskachel zeigt keine Kilometerangabe mehr ---");
+  const dayCell5 = [...d.querySelectorAll(".cell")].find(c=>{
+    const numDiv=c.querySelector("div");
+    return numDiv && numDiv.textContent.trim()==="5";
+  });
+  check(!!dayCell5, "Tageszelle für 5.8. gefunden");
+  check(!!dayCell5 && !dayCell5.textContent.includes("km"), "Tageszelle enthält keine 'km'-Angabe mehr (erhalten: "+(dayCell5&&dayCell5.textContent)+")");
+
+  console.log("\n--- 4. Sportdaten bleiben im Datensatz + in der Monats-KPI erhalten ---");
+  const rawData = JSON.parse(dom.window.localStorage.getItem("tracker_data"));
+  check(rawData["2026-7-5"] && rawData["2026-7-5"].sports.length===1 && rawData["2026-7-5"].sports[0].km===20,
+    "Sport-Eintrag (20km Rad) ist unveraendert in tracker_data gespeichert");
+  const kpiSportKm = [...d.querySelectorAll(".mini")].find(m=>m.textContent.includes("Sport km"));
+  check(!!kpiSportKm && kpiSportKm.textContent.includes("20"), "Monats-KPI 'Sport km' zeigt weiterhin 20 (erhalten: "+(kpiSportKm&&kpiSportKm.textContent)+")");
+
+  console.log("\n--- 5. Legende zeigt kein 'Sport' mehr ---");
+  const legendRow = [...d.querySelectorAll("div")].find(e=>e.style.justifyContent==="center" && e.style.gap==="14px");
+  check(!!legendRow, "Legenden-Zeile gefunden");
+  check(!!legendRow && !legendRow.textContent.includes("Sport"), "Legende enthält kein 'Sport' mehr (erhalten: "+(legendRow&&legendRow.textContent)+")");
+  check(!!legendRow && legendRow.textContent.includes("Gewicht") && legendRow.textContent.includes("Defizit"), "Legende zeigt weiterhin 'Gewicht' und 'Defizit'");
+
+  console.log("\n--- 6. Gewicht und Bilanz bleiben in der Tageskachel sichtbar ---");
+  check(!!dayCell5 && dayCell5.textContent.includes("82"), "Tageszelle zeigt weiterhin das Gewicht (82)");
+  check(!!dayCell5 && dayCell5.textContent.includes("651"), "Tageszelle zeigt weiterhin die Bilanz (2000-2651=-651)");
+
+  console.log("\n--- 7. Monatsfazit steht nach den Wochenkarten ---");
+  const weekCards = [...d.querySelectorAll(".card")].filter(c=>c.textContent.includes("KW "));
+  const lastWeekCard = weekCards[weekCards.length-1];
+  const fazit = allEls.find(e=>e.children.length===0 && /Starker Monat|Ausgeglichen|Nächsten Monat wird/.test(e.textContent));
+  check(!!fazit, "Monatsfazit-Text gefunden");
+  check(!!lastWeekCard && !!fazit && !!(lastWeekCard.compareDocumentPosition(fazit) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING),
+    "Monatsfazit steht NACH der letzten Wochenkarte");
+
+  console.log("\n================================");
+  console.log(passed+" bestanden, "+failed+" fehlgeschlagen");
+  console.log("================================");
+  dom.window.close();
+  process.exit(failed>0?1:0);
+}
+
+main().catch(e=>{ console.error("FEHLER:", e.message); console.error(e.stack); process.exit(1); });

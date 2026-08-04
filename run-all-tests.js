@@ -51,6 +51,7 @@ const BROWSER_TESTS=[
   "browser-live-prognose-crossmonth.test.js",
   "browser-live-prognose-real-datapath.test.js",
   "browser-forecast-diagnostic-sheet.test.js",
+  "browser-calendar-monthview-ux.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}

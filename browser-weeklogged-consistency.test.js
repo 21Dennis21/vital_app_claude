@@ -89,23 +89,10 @@ function check(cond, label){
   check(!!aug2Bar && aug2Bar.style.background===DAY_MUTED && (aug2Bar.style.opacity===""||aug2Bar.style.opacity==="1"),
     "2.8. (nicht geloggt, aktueller Monat) zeigt dieselbe Graufarbe mit voller Deckkraft");
 
-  // Bottom Sheet oeffnen und garantieren, dass es EXAKT dieselbe
-  // Geloggt-Aussage trifft wie die Wochenkarte (kein separates Wochen-
-  // Array, keine eigene Logik).
-  kw31.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
-  await flush(dom);
-  const sheetRows = [...d.querySelectorAll(".sub")].filter(e=>/^(Mo|Di|Mi|Do|Fr|Sa|So) · /.test(e.textContent));
-  check(sheetRows.length===7, "Bottom Sheet zeigt alle 7 Tage der Woche");
-  const rowFor = (datePart)=>sheetRows.find(r=>r.textContent.includes(datePart));
-  const jul31Row = rowFor("31.7.");
-  const aug1Row = rowFor("1.8.");
-  const jul27Row = rowFor("27.7.");
-  const aug2Row = rowFor("2.8.");
-  const isChecked = (row)=>row && row.parentElement.textContent.includes("✔");
-  check(isChecked(jul31Row), "Bottom Sheet: 31.7. ist ✔ (deckt sich mit der Wochenkarte)");
-  check(isChecked(aug1Row), "Bottom Sheet: 1.8. ist ✔ (deckt sich mit der Wochenkarte)");
-  check(!isChecked(jul27Row), "Bottom Sheet: 27.7. ist NICHT ✔ (deckt sich mit der Wochenkarte)");
-  check(!isChecked(aug2Row), "Bottom Sheet: 2.8. ist NICHT ✔ (deckt sich mit der Wochenkarte)");
+  // Wochenkarten sind seit der UX-Verbesserung nicht mehr antippbar (kein
+  // Week-Detail-Sheet mehr) — der Logging-Status ist bereits an den
+  // Tagesbalken oben vollstaendig geprueft.
+  check(!kw31.className.includes("dc"), "Wochenkarte hat keine Tap-Feedback-Klasse (\"dc\") mehr");
 
   dom.window.close();
 
