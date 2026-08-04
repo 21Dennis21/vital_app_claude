@@ -3045,12 +3045,11 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             </div>
           )}
           {lg.length>0&&(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
                 ["Ø kcal",lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,"var(--ink)"],
                 ["Bilanz",(totDef<0?"−":"+")+Math.abs(totDef),totDef<0?"var(--good)":"var(--amber)"],
-                ["Fett kg",(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),totDef<0?"var(--good)":"var(--amber)"],
-                ["Sport km",monthKm(data,null,sy,sm).toFixed(0),"var(--ink)"],
+                ["Fettverlust",(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),totDef<0?"var(--good)":"var(--amber)"],
               ].map(([l,v,c])=>(
                 <div key={l} className="mini">
                   <div className="num" style={{fontSize:15,fontWeight:700,color:c}}>{v}</div>
@@ -3087,18 +3086,16 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           </div>
 
           {/* --- ABSCHNITT "WOCHENÜBERSICHT" ---
-              UX-Verbesserung: klare optische Trennung zwischen Kalender und
-              Wochenkarten, damit diese nicht mehr direkt am Kalender
-              "kleben". Echte Abschnittsueberschrift statt Fliesstext —
-              dasselbe className="h1" + fontSize:"var(--fs-md)"-Muster, das
-              die App bereits fuer Abschnittsueberschriften innerhalb eines
-              Tabs verwendet (siehe "Ernährung" in HeuteView): fett,
-              Primaertextfarbe (kein color-Override -> erbt --ink),
-              linksbuendig. Abstand zum Kalender ergibt sich aus dem
+              UX-Verbesserung: soll eindeutig als neuer Hauptabschnitt
+              wahrgenommen werden, mit derselben optischen Wertigkeit wie
+              die grossen Seitentitel der App ("Verlauf", "Ziele", "Mehr" —
+              className="h1" OHNE fontSize-Override, also volle
+              --fs-title-Groesse 24-28px, font-weight 700, Primaertextfarbe
+              --ink, linksbuendig). Abstand zum Kalender ergibt sich aus dem
               marginBottom des Kalendergitters (14px) + marginTop hier
-              (var(--sp-3)=24px) = 38px, spuerbar mehr als zuvor. Abstand zur
-              ersten Wochenkarte: var(--sp-2)=16px, wie im "Ernährung"-Vorbild. */}
-          <div className="h1" style={{fontSize:"var(--fs-md)",marginTop:"var(--sp-3)",marginBottom:"var(--sp-2)"}}>Wochenübersicht</div>
+              (var(--sp-3)=24px) = 38px. Abstand zur ersten Wochenkarte:
+              var(--sp-2)=16px. */}
+          <div className="h1" style={{marginTop:"var(--sp-3)",marginBottom:"var(--sp-2)"}}>Wochenübersicht</div>
 
           {/* --- WOCHENKARTEN (vormals eigener Tab "Rückblick") ---
               UI-Refactoring: der Kalender ist jetzt die vollstaendige
@@ -3144,21 +3141,26 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
             };
             const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
+            /* Fuer jede Woche slots+summary EINMAL hier berechnen (statt wie
+               zuvor nur innerhalb der Kartenschleife) — dieselben
+               buildWeekSlots()/buildIsoWeekSummary()-Aufrufe wie bisher,
+               nur einmal zentral statt implizit dupliziert, damit sowohl die
+               Wochenkarten ALS AUCH die Wochenstatistik im Monatsfazit
+               unten (Abschnitt 6) exakt dieselben Werte verwenden — keine
+               zweite/neue Bilanzlogik. */
+            const weekSummaries=weeks.map(({kw,start})=>{
+              const slots=buildWeekSlots(data,mSet,start,sy,sm);
+              return {kw, slots, summary:buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor)};
+            });
+            const weeksInDeficitCount=weekSummaries.filter(w=>w.summary.totalBalanceKcal<0).length;
+            /* Durchschnittliche Tagesbilanz ueber die bereits vorhandenen
+               lg/totDef (siehe KPI-Bereich oben) — reine Division derselben
+               beiden Werte, keine neue Berechnung. */
+            const avgDailyBalance=lg.length?Math.round(totDef/lg.length):0;
             return(
-            <div>
-              {weeks.map(({kw,start})=>{
-                  /* Alle 7 echten Kalendertage der ISO-Woche — auch Tage aus
-                     einem Nachbarmonat, je mit eigenem TDEE — UND die komplette
-                     Zusammenfassung (X/7, Ø, Bilanz, kg, Farbe) kommen
-                     ausschliesslich aus buildWeekSlots()/buildIsoWeekSummary().
-                     Keine auf den angezeigten Monat gefilterte Teilmenge mehr:
-                     ein nachtraeglich geloggter Randtag (z.B. der letzte Tag des
-                     Vormonats) fliesst dadurch vollstaendig in Bilanz/
-                     Durchschnitt/kg-Wert ein, exakt wie er es bereits im Balken/
-                     Zaehler/Bottom Sheet tut. */
-                  const slots=buildWeekSlots(data,mSet,start,sy,sm);
-                  const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
-                  return(
+            <React.Fragment>
+              <div>
+                {weekSummaries.map(({kw,slots,summary})=>(
                     <div key={kw} className="card card-compact">
                       <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
                         <div>
@@ -3183,24 +3185,44 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                         })}
                       </div>
                     </div>
-                  );
-                })}
-            </div>
+                  ))}
+              </div>
+
+              {/* --- MONATSFAZIT (vormals im entfallenen Monatsabschluss-Dialog) ---
+                  Zu einer kleinen Monatszusammenfassung erweitert — jede
+                  Kennzahl ist entweder bereits an anderer Stelle im
+                  Kalender-Segment berechnet (lg/totDef/dim aus dem
+                  KPI-Bereich oben, weekSummaries/weeksInDeficitCount aus den
+                  Wochenkarten direkt darueber) oder eine reine Division
+                  bestehender Werte (avgDailyBalance) — keine neue
+                  Fachlogik, keine neuen gespeicherten Daten. */}
+              {lg.length>0&&(
+                <div style={{padding:16,borderRadius:16,background:totDef<0?"var(--good-soft)":totDef>0?"var(--amber-soft)":"var(--card2)",textAlign:"center",marginBottom:12}}>
+                  <div style={{fontSize:17,fontWeight:700,color:totDef<0?"var(--good)":totDef>0?"var(--amber)":"var(--ink)"}}>
+                    {totDef<0?"🏆 Guter Monat":totDef===0?"⚖️ Ausgeglichener Monat":"💪 Herausfordernder Monat"}
+                  </div>
+                  <div className="sub" style={{marginTop:4}}>
+                    ≈ {(Math.abs(totDef)/KCAL_PER_KG).toFixed(2)} kg Fett {totDef<0?"verloren":totDef>0?"zugenommen":"gehalten"}
+                  </div>
+                  <div style={{marginTop:14,textAlign:"left"}}>
+                    <div className="row" style={{padding:"7px 0",borderBottom:"1px solid var(--line)"}}>
+                      <span className="sub">Ernährungstage geloggt</span>
+                      <span className="num" style={{fontWeight:700}}>{lg.length} / {dim}</span>
+                    </div>
+                    <div className="row" style={{padding:"7px 0",borderBottom:"1px solid var(--line)"}}>
+                      <span className="sub">{avgDailyBalance<0?"Ø Defizit":avgDailyBalance>0?"Ø Überschuss":"Ø Bilanz"}</span>
+                      <span className="num" style={{fontWeight:700}}>{Math.abs(avgDailyBalance)} kcal</span>
+                    </div>
+                    <div className="row" style={{padding:"7px 0"}}>
+                      <span className="sub">Wochen im Defizit</span>
+                      <span className="num" style={{fontWeight:700}}>{weeksInDeficitCount} von {weekSummaries.length}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
             );
           })()}
-
-          {/* --- MONATSFAZIT (vormals im entfallenen Monatsabschluss-Dialog) ---
-              Unveraendert uebernommen (identische Formel/Bedingungen wie im
-              frueheren StatsSheet), nutzt die bereits oben im Kalender-Segment
-              berechneten lg/totDef statt einer zweiten, separaten Berechnung. */}
-          {lg.length>0&&(
-            <div style={{padding:14,borderRadius:16,background:totDef<0?"var(--good-soft)":"var(--amber-soft)",textAlign:"center",marginBottom:12}}>
-              <div style={{fontWeight:700,color:totDef<0?"var(--good)":"var(--amber)"}}>
-                {totDef<0?"Starker Monat — im Defizit!":totDef===0?"Ausgeglichen":"Nächsten Monat wird's besser!"}
-              </div>
-              {totDef<0&&<div className="sub">≈ {(Math.abs(totDef)/KCAL_PER_KG).toFixed(2)} kg Fett abgebaut</div>}
-            </div>
-          )}
         </div>
       )}
 
