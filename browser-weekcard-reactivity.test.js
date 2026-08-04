@@ -4,8 +4,8 @@ const { clickByText, setNativeInputValue, blurInput, findInput } = require("./do
 /* Regressionstest fuer den gemeldeten Fehler: ein nachtraeglich (ueber den
    Kalender) fuer einen VERGANGENEN Tag gespeicherter Eintrag soll SOFORT,
    ohne Reload/Remount, ueberall in der Wochenkarte (seit dem UI-Refactoring
-   direkt im Kalender-Segment) sichtbar sein — Balken, X/7-Zaehler, Bottom
-   Sheet, Wochenbilanz. Im Unterschied zu
+   direkt im Kalender-Segment) sichtbar sein — Balken, X/7-Zaehler,
+   Wochenbilanz. Im Unterschied zu
    den anderen Wochenkarten-Tests hier mountet die App NUR EINMAL und der
    Eintrag wird ueber die ECHTE UI (Kalender -> Tag oeffnen -> speichern)
    nachgetragen, um echte React-Reaktivitaet zu pruefen (keine veralteten
@@ -87,11 +87,10 @@ function barsOf(kw31){
   check(!!jul31Bar && jul31Bar.style.background!=="var(--day-muted)" && jul31Bar.style.background!=="",
     "nachher: 31.7.-Balken ist SOFORT farbig, nicht mehr grau (erhalten: "+(jul31Bar&&jul31Bar.style.background)+")");
 
-  kw31.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
-  await flush(dom);
-  const sheetRows = [...d.querySelectorAll(".sub")].filter(e=>/^(Mo|Di|Mi|Do|Fr|Sa|So) · /.test(e.textContent));
-  const jul31Row = sheetRows.find(r=>r.textContent.includes("31.7."));
-  check(!!jul31Row && jul31Row.parentElement.textContent.includes("✔"), "Bottom Sheet zeigt 31.7. sofort als ✔");
+  // Wochenkarten sind seit der UX-Verbesserung nicht mehr antippbar (kein
+  // Week-Detail-Sheet mehr) — die Balken-/Zaehler-Pruefungen oben decken die
+  // Reaktivitaet bereits vollstaendig ab.
+  check(!kw31.className.includes("dc"), "Wochenkarte hat keine Tap-Feedback-Klasse (\"dc\") mehr");
 
   dom.window.close();
 
