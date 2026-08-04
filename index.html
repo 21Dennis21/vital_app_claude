@@ -3011,7 +3011,7 @@ function ForecastDiagnosticSheet({forecast,currentDay,onClose}){
   );
 }
 
-function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openStats,openSetup}){
+function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup}){
   const [seg,setSeg]=useState(initialSeg||"Kalender");
   const [sy,setSy]=useState(NOW.getFullYear());
   const [sm,setSm]=useState(NOW.getMonth());
@@ -3139,90 +3139,116 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               );
             })}
           </div>
-          <button className="btn btn2" onClick={()=>openStats(sy,sm)}>Monatsabschluss ansehen</button>
+
+          {/* --- WOCHENKARTEN (vormals eigener Tab "Rückblick") ---
+              UI-Refactoring: der Kalender ist jetzt die vollstaendige
+              Monatsuebersicht, die Wochenkarten gehoeren logisch direkt
+              darunter. Unveraendert uebernommen — nur der Ort im Layout
+              hat sich geaendert, keine Berechnung/Komponente wurde neu
+              gebaut oder dupliziert. Der eigene MonthNav dieses Blocks
+              entfaellt bewusst (die Monatsnavigation oben steuert bereits
+              dieselben sy/sm und damit auch diese Wochenkarten). */}
+          {(()=>{
+            /* Zielrichtung EINMAL pro Ansicht bestimmen (nicht pro Tag) —
+               dieselbe Funktion, die auch die Live-Prognose und das
+               Gewichts-Widget nutzen, damit die Bewertung app-weit konsistent
+               bleibt. Liefert "abnehmen" | "zunehmen" | "halten". */
+            const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
+            /* Toleranz fuer "Halten": ein Tag gilt als Erfolg, wenn die
+               Tagesbilanz innerhalb dieses kcal-Bereichs um 0 liegt. Bewusst
+               grosszuegig ("kleine Fortschritte zaehlen", keine
+               Perfektionsforderung) statt eng gefasst. */
+            const MAINTAIN_TOLERANCE_KCAL=150;
+            /* Reine Bewertungsfunktion: unterstuetzt die Tagesbilanz das
+               aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
+               Rot — die App bewertet, bestraft aber nicht. Auf Modul-Ebene
+               (VOR der Rueckkehr-JSX) definiert, damit sowohl die Wochenkarten
+               ALS AUCH das weiter unten gerenderte Bottom Sheet (WeekDetailSheet)
+               exakt dieselbe Funktion bekommen — kein zweites Mal implementiert. */
+            const dayGoalColor=(bilanz)=>{
+              if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
+              if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
+              return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
+            };
+            /* Dieselbe Zielbewertung auch fuer die grosse Wochenbilanz-Zahl —
+               bei null geloggten Tagen bewusst KEINE Farbaussage (neutral),
+               damit eine leere Woche nicht wie eine Warnung wirkt, nur weil
+               der mathematische Wert zufaellig 0 ist. */
+            const weekGoalColor=(wdVal,loggedCount,dayCount)=>{
+              if(loggedCount===0)return SEM.neutral;
+              if(goalDirection==="abnehmen")return wdVal<0?"var(--good)":"var(--amber)";
+              if(goalDirection==="zunehmen")return wdVal>0?"var(--good)":"var(--amber)";
+              return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
+            };
+            const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
+            return(
+            <div>
+              {weeks.map(({kw,start})=>{
+                  /* Alle 7 echten Kalendertage der ISO-Woche — auch Tage aus
+                     einem Nachbarmonat, je mit eigenem TDEE — UND die komplette
+                     Zusammenfassung (X/7, Ø, Bilanz, kg, Farbe) kommen
+                     ausschliesslich aus buildWeekSlots()/buildIsoWeekSummary().
+                     Keine auf den angezeigten Monat gefilterte Teilmenge mehr:
+                     ein nachtraeglich geloggter Randtag (z.B. der letzte Tag des
+                     Vormonats) fliesst dadurch vollstaendig in Bilanz/
+                     Durchschnitt/kg-Wert ein, exakt wie er es bereits im Balken/
+                     Zaehler/Bottom Sheet tut. */
+                  const slots=buildWeekSlots(data,mSet,start,sy,sm);
+                  const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
+                  return(
+                    <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
+                      <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
+                        <div>
+                          <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
+                          <div className="sub">{summary.loggedDayCount}/7 Tage geloggt · Ø {summary.averageLoggedKcal||"–"} kcal</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div className="num" style={{fontSize:19,fontWeight:700,color:summary.goalStatus}}>{summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.totalBalanceKcal).toLocaleString("de-DE")} kcal</div>
+                          <div className="sub">≈ {summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.theoreticalWeightChangeKg).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        {slots.map((x,i)=>{
+                          const s=summary.dayStates[i];
+                          return <div key={i} style={{flex:1,height:6,borderRadius:3,background:s.background,opacity:s.opacity}}/>;
+                        })}
+                      </div>
+                      <div style={{display:"flex",gap:4,marginTop:3}}>
+                        {slots.map((x,i)=>{
+                          const s=summary.dayStates[i];
+                          return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.logged?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} weekGoalColor={weekGoalColor} onClose={()=>setWeekDetail(null)}/>}
+            </div>
+            );
+          })()}
+
+          {/* --- MONATSFAZIT (vormals im entfallenen Monatsabschluss-Dialog) ---
+              Unveraendert uebernommen (identische Formel/Bedingungen wie im
+              frueheren StatsSheet), nutzt die bereits oben im Kalender-Segment
+              berechneten lg/totDef statt einer zweiten, separaten Berechnung. */}
+          {lg.length>0&&(
+            <div style={{padding:14,borderRadius:16,background:totDef<0?"var(--good-soft)":"var(--amber-soft)",textAlign:"center",marginBottom:12}}>
+              <div style={{fontWeight:700,color:totDef<0?"var(--good)":"var(--amber)"}}>
+                {totDef<0?"Starker Monat — im Defizit!":totDef===0?"Ausgeglichen":"Nächsten Monat wird's besser!"}
+              </div>
+              {totDef<0&&<div className="sub">≈ {(Math.abs(totDef)/KCAL_PER_KG).toFixed(2)} kg Fett abgebaut</div>}
+            </div>
+          )}
         </div>
       )}
 
-      {/* --- WOCHEN --- */}
-      {seg==="Rückblick"&&(()=>{
-        /* Zielrichtung EINMAL pro Ansicht bestimmen (nicht pro Tag) —
-           dieselbe Funktion, die auch die Live-Prognose und das
-           Gewichts-Widget nutzen, damit die Bewertung app-weit konsistent
-           bleibt. Liefert "abnehmen" | "zunehmen" | "halten". */
-        const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
-        /* Toleranz fuer "Halten": ein Tag gilt als Erfolg, wenn die
-           Tagesbilanz innerhalb dieses kcal-Bereichs um 0 liegt. Bewusst
-           grosszuegig ("kleine Fortschritte zaehlen", keine
-           Perfektionsforderung) statt eng gefasst. */
-        const MAINTAIN_TOLERANCE_KCAL=150;
-        /* Reine Bewertungsfunktion: unterstuetzt die Tagesbilanz das
-           aktuelle Ziel? Nur zwei moegliche Farben (gruen/orange), nie
-           Rot — die App bewertet, bestraft aber nicht. Auf Modul-Ebene
-           (VOR der Rueckkehr-JSX) definiert, damit sowohl die Wochenkarten
-           ALS AUCH das weiter unten gerenderte Bottom Sheet (WeekDetailSheet)
-           exakt dieselbe Funktion bekommen — kein zweites Mal implementiert. */
-        const dayGoalColor=(bilanz)=>{
-          if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
-          if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
-          return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
-        };
-        /* Dieselbe Zielbewertung auch fuer die grosse Wochenbilanz-Zahl —
-           bei null geloggten Tagen bewusst KEINE Farbaussage (neutral),
-           damit eine leere Woche nicht wie eine Warnung wirkt, nur weil
-           der mathematische Wert zufaellig 0 ist. */
-        const weekGoalColor=(wdVal,loggedCount,dayCount)=>{
-          if(loggedCount===0)return SEM.neutral;
-          if(goalDirection==="abnehmen")return wdVal<0?"var(--good)":"var(--amber)";
-          if(goalDirection==="zunehmen")return wdVal>0?"var(--good)":"var(--amber)";
-          return Math.abs(wdVal)<=MAINTAIN_TOLERANCE_KCAL*dayCount?"var(--good)":"var(--amber)";
-        };
-        const weeks=groupByWeekSorted(days,x=>({y:sy,m:sm,d:x.d}));
-        return(
-        <div>
-          <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)}/>
-          {weeks.map(({kw,start})=>{
-              /* Alle 7 echten Kalendertage der ISO-Woche — auch Tage aus
-                 einem Nachbarmonat, je mit eigenem TDEE — UND die komplette
-                 Zusammenfassung (X/7, Ø, Bilanz, kg, Farbe) kommen
-                 ausschliesslich aus buildWeekSlots()/buildIsoWeekSummary().
-                 Keine auf den angezeigten Monat gefilterte Teilmenge mehr:
-                 ein nachtraeglich geloggter Randtag (z.B. der letzte Tag des
-                 Vormonats) fliesst dadurch vollstaendig in Bilanz/
-                 Durchschnitt/kg-Wert ein, exakt wie er es bereits im Balken/
-                 Zaehler/Bottom Sheet tut. */
-              const slots=buildWeekSlots(data,mSet,start,sy,sm);
-              const summary=buildIsoWeekSummary(slots,dayGoalColor,weekGoalColor);
-              return(
-                <div key={kw} className="card card-compact dc" onClick={()=>{tapH();setWeekDetail({kw,start});}}>
-                  <div className="row" style={{marginBottom:8,alignItems:"flex-start"}}>
-                    <div>
-                      <div style={{fontSize:19,fontWeight:700}}>KW {kw}</div>
-                      <div className="sub">{summary.loggedDayCount}/7 Tage geloggt · Ø {summary.averageLoggedKcal||"–"} kcal</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div className="num" style={{fontSize:19,fontWeight:700,color:summary.goalStatus}}>{summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.totalBalanceKcal).toLocaleString("de-DE")} kcal</div>
-                      <div className="sub">≈ {summary.totalBalanceKcal<0?"−":"+"}{Math.abs(summary.theoreticalWeightChangeKg).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:4}}>
-                    {slots.map((x,i)=>{
-                      const s=summary.dayStates[i];
-                      return <div key={i} style={{flex:1,height:6,borderRadius:3,background:s.background,opacity:s.opacity}}/>;
-                    })}
-                  </div>
-                  <div style={{display:"flex",gap:4,marginTop:3}}>
-                    {slots.map((x,i)=>{
-                      const s=summary.dayStates[i];
-                      return <div key={i} className="sub" style={{flex:1,textAlign:"center",fontSize:10,color:s.logged?"var(--ink)":s.background,opacity:s.opacity}}>{x.d}</div>;
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          {weekDetail&&<WeekDetailSheet kw={weekDetail.kw} start={weekDetail.start} data={data} mSet={mSet} sy={sy} sm={sm} dayGoalColor={dayGoalColor} weekGoalColor={weekGoalColor} onClose={()=>setWeekDetail(null)}/>}
-        </div>
-        );
-      })()}
+      {/* --- RÜCKBLICK ---
+          UI-Refactoring: bewusst leer gelassen. Die Wochenkarten stehen
+          jetzt unter dem Kalender (siehe oben), der bisherige Inhalt dieses
+          Tabs wurde dorthin verschoben. Dieser Tab wird in einer spaeteren
+          Phase vollstaendig neu als Analyse-/Insights-Bereich aufgebaut —
+          bis dahin bewusst ohne Platzhalter/Dummy-Inhalte. */}
+      {seg==="Rückblick"&&<div/>}
 
       {/* --- GEWICHT --- */}
       {seg==="Gewicht"&&(
@@ -5249,67 +5275,6 @@ function GoalSheet({goal,data,mSet,onSave,onDelete,onClose}){
   );
 }
 
-/* Monatsabschluss */
-function StatsSheet({data,mSet,init,onClose}){
-  const [y,setY]=useState(init.y);
-  const [m,setM]=useState(init.m);
-  const nav=dir=>{let mm=m+dir,yy=y;if(mm>11){mm=0;yy++;}if(mm<0){mm=11;yy--;}setM(mm);setY(yy);};
-  const tdee=tdeeOf(mSet,y,m);
-  const dim=daysIn(y,m);
-  const ds=Array.from({length:dim},(_,i)=>({d:i+1,...dayData(data,y,m,i+1)}));
-  const lg=ds.filter(isDayLogged);
-  const def=lg.reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
-  const km=monthKm(data,null,y,m);
-  const gym=gymMonthMins(data,y,m);
-  const wm={};ds.forEach(x=>{const kw=isoWeek(y,m,x.d);if(!wm[kw])wm[kw]=[];wm[kw].push(x);});
-  return(
-    <Sheet onClose={onClose}>
-      <div className="row" style={{marginBottom:14}}>
-        <button className="nav" onClick={()=>nav(-1)}>‹</button>
-        <div style={{textAlign:"center"}}>
-          <div className="lbl">Monatsabschluss</div>
-          <div style={{fontSize:22,fontWeight:700}}>{MN[m]} {y}</div>
-        </div>
-        <button className="nav" onClick={()=>nav(1)}>›</button>
-      </div>
-      {lg.length===0?(
-        <div className="sub" style={{textAlign:"center",padding:"24px 0"}}>Noch keine Einträge in diesem Monat.</div>
-      ):(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-            {[
-              ["Tage geloggt",lg.length+"/"+dim,"var(--ink)"],
-              ["Bilanz",(def<0?"−":"+")+Math.abs(def)+" kcal",def<0?"var(--good)":"var(--amber)"],
-              ["Fett",(def<0?"−":"+")+(Math.abs(def)/KCAL_PER_KG).toFixed(2)+" kg",def<0?"var(--good)":"var(--amber)"],
-              ["Sport",km.toFixed(1)+" km"+(gym>0?" · "+fmtGym(gym):""),"var(--ink)"],
-            ].map(([l,v,c])=>(
-              <div key={l} className="mini"><div className="num" style={{fontSize:15,fontWeight:700,color:c}}>{v}</div><div className="sub" style={{fontSize:11}}>{l}</div></div>
-            ))}
-          </div>
-          <div className="card" style={{padding:"6px 18px"}}>
-            {Object.entries(wm).sort((a,b)=>Number(a[0])-Number(b[0])).map(([kw,dss],i,arr)=>{
-              const wd=dss.filter(isDayLogged).reduce((s,x)=>s+(x.kcalIn||0)-(tdee||0)-(x.kcalBurned||0),0);
-              return(
-                <div key={kw} className="row" style={{padding:"9px 0",borderBottom:i<arr.length-1?"1px solid var(--line)":"none"}}>
-                  <span className="sub">KW {kw}</span>
-                  <span className="num" style={{fontWeight:700,color:wd<0?"var(--good)":"var(--amber)"}}>{wd<0?"−":"+"}{Math.abs(wd)} kcal</span>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{padding:14,borderRadius:16,background:def<0?"var(--good-soft)":"var(--amber-soft)",textAlign:"center",marginBottom:12}}>
-            <div style={{fontWeight:700,color:def<0?"var(--good)":"var(--amber)"}}>
-              {def<0?"Starker Monat — im Defizit!":def===0?"Ausgeglichen":"Nächsten Monat wird's besser!"}
-            </div>
-            {def<0&&<div className="sub">≈ {(Math.abs(def)/KCAL_PER_KG).toFixed(2)} kg Fett abgebaut</div>}
-          </div>
-        </div>
-      )}
-      <button className="btn" onClick={onClose}>Schließen</button>
-    </Sheet>
-  );
-}
-
 /* ===== Reaktives "Heute" fuer zeitkritische Logik (Forecast, Kalibrierung) =====
    Die globale Konstante NOW (einmal beim Laden gesetzt) reicht fuer das
    meiste in der App (Kalenderansichten etc.) voellig aus und bleibt dort
@@ -5416,7 +5381,6 @@ function App(){
   const [dayT,setDayT]=useState(null);       // {y,m,d}
   const [setupT,setSetupT]=useState(null);   // {y,m}
   const [goalT,setGoalT]=useState(undefined);// undefined=zu, null=neu, Objekt=bearbeiten
-  const [statsT,setStatsT]=useState(null);   // {y,m}
   const [activityT,setActivityT]=useState(null); // {y,m,d,editIndex} — editIndex null = neu
   const [mealT,setMealT]=useState(null);      // {y,m,d,mealKey}
   const [mealDetailT,setMealDetailT]=useState(null); // {y,m,d,mealKey}
@@ -5607,7 +5571,7 @@ function App(){
   return(
     <div className="app">
       {tab==="heute"&&<HeuteView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openDay={openDay} openSetup={openSetup} openActivity={openActivity} openMeal={openMeal} openMealDetail={openMealDetail} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
-      {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openStats={(y,m)=>setStatsT({y,m})} openSetup={openSetup}/>}
+      {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
       {tab==="ziele"&&<ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals}/>}
       <TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>
@@ -5647,7 +5611,6 @@ function App(){
         onSave={g=>{setGoals(gs=>goalT?gs.map(x=>x.id===g.id?g:x):[...gs,g]);setGoalT(undefined);}}
         onDelete={id=>{setGoals(gs=>gs.filter(x=>x.id!==id));setGoalT(undefined);}}
         onClose={()=>setGoalT(undefined)}/>}
-      {statsT&&<StatsSheet data={data} mSet={mSet} init={statsT} onClose={()=>setStatsT(null)}/>}
       {showPersonalize&&<DashboardPersonalizeSheet onClose={()=>setShowPersonalize(false)} onSaved={()=>{setDashRefresh(v=>v+1);setShowPersonalize(false);}}/>}
       {showWeightModal&&<WeightModal data={data} onAttemptSave={(y,m,d,v)=>attemptSaveWeight(y,m,d,v)} onClose={()=>setShowWeightModal(false)}/>}
       {pendingWeightConfirm&&(

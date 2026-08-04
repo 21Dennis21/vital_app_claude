@@ -49,8 +49,8 @@ function check(cond, label){
   const d = dom.window.document;
   clickByText(d, "Verlauf");
   await flush(dom);
-  clickByText(d, "Rückblick");
-  await flush(dom);
+  // Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment
+  // (dem Standardsegment) — kein separater "Rückblick"-Klick mehr noetig.
 
   const cards = [...d.querySelectorAll(".card")].filter(c=>c.textContent.includes("KW"));
   const kw31 = cards.find(c=>c.textContent.includes("KW 31"));

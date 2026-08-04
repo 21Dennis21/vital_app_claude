@@ -30,8 +30,8 @@ async function testScenario(label, goalSetup, dailyOverrides, expectations){
   const d = dom.window.document;
   clickByText(d, "Verlauf");
   await flush(dom);
-  clickByText(d, "Rückblick");
-  await flush(dom);
+  // Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment
+  // (dem Standardsegment) — kein separater "Rückblick"-Klick mehr noetig.
 
   const cards = [...d.querySelectorAll(".card")].filter(c=>c.textContent.includes("KW"));
   // KW 32 (3.-9. August) enthaelt die Testtage vollstaendig im Monat

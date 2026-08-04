@@ -3,8 +3,9 @@ const { clickByText, setNativeInputValue, blurInput, findInput } = require("./do
 
 /* Regressionstest fuer den gemeldeten Fehler: ein nachtraeglich (ueber den
    Kalender) fuer einen VERGANGENEN Tag gespeicherter Eintrag soll SOFORT,
-   ohne Reload/Remount, ueberall in der Rueckblick-Wochenkarte sichtbar
-   sein — Balken, X/7-Zaehler, Bottom Sheet, Wochenbilanz. Im Unterschied zu
+   ohne Reload/Remount, ueberall in der Wochenkarte (seit dem UI-Refactoring
+   direkt im Kalender-Segment) sichtbar sein — Balken, X/7-Zaehler, Bottom
+   Sheet, Wochenbilanz. Im Unterschied zu
    den anderen Wochenkarten-Tests hier mountet die App NUR EINMAL und der
    Eintrag wird ueber die ECHTE UI (Kalender -> Tag oeffnen -> speichern)
    nachgetragen, um echte React-Reaktivitaet zu pruefen (keine veralteten
@@ -39,10 +40,10 @@ function barsOf(kw31){
   await flush(dom);
   const d = dom.window.document;
 
-  // --- Vorher: Rueckblick pruefen, 31.7. muss noch grau/nicht geloggt sein ---
+  // --- Vorher: Wochenkarte pruefen, 31.7. muss noch grau/nicht geloggt sein ---
+  // (Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment,
+  // dem Standardsegment — kein separater "Rückblick"-Klick mehr noetig.)
   clickByText(d, "Verlauf");
-  await flush(dom);
-  clickByText(d, "Rückblick");
   await flush(dom);
   let kw31 = [...d.querySelectorAll(".card")].find(c=>c.textContent.includes("KW 31"));
   check(!!kw31, "KW-31-Karte vor dem Nachtragen gefunden");
@@ -79,8 +80,6 @@ function barsOf(kw31){
   await flush(dom);
 
   // --- Danach: OHNE Remount pruefen, ob alles sofort aktualisiert ist ---
-  clickByText(d, "Rückblick");
-  await flush(dom);
   kw31 = [...d.querySelectorAll(".card")].find(c=>c.textContent.includes("KW 31"));
   check(!!kw31, "KW-31-Karte nach dem Nachtragen gefunden");
   check(!!kw31 && kw31.textContent.includes("2/7 Tage geloggt"), "nachher: 2/7 Tage geloggt, SOFORT ohne Reload (erhalten: "+(kw31&&kw31.textContent)+")");
