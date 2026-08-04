@@ -38,9 +38,9 @@ function barsOf(card){
   const d = dom.window.document;
 
   // --- Augustansicht ---
+  // Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment
+  // (dem Standardsegment) — kein separater "Rückblick"-Klick mehr noetig.
   clickByText(d, "Verlauf");
-  await flush(dom);
-  clickByText(d, "Rückblick");
   await flush(dom);
   let kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Augustansicht gefunden");
@@ -72,8 +72,6 @@ function barsOf(card){
   await flush(dom);
   clickByText(d, "‹");
   await flush(dom);
-  clickByText(d, "Rückblick");
-  await flush(dom);
   kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Juli-Ansicht gefunden");
   check(!!kw31 && kw31.textContent.includes("2/7 Tage geloggt"), "Juli-Ansicht: ebenfalls 2/7 Tage geloggt");
@@ -84,8 +82,9 @@ function barsOf(card){
   check(bars && bars[6].style.background===augustAug2Color, "2.8.-Balkenfarbe ist in Juli- und August-Ansicht identisch");
 
   // --- 31.7. loeschen -> sofort ueberall zurueck auf "nicht geloggt" ---
-  // Aktuell ist der "Rueckblick"-Reiter aktiv (kein Kalendergitter sichtbar) —
-  // zuerst zurueck zu "Kalender" wechseln, dort steht der Monat noch auf Juli.
+  // Segment steht bereits auf "Kalender" (Wochenkarten stehen seit dem
+  // UI-Refactoring dort direkt darunter) und der Monat noch auf Juli —
+  // der Klick hier bestaetigt nur, dass das Kalendergitter erreichbar ist.
   clickByText(d, "Kalender");
   await flush(dom);
   const dayCell31b = [...d.querySelectorAll(".cell")].find(c=>{
@@ -105,8 +104,6 @@ function barsOf(card){
     if(confirmBtn){confirmBtn.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));await flush(dom);}
   }
 
-  clickByText(d, "Rückblick");
-  await flush(dom);
   kw31 = kw31Card(d);
   check(!!kw31 && kw31.textContent.includes("1/7 Tage geloggt"), "nach Loeschen von 31.7.: sofort 1/7 Tage geloggt (erhalten: "+(kw31&&kw31.textContent)+")");
   // Nur noch 2.8. (2000-2651=-651 kcal, Ø=2000 kcal, kg=651/7700≈0.08) zaehlt.
