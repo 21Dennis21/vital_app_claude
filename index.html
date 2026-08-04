@@ -3089,12 +3089,16 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           {/* --- ABSCHNITT "WOCHENÜBERSICHT" ---
               UX-Verbesserung: klare optische Trennung zwischen Kalender und
               Wochenkarten, damit diese nicht mehr direkt am Kalender
-              "kleben". Gleiche visuelle Hierarchie wie andere
-              Abschnittsueberschriften der App (siehe z.B. "Live-Prognose"),
-              linksbuendig, dezent. Abstand zum Kalender ergibt sich aus dem
+              "kleben". Echte Abschnittsueberschrift statt Fliesstext —
+              dasselbe className="h1" + fontSize:"var(--fs-md)"-Muster, das
+              die App bereits fuer Abschnittsueberschriften innerhalb eines
+              Tabs verwendet (siehe "Ernährung" in HeuteView): fett,
+              Primaertextfarbe (kein color-Override -> erbt --ink),
+              linksbuendig. Abstand zum Kalender ergibt sich aus dem
               marginBottom des Kalendergitters (14px) + marginTop hier
-              (16px) = 30px, innerhalb des 8px-Rasters. */}
-          <div className="lbl" style={{marginTop:"var(--sp-2)",marginBottom:"var(--sp-2)"}}>Wochenübersicht</div>
+              (var(--sp-3)=24px) = 38px, spuerbar mehr als zuvor. Abstand zur
+              ersten Wochenkarte: var(--sp-2)=16px, wie im "Ernährung"-Vorbild. */}
+          <div className="h1" style={{fontSize:"var(--fs-md)",marginTop:"var(--sp-3)",marginBottom:"var(--sp-2)"}}>Wochenübersicht</div>
 
           {/* --- WOCHENKARTEN (vormals eigener Tab "Rückblick") ---
               UI-Refactoring: der Kalender ist jetzt die vollstaendige
