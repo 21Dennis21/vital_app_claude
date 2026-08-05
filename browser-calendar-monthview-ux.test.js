@@ -131,11 +131,14 @@ async function testGoalAwareThirdTile(){
   console.log("\n--- 8. Dritte KPI-Kachel passt sich dynamisch an das Gewichtsziel an ---");
 
   // Ziel "zunehmen" (Zielgewicht deutlich > aktuelles Gewicht) + Ueberschuss
-  // (totDef>0) -> Titel "Gewichtszunahme", gruen (Zunahme entspricht bei
-  // diesem Ziel dem gewuenschten Fortschritt).
+  // (totDef>0) -> Titel "Gewichtszunahme", PLUS-Vorzeichen, gruen (Zunahme
+  // entspricht bei diesem Ziel dem gewuenschten Fortschritt). Kein manuelles
+  // TDEE-Feld: die Engine berechnet TDEE ausschliesslich aus weight/fat/
+  // activityIdx (Katch-McArdle), hier weight=70,fat=20,activityIdx=1 ->
+  // TDEE=2291 -> bei kcalIn=2500 ein Ueberschuss von +209 kcal.
   {
     const dom = createApp((win)=>{
-      win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:70,fat:20,activityIdx:1,tdeeOverride:2000}}));
+      win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:70,fat:20,activityIdx:1}}));
       const data = {};
       data["2026-7-5"] = {kcalIn:2500, kcalBurned:0, weight:70, meals:{}, logged:true};
       win.localStorage.setItem("tracker_data", JSON.stringify(data));
@@ -146,11 +149,38 @@ async function testGoalAwareThirdTile(){
     clickByText(d, "Verlauf");
     await flush(dom);
     const tile = findThirdTileCard(d);
-    check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen)");
+    check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Ueberschuss)");
     check(!!tile && tile.textContent.includes("Gewichtszunahme"), "Ziel 'zunehmen': Titel ist 'Gewichtszunahme' (erhalten: "+(tile&&tile.textContent)+")");
     check(!!tile && !tile.textContent.includes("Fettverlust"), "Ziel 'zunehmen': KEIN 'Fettverlust' angezeigt");
+    check(!!tile && /≈\s*\+/.test(tile.textContent), "Ziel 'zunehmen' + Ueberschuss: Wert hat PLUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
     const numSpan = tile && tile.querySelector(".num");
     check(!!numSpan && numSpan.style.color==="var(--good)", "Ziel 'zunehmen' + Ueberschuss: Zahl ist gruen (erhalten: "+(numSpan&&numSpan.style.color)+")");
+    dom.window.close();
+  }
+
+  // Ziel "zunehmen" + DEFIZIT (totDef<0, Nutzer isst zu wenig fuer sein
+  // Zunehmen-Ziel) -> weiterhin Titel "Gewichtszunahme", aber MINUS-
+  // Vorzeichen (spiegelt die tatsaechliche Bilanz wider) und amber (Ziel
+  // wird gerade NICHT erreicht). Gleiche Personendaten wie oben, aber
+  // kcalIn=1400 < TDEE 2291 -> Defizit von -891 kcal.
+  {
+    const dom = createApp((win)=>{
+      win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:70,fat:20,activityIdx:1}}));
+      const data = {};
+      data["2026-7-5"] = {kcalIn:1400, kcalBurned:0, weight:70, meals:{}, logged:true};
+      win.localStorage.setItem("tracker_data", JSON.stringify(data));
+      win.localStorage.setItem("tracker_goals", JSON.stringify([{type:"weight", target:80, active:true}]));
+    }, {now:new Date(2026,7,15,12,0,0)});
+    await flush(dom);
+    const d = dom.window.document;
+    clickByText(d, "Verlauf");
+    await flush(dom);
+    const tile = findThirdTileCard(d);
+    check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Defizit)");
+    check(!!tile && tile.textContent.includes("Gewichtszunahme"), "Ziel 'zunehmen' + Defizit: Titel bleibt 'Gewichtszunahme' (erhalten: "+(tile&&tile.textContent)+")");
+    check(!!tile && /≈\s*[−-]/.test(tile.textContent), "Ziel 'zunehmen' + Defizit: Wert hat MINUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
+    const numSpan2 = tile && tile.querySelector(".num");
+    check(!!numSpan2 && numSpan2.style.color==="var(--amber)", "Ziel 'zunehmen' + Defizit: Zahl ist amber/warnfarbe (erhalten: "+(numSpan2&&numSpan2.style.color)+")");
     dom.window.close();
   }
 
