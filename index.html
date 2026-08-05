@@ -3044,22 +3044,30 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               <button className="btn btn2" onClick={()=>openSetup(sy,sm)}>Grundbedarf für {MN[sm]} einrichten</button>
             </div>
           )}
+          {/* --- KPI-KARTEN: 3 statt vormals 4, groesser/hochwertiger mit
+              Icon-Badge (UI-Update-Vorlage) — dieselben drei bereits
+              vorhandenen Werte (Ø kcal/Bilanz/Fettverlust, unveraendert
+              berechnet), nur die Kartendarstellung selbst ist neu. */}
           {lg.length>0&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
-                ["Ø kcal",lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,"var(--ink)"],
-                ["Bilanz",(totDef<0?"−":"+")+Math.abs(totDef),totDef<0?"var(--good)":"var(--amber)"],
-                ["Fettverlust",(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),totDef<0?"var(--good)":"var(--amber)"],
-              ].map(([l,v,c])=>(
-                <div key={l} className="mini">
-                  <div className="num" style={{fontSize:15,fontWeight:700,color:c}}>{v}</div>
-                  <div className="sub" style={{fontSize:11}}>{l}</div>
+                {icon:"🍴",iconBg:"var(--card2)",l:"Ø kcal",v:lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,sub:"Durchschnitt pro Tag",c:"var(--ink)"},
+                {icon:"🔥",iconBg:"var(--amber-soft)",l:"Bilanz",v:(totDef<0?"−":"+")+Math.abs(totDef),sub:"kcal",c:totDef<0?"var(--good)":"var(--amber)"},
+                {icon:"💧",iconBg:"var(--good-soft)",l:"Fettverlust",v:(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2),sub:"kg",c:totDef<0?"var(--good)":"var(--amber)"},
+              ].map(k=>(
+                <div key={k.l} className="card card-compact" style={{marginBottom:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                    <div style={{width:26,height:26,borderRadius:8,background:k.iconBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{k.icon}</div>
+                    <span className="sub" style={{fontSize:11}}>{k.l}</span>
+                  </div>
+                  <div className="num" style={{fontSize:19,fontWeight:700,color:k.c}}>{k.v}</div>
+                  <div className="sub" style={{fontSize:11}}>{k.sub}</div>
                 </div>
               ))}
             </div>
           )}
           <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-            {[["Gewicht","var(--amber)"],["Defizit","var(--good)"]].map(([l,c])=>(
+            {[["Gewicht","var(--amber)"],["Defizit / Überschuss","var(--good)"]].map(([l,c])=>(
               <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
                 <div style={{width:7,height:7,borderRadius:99,background:c}}/>
                 <span className="sub" style={{fontSize:11}}>{l}</span>
@@ -3189,37 +3197,41 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               </div>
 
               {/* --- MONATSFAZIT (vormals im entfallenen Monatsabschluss-Dialog) ---
-                  Zu einer kleinen Monatszusammenfassung erweitert — jede
-                  Kennzahl ist entweder bereits an anderer Stelle im
-                  Kalender-Segment berechnet (lg/totDef/dim aus dem
-                  KPI-Bereich oben, weekSummaries/weeksInDeficitCount aus den
-                  Wochenkarten direkt darueber) oder eine reine Division
-                  bestehender Werte (avgDailyBalance) — keine neue
-                  Fachlogik, keine neuen gespeicherten Daten. */}
-              {lg.length>0&&(
-                <div style={{padding:16,borderRadius:16,background:totDef<0?"var(--good-soft)":totDef>0?"var(--amber-soft)":"var(--card2)",textAlign:"center",marginBottom:12}}>
-                  <div style={{fontSize:17,fontWeight:700,color:totDef<0?"var(--good)":totDef>0?"var(--amber)":"var(--ink)"}}>
-                    {totDef<0?"🏆 Guter Monat":totDef===0?"⚖️ Ausgeglichener Monat":"💪 Herausfordernder Monat"}
-                  </div>
-                  <div className="sub" style={{marginTop:4}}>
-                    ≈ {(Math.abs(totDef)/KCAL_PER_KG).toFixed(2)} kg Fett {totDef<0?"verloren":totDef>0?"zugenommen":"gehalten"}
-                  </div>
-                  <div style={{marginTop:14,textAlign:"left"}}>
-                    <div className="row" style={{padding:"7px 0",borderBottom:"1px solid var(--line)"}}>
-                      <span className="sub">Ernährungstage geloggt</span>
-                      <span className="num" style={{fontWeight:700}}>{lg.length} / {dim}</span>
+                  Checklisten-Format nach UI-Update-Vorlage: Icon-Badge +
+                  Kopfzeile, darunter 4 Zeilen mit Haken-Icon. Jede Kennzahl
+                  ist entweder bereits an anderer Stelle im Kalender-Segment
+                  berechnet (lg/totDef/dim aus dem KPI-Bereich oben,
+                  weekSummaries/weeksInDeficitCount aus den Wochenkarten
+                  direkt darueber) oder eine reine Division/Prozentrechnung
+                  bestehender Werte (avgDailyBalance, loggedPct) — keine
+                  neue Fachlogik, keine neuen gespeicherten Daten. Abstand
+                  zur letzten Wochenkarte: deren eigenes marginBottom (16px,
+                  .card-Klasse) + marginTop hier (16px) = 32px. */}
+              {lg.length>0&&(()=>{
+                const loggedPct=dim?Math.round(lg.length/dim*100):0;
+                const fazitLines=[
+                  lg.length+" / "+dim+" Tage geloggt ("+loggedPct+"%)",
+                  weeksInDeficitCount+" / "+weekSummaries.length+" Wochen im Defizit",
+                  avgDailyBalance<0?"Ø "+Math.abs(avgDailyBalance)+" kcal Defizit pro Tag":avgDailyBalance>0?"Ø "+Math.abs(avgDailyBalance)+" kcal Überschuss pro Tag":"Ø ausgeglichene Tagesbilanz",
+                  "≈ "+(Math.abs(totDef)/KCAL_PER_KG).toFixed(2)+" kg Fett "+(totDef<0?"verloren":totDef>0?"zugenommen":"gehalten"),
+                ];
+                return(
+                  <div className="card" style={{marginTop:"var(--sp-2)",marginBottom:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:totDef<0?"var(--good-soft)":totDef>0?"var(--amber-soft)":"var(--card2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>
+                        {totDef<0?"🏆":totDef===0?"⚖️":"💪"}
+                      </div>
+                      <div style={{fontSize:17,fontWeight:700}}>{totDef<0?"Sehr guter Monat!":totDef===0?"Ausgeglichener Monat":"Herausfordernder Monat"}</div>
                     </div>
-                    <div className="row" style={{padding:"7px 0",borderBottom:"1px solid var(--line)"}}>
-                      <span className="sub">{avgDailyBalance<0?"Ø Defizit":avgDailyBalance>0?"Ø Überschuss":"Ø Bilanz"}</span>
-                      <span className="num" style={{fontWeight:700}}>{Math.abs(avgDailyBalance)} kcal</span>
-                    </div>
-                    <div className="row" style={{padding:"7px 0"}}>
-                      <span className="sub">Wochen im Defizit</span>
-                      <span className="num" style={{fontWeight:700}}>{weeksInDeficitCount} von {weekSummaries.length}</span>
-                    </div>
+                    {fazitLines.map((line,i)=>(
+                      <div key={i} className="row" style={{justifyContent:"flex-start",gap:8,padding:"6px 0"}}>
+                        <span style={{color:"var(--good)",flexShrink:0}}>✅</span>
+                        <span className="sub" style={{color:"var(--ink)"}}>{line}</span>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </React.Fragment>
             );
           })()}
