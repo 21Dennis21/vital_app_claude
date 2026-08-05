@@ -64,6 +64,10 @@
      Gruen/Orange-Bewertung (Tagesbilanz, Wochenbilanz, Zielbewertung)
      mitreisst. */
   --accent:#2F6FED; --accent-soft:rgba(47,111,237,.10);
+  /* --accent-grad-a/b: nur fuer den Verlauf-Screen (heroischer Segment-
+     Regler/aktive Pille) — rein additive, dekorative Verlaufsfarbe,
+     KEIN Ersatz fuer --accent (der bleibt der eigentliche UI-Akzent). */
+  --accent-grad-a:#6EA1FF; --accent-grad-b:#2F6FED;
   --good:#437862; --good-soft:rgba(67,120,98,.10);
   --pill-off:#EFEDE6; --pill-on:#FFFFFF;
   --nav-active:#2F6FED;
@@ -82,6 +86,7 @@
   --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
   --ink:#F0F2F3; --ink2:#98A1A8; --ink3:#5C646B;
   --accent:#5B8DEF; --accent-soft:rgba(91,141,239,.16);
+  --accent-grad-a:#7FA8FF; --accent-grad-b:#4C7EEA;
   --good:#69A98C; --good-soft:rgba(105,169,140,.14);
   --pill-off:#181C20; --pill-on:#272D33;
   --nav-active:#5B8DEF;
@@ -96,6 +101,7 @@
     --bg:#0C0E10; --card:#171B1E; --card2:#20252A;
     --ink:#F0F2F3; --ink2:#98A1A8; --ink3:#5C646B;
     --accent:#5B8DEF; --accent-soft:rgba(91,141,239,.16);
+    --accent-grad-a:#7FA8FF; --accent-grad-b:#4C7EEA;
     --good:#69A98C; --good-soft:rgba(105,169,140,.14);
   --pill-off:#181C20; --pill-on:#272D33;
   --nav-active:#5B8DEF;
@@ -198,8 +204,51 @@ input::placeholder{color:var(--ink3);}
   .range-pill{padding:0 13px;}
 }
 @keyframes fade{from{opacity:0}to{opacity:1}}
-.cell{border-radius:12px;background:var(--card);min-height:58px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;transition:transform .15s;box-shadow:var(--shadow);}
+/* .cell wird ausschliesslich von der Kalender-Monatsansicht in VerlaufView
+   verwendet (kein anderer Screen teilt sich diese Klasse) — deshalb hier
+   direkt an das Referenzbild angepasst (hoeher, staerker gerundet), statt
+   eine parallele vl-*-Klasse einzufuehren. */
+.cell{border-radius:16px;background:var(--card);min-height:58px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;transition:transform .15s;box-shadow:var(--shadow);}
 .cell:active{transform:scale(.94);}
+
+/* ===== VERLAUF-SCREEN: KALENDER-MONATSANSICHT (Redesign nach Referenzbild)
+   Praefix "vl-" = ausschliesslich fuer diesen einen Screen gedacht. Teilt
+   bewusst KEINE Klassen mit anderen Seiten, damit ein spaeteres Redesign
+   von "Ziele"/"Mehr"/etc. hiervon unberuehrt bleibt. */
+.vl-screen{background:radial-gradient(120% 55% at 50% -8%, rgba(91,141,239,.06), transparent 62%);}
+.vl-title{font-size:clamp(32px,9.5vw,40px);font-weight:800;letter-spacing:-1px;margin:var(--sp-1) 0 var(--sp-3) 0;}
+/* Seg-Erweiterung (variant="hero", additiv) — .seg/.segb selbst bleiben
+   unveraendert, alle anderen <Seg>-Einsatzstellen (Ziele/Theme/Essens-
+   Suche) bekommen kein variant und sehen exakt wie zuvor aus. */
+.seg-hero{padding:5px;border-radius:20px;}
+.segb-hero{padding:13px 4px;border-radius:15px;font-size:14px;}
+.segb-hero.on{background:linear-gradient(135deg,var(--accent-grad-a),var(--accent-grad-b));}
+/* MonthNav-Erweiterung (variant="hero", additiv) — die zweite <MonthNav>-
+   Einsatzstelle (Sport-Segment) bekommt kein variant und bleibt unveraendert. */
+.nav-square{width:40px;height:40px;border-radius:14px;background:var(--card2);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:18px;}
+.nav-square:active{opacity:.55;}
+/* KPI-Karten (Kalender-Segment) */
+.vl-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(8px,2.5vw,12px);margin-bottom:20px;}
+.vl-kpi-card{border-radius:20px;padding:16px 13px 14px;display:flex;flex-direction:column;gap:9px;min-width:0;border:1px solid rgba(255,255,255,.05);}
+.vl-kpi-icon{width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+/* Empirisch in echtem Chromium bei 320/375/390/430px kalibriert (per
+   Playwright, Range().getBoundingClientRect() gegen die tatsaechliche
+   Kartenbreite gemessen — nicht nur geschaetzt): der alte fixe
+   Mindestwert (11px) verhinderte, dass die Schrift bei 320px unter den
+   dort per vw-Anteil eigentlich vorgesehenen ~9px faellt, wodurch selbst
+   "Kalorienbilanz" (14 Zeichen, EIN Wort ohne Leerzeichen) den Karten-
+   Innenraum ueberragte. "Kalorienbilanz" ist KEIN gueltiger Umbruchpunkt
+   enthalten (weiterhin kein overflow-wrap:break-word — Umbrechen/
+   Abschneiden bleiben ausdruecklich verboten), daher muss die Groesse
+   exakt passen statt sich auf einen Umbruch zu verlassen. */
+.vl-kpi-label{font-size:clamp(8px,2.75vw,12.5px);color:var(--ink2);font-weight:500;line-height:1.25;}
+/* white-space:nowrap + eher konservativer clamp() statt eines grossen
+   Maximalwerts: die Zahl darf laut Vorgabe NIEMALS umbrechen, auch nicht
+   bei sechs-/siebenstelligen Kalorienbilanz-Extremwerten. Der clamp()-
+   Wertebereich orientiert sich bewusst am bereits mehrfach empirisch in
+   echtem Chromium (320/375/430px) verifizierten Vorgaenger-Wert. */
+.vl-kpi-value{font-size:clamp(17px,5.8vw,24px);font-weight:700;letter-spacing:-.3px;line-height:1.05;white-space:nowrap;}
+.vl-kpi-unit{font-size:12px;color:var(--ink3);}
 .foodrow{width:100%;text-align:left;background:var(--card2);border:1.5px solid transparent;border-radius:14px;padding:12px 14px;font:inherit;color:var(--ink);cursor:pointer;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .foodrow:active{border-color:var(--accent);}
 .mealcard{background:var(--card);border-radius:18px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);}
@@ -1925,10 +1974,16 @@ function NumField({value,onChange,placeholder,suffix,autoFocus,onEnterOrBlur}){
 }
 
 
-function Seg({items,val,onChange}){
+/* variant="hero" ist rein additiv (neue Klassen seg-hero/segb-hero) und
+   optional — ohne die Prop verhaelt sich Seg exakt wie zuvor. Nur der
+   Kalender-Segment-Regler in VerlaufView setzt variant="hero"; alle
+   anderen Einsatzstellen (Ziele, Theme-Auswahl, Essens-Suche) bleiben
+   unveraendert. */
+function Seg({items,val,onChange,variant}){
+  const hero=variant==="hero";
   return(
-    <div className="seg">
-      {items.map(i=><button key={i} className={"segb"+(val===i?" on":"")} onClick={()=>{tapH();onChange(i);}}>{i}</button>)}
+    <div className={"seg"+(hero?" seg-hero":"")}>
+      {items.map(i=><button key={i} className={"segb"+(val===i?" on":"")+(hero?" segb-hero":"")} onClick={()=>{tapH();onChange(i);}}>{i}</button>)}
     </div>
   );
 }
@@ -2019,12 +2074,18 @@ function DragList({items,itemKey,rowHeight=64,onReorder,renderRow}){
   );
 }
 
-function MonthNav({y,m,onPrev,onNext,marginBottom="var(--sp-2)"}){
+/* variant="hero" ist rein additiv (Klasse "nav-square" zusaetzlich zu
+   "nav", groesserer/fetterer Monatstext) und optional — ohne die Prop
+   verhaelt sich MonthNav exakt wie zuvor. Nur die Kalender-Segment-
+   Einsatzstelle in VerlaufView setzt variant="hero"; die zweite
+   Einsatzstelle (Sport-Segment) bleibt unveraendert. */
+function MonthNav({y,m,onPrev,onNext,marginBottom="var(--sp-2)",variant}){
+  const hero=variant==="hero";
   return(
-    <div style={{display:"grid",gridTemplateColumns:"36px 1fr 36px",alignItems:"center",marginBottom}}>
-      <button className="nav" onClick={()=>{tapH();onPrev();}} style={{justifySelf:"end",fontSize:17}}>‹</button>
-      <div style={{fontSize:20,fontWeight:700,textAlign:"center",letterSpacing:-.2}}>{MN[m]} {y}</div>
-      <button className="nav" onClick={()=>{tapH();onNext();}} style={{justifySelf:"start",fontSize:17}}>›</button>
+    <div style={{display:"grid",gridTemplateColumns:hero?"40px 1fr 40px":"36px 1fr 36px",alignItems:"center",marginBottom}}>
+      <button className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onPrev();}} style={hero?{justifySelf:"end"}:{justifySelf:"end",fontSize:17}}>‹</button>
+      <div style={{fontSize:hero?"clamp(21px,6.2vw,26px)":20,fontWeight:hero?800:700,textAlign:"center",letterSpacing:-.3}}>{MN[m]} {y}</div>
+      <button className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onNext();}} style={hero?{justifySelf:"start"}:{justifySelf:"start",fontSize:17}}>›</button>
     </div>
   );
 }
@@ -3026,14 +3087,21 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
   },[data,mSet,calibProfile,weightConfirmations,currentDayKey]);
 
   return(
-    <div>
-      <div className="h1" style={{marginBottom:14}}>Verlauf</div>
-      <Seg items={["Kalender","Rückblick","Gewicht","Sport","Jahr"]} val={seg} onChange={setSeg}/>
+    <div className="vl-screen">
+      <div className="h1 vl-title">Verlauf</div>
+      <Seg items={["Kalender","Rückblick","Gewicht","Sport","Jahr"]} val={seg} onChange={setSeg} variant="hero"/>
 
-      {/* --- KALENDER --- */}
+      {/* --- KALENDER ---
+          Redesign nach Referenzbild (Screenshot einer Ziel-App): Titel/
+          Segment-Regler/Monatsnavigation/KPI-Karten/Kalendergitter komplett
+          neu angeordnet und gestylt. Ausschliesslich Darstellung/Struktur
+          geaendert — KEINE der zugrunde liegenden Berechnungen (totDef,
+          Katch-McArdle/TDEE, Gewichts-/Bilanz-Werte je Tag,
+          inferWeightGoalDirection) wurde angefasst. Bestehende Handler
+          (nav, openDay, openSetup, setSeg) unveraendert weiterverwendet. */}
       {seg==="Kalender"&&(
         <div>
-          <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)}/>
+          <MonthNav y={sy} m={sm} onPrev={()=>nav(-1)} onNext={()=>nav(1)} variant="hero"/>
           {/* Grundbedarf laesst sich hier auch nachtraeglich fuer JEDEN
               navigierten Monat einrichten (nicht nur den aktuellen) — ohne
               TDEE lassen sich Tagesbilanzen fuer diesen Monat nicht sinnvoll
@@ -3044,118 +3112,111 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               <button className="btn btn2" onClick={()=>openSetup(sy,sm)}>Grundbedarf für {MN[sm]} einrichten</button>
             </div>
           )}
-          {/* --- KPI-KARTEN: Premium-Redesign (Apple-Health-Stil) ---
-              Reines UI-Redesign — dieselben drei bereits vorhandenen Werte
-              (Ø Kalorien/Kalorienbilanz/dritte Kachel), IDENTISCH berechnet
-              wie zuvor (keine Formel/Rundung/Vorzeichen-Logik veraendert,
-              nur Darstellung/Text/Reihenfolge). Icons UNVERAENDERT aus der
-              vorherigen Fassung uebernommen (Pfade/viewBox/strokeWidth
-              bleiben exakt gleich), nur minimal verkleinert (14px).
-              WICHTIG: Label-Text darf NIEMALS umbrechen oder per Ellipsis
-              gekappt werden (harte Vorgabe) — Icon+Label bleiben wie
-              gewuenscht in EINER Zeile. "Kalorienbilanz" ist ein einzelnes
-              Wort ohne Leerzeichen (kein gueltiger Umbruchpunkt), deshalb
-              muessen Icon-Groesse/Label-Schriftgroesse/Kartenpadding exakt
-              so bemessen sein, dass dieses Wort bei drei gleich breiten
-              Spalten auch auf dem schmalsten unterstuetzten iPhone (375px,
-              zusaetzlich empirisch auch bei 320px) einzeilig bleibt.
-              whiteSpace:"nowrap" auf Icon-Zeile UND Zahl erzwingt das;
-              empirisch mit einem 6-stelligen Extremwert (-35681) in
-              echtem Chromium bei 320/375/430px verifiziert (siehe
-              Bericht).
-              Dritte Kachel jetzt dynamisch anhand des aktiven Gewichtsziels
-              (inferWeightGoalDirection — dieselbe, bereits an anderer
-              Stelle in dieser Komponente fuer die Wochenkarten verwendete
-              Funktion, keine neue Business-Logik): Titel/Icon/Farbe passen
-              sich an "abnehmen"/"zunehmen"/"halten" an. Der eigentliche
-              Wert (≈-Praefix, Vorzeichen, kg-Betrag aus totDef/KCAL_PER_KG)
-              bleibt in JEDEM Fall exakt dieselbe, unveraenderte Berechnung
-              — nur wie er BENANNT/EINGEFAERBT wird, haengt vom Ziel ab.
-              Bei "abnehmen" ist die Farblogik exakt wie zuvor (Verlust=gruen,
-              Zunahme=amber); bei "zunehmen" spiegelbildlich (Zunahme=gruen,
-              Verlust=amber, entspricht demselben bereits etablierten
-              Zielausrichtungs-Muster wie dayGoalColor/weekGoalColor weiter
-              unten); bei "halten" neutral (keine Farbaussage), da dafuer
-              kein Toleranzwert vorgegeben wurde. */}
+          {/* --- KPI-KARTEN: Redesign nach Referenzbild ---
+              Dieselben drei bereits vorhandenen Werte (Ø Kalorien/
+              Kalorienbilanz/dritte Kachel), IDENTISCH berechnet wie zuvor
+              (keine Formel/Rundung/Vorzeichen-Logik veraendert). Neu ist
+              NUR die Darstellung: Icon-Badge oben, Label darunter, grosse
+              Zahl, Einheit auf eigener Zeile — statt der vorherigen
+              Icon+Label-Zeile mit Zahl+Einheit-Zeile.
+              FARBLOGIK-AENDERUNG (bewusst, laut Referenzbild, NUR Karte 2):
+              die Zahl von Karte 2 ("Kalorienbilanz") zeigt jetzt IMMER die
+              feste Akzentfarbe Orange, statt wie zuvor grün/amber je nach
+              Defizit/Ueberschuss — das Referenzbild zeigt "Kalorienbilanz"
+              ausdruecklich in Orange, obwohl der gezeigte Wert ein Defizit
+              ist, und definiert "Akzentfarbe Orange" wortwoertlich und
+              mehrfach als FESTE Kartenfarbe. Karte 1 ("Ø Kalorien") bleibt
+              unveraendert neutral (--ink, weiss).
+              Karte 3 (dynamische Kachel) ist NICHT von dieser Aenderung
+              betroffen: Icon-Badge/obere Randlinie bekommen zwar eine feste
+              Identitaetsfarbe je Zielrichtung (gruen fuer abnehmen/
+              zunehmen, neutral fuer halten, passend zur "Akzentfarbe Grün"
+              im Referenzbild), aber die ZAHL selbst behaelt exakt die
+              bisherige, im vorherigen Arbeitsschritt eigens gebaute und
+              bestaetigte Erfolgs-/Warnfarblogik (gruen=Ziel wird erreicht,
+              amber=Ziel wird gerade NICHT erreicht) unveraendert bei — das
+              waere sonst eine stille Regression einer gerade erst
+              verifizierten Funktion gewesen. Die dynamische Ziel-Logik der
+              dritten Kachel (Fettverlust/Gewichtszunahme/Gewichtsänderung
+              je nach inferWeightGoalDirection) bleibt davon unabhaengig
+              vollstaendig erhalten. */}
           {lg.length>0&&(()=>{
             const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
             const theoreticalKg="≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
             const thirdTile=goalDirection==="zunehmen"
               ? {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 17 9 11 13 15 21 6"/><polyline points="21 10 21 6 17 6"/>
                   </svg>
-                ),l:"Gewichtszunahme",v:theoreticalKg,unit:"kg",c:totDef>0?"var(--good)":"var(--amber)"}
+                ),l:"Gewichtszunahme",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:totDef>0?"var(--good)":"var(--amber)"}
               : goalDirection==="halten"
               ? {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 8l-3 6a3 3 0 0 0 6 0Z"/><path d="M19 8l-3 6a3 3 0 0 0 6 0Z"/>
                   </svg>
-                ),l:"Gewichtsänderung",v:theoreticalKg,unit:"kg",c:"var(--ink)"}
+                ),l:"Gewichtsänderung",v:theoreticalKg,unit:"kg",accent:"var(--ink3)",accentSoft:"var(--card2)",valueColor:"var(--ink)"}
               : {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
                   </svg>
-                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",c:totDef<0?"var(--good)":"var(--amber)"};
+                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:totDef<0?"var(--good)":"var(--amber)"};
+            const kpis=[
+              {icon:(
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 2v7c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+                </svg>
+              ),l:"Ø Kalorien",v:lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,unit:null,accent:"var(--accent)",accentSoft:"var(--accent-soft)",valueColor:"var(--ink)"},
+              {icon:(
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+                </svg>
+              ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef).toLocaleString("de-DE"),unit:"kcal",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--amber)"},
+              thirdTile,
+            ];
             return(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
-              {[
-                {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 2v7c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
-                  </svg>
-                ),l:"Ø Kalorien",v:lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,unit:null,c:"var(--ink)"},
-                {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
-                  </svg>
-                ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef),unit:"kcal",c:totDef<0?"var(--good)":"var(--amber)"},
-                thirdTile,
-              ].map(k=>(
-                <div key={k.l} style={{background:"var(--card2)",borderRadius:18,padding:"18px 8px",display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:3,minWidth:0,whiteSpace:"nowrap"}}>
-                    <div style={{color:"var(--ink3)",display:"flex",flexShrink:0}}>{k.icon}</div>
-                    {/* Label-Schriftgroesse bleibt fuer "Ø Kalorien"/"Kalorienbilanz"
-                        exakt 10px (unveraendert). Die neuen zielabhaengigen Labels
-                        "Gewichtszunahme"/"Gewichtsänderung" sind laenger als das
-                        bisher tolerierte Maximum "Kalorienbilanz" (14 Zeichen) und
-                        wuerden bei 320-375px sonst ueber den Kartenrand hinauslaufen
-                        (empirisch in echtem Chromium verifiziert). Da Umbruch UND
-                        Abschneiden beide ausdruecklich verboten sind, schrumpft NUR
-                        fuer laengere Labels die Schrift proportional zur Zeichenzahl. */}
-                    <span className="sub" style={{fontSize:k.l.length>14?10*(11/k.l.length):10,lineHeight:1.2,whiteSpace:"nowrap"}}>{k.l}</span>
+            <div className="vl-kpi-grid" style={{gridTemplateColumns:"repeat(3,1fr)"}}>
+              {kpis.map(k=>(
+                <div key={k.l} className="vl-kpi-card" style={{background:"linear-gradient(160deg,var(--card2),"+k.accentSoft+")",borderTop:"3px solid "+k.accent}}>
+                  <div className="vl-kpi-icon" style={{color:k.accent,background:k.accentSoft}}>{k.icon}</div>
+                  {/* "Gewichtszunahme"/"Gewichtsänderung" (15/16 Zeichen)
+                      sind laenger als "Kalorienbilanz" (14, die Referenz-
+                      groesse fuer den Basis-clamp oben) und wuerden ihn
+                      sonst ueberragen. calc() auf dem Basis-clamp (statt
+                      eines eigenen fixen Wertes) haelt die Schrumpfung
+                      responsiv UND laengenabhaengig zugleich — empirisch
+                      bei 320/375/390/430px mit beiden Woertern verifiziert. */}
+                  <div className="vl-kpi-label" style={k.l.length>14?{fontSize:"calc(clamp(8px,2.75vw,12.5px) * 0.68)"}:undefined}>{k.l}</div>
+                  <div>
+                    <span className="num vl-kpi-value" style={{color:k.valueColor}}>{k.v}</span>
                   </div>
-                  <div style={{display:"flex",alignItems:"baseline",gap:4,minWidth:0}}>
-                    <span className="num" style={{fontSize:"clamp(17px,5.5vw,23px)",fontWeight:600,color:k.c,letterSpacing:-.2,lineHeight:1,whiteSpace:"nowrap"}}>{k.v}</span>
-                    {k.unit&&<span className="sub" style={{fontSize:12,whiteSpace:"nowrap"}}>{k.unit}</span>}
-                  </div>
+                  {k.unit&&<div className="vl-kpi-unit">{k.unit}</div>}
                 </div>
               ))}
             </div>
             );
           })()}
-          <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
             {[["Gewicht","var(--amber)"],["Defizit / Überschuss","var(--good)"]].map(([l,c])=>(
-              <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
-                <div style={{width:7,height:7,borderRadius:99,background:c}}/>
-                <span className="sub" style={{fontSize:11}}>{l}</span>
+              <div key={l} style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:8,height:8,borderRadius:99,background:c}}/>
+                <span className="sub" style={{fontSize:12}}>{l}</span>
               </div>
             ))}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
-            {DS.map(x=><div key={x} className="sub" style={{textAlign:"center",fontSize:11}}>{x}</div>)}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
+            {DS.map(x=><div key={x} className="sub" style={{textAlign:"center",fontSize:12}}>{x}</div>)}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:14}}>
             {monthGridDays(sy,sm,data).map((x,i)=>{
               const def=isDayLogged(x)&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
               const isT=x.own&&isToday(x.d);
               return(
                 <div key={i} className="cell" onClick={()=>{if(x.own){tapH();openDay(sy,sm,x.d);}}}
-                  style={{minHeight:76,justifyContent:"flex-start",gap:1,paddingTop:5,opacity:x.own?1:.35,
-                    ...(isT?{boxShadow:"0 0 0 2px var(--accent)"}:{})}}>
-                  <div style={{fontSize:13,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
-                  {x.weight>0&&<div className="num" style={{fontSize:10,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
-                  {def!==null&&<div className="num" style={{fontSize:11,fontWeight:700,marginTop:"auto",color:def<0?"var(--good)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
+                  style={{minHeight:86,justifyContent:"flex-start",gap:2,paddingTop:8,opacity:x.own?1:.35,
+                    ...(isT?{boxShadow:"0 0 0 2px var(--accent)",background:"var(--accent-soft)"}:{})}}>
+                  <div style={{fontSize:14,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
+                  {x.weight>0&&<div className="num" style={{fontSize:11,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
+                  {def!==null&&<div className="num" style={{fontSize:12,fontWeight:700,marginTop:"auto",color:def<0?"var(--good)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
                 </div>
               );
             })}
