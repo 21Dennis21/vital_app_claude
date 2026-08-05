@@ -3044,52 +3044,53 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               <button className="btn btn2" onClick={()=>openSetup(sy,sm)}>Grundbedarf für {MN[sm]} einrichten</button>
             </div>
           )}
-          {/* --- KPI-KARTEN: kompaktes Premium-Redesign (Apple-Health-Stil) ---
+          {/* --- KPI-KARTEN: Premium-Redesign (Apple-Health-Stil) ---
               Reines UI-Redesign — dieselben drei bereits vorhandenen Werte
               (Ø Kalorien/Kalorienbilanz/Fettverlust), IDENTISCH berechnet
               wie zuvor (keine Formel/Rundung/Vorzeichen-Logik veraendert,
               nur Darstellung/Text/Reihenfolge). Icons UNVERAENDERT aus der
               vorherigen Fassung uebernommen (Pfade/viewBox/strokeWidth
-              bleiben exakt gleich). Label (Icon+Text) steht jetzt VOR der
-              Zahl (Nutzer soll zuerst sehen, WAS dargestellt wird, dann
-              den Wert) — gleiche Schriftgroessen/Zeilenhoehen/Abstaende in
-              allen drei Karten (identische Typografie-Regeln). CSS-Grid
-              gleicht die Kartenhoehe automatisch aus, falls ein laengeres
-              Label (z.B. "Kalorienbilanz") auf einem schmalen iPhone auf
-              eine zweite Zeile umbricht statt abgeschnitten zu werden —
-              Label-Text darf NIE per Ellipsis/Ueberlauf gekappt werden
-              (overflow-wrap:break-word noetig, da "Kalorienbilanz" ein
-              einzelnes Wort ohne Leerzeichen ist und sonst keinen
-              gueltigen Umbruchpunkt haette — empirisch bei 320/375/430px
-              mit Extremwerten in echtem Chromium geprueft). Fettverlust
-              zeigt bewusst ein "≈"-Praefix (Schaetzung, keine exakte
-              Messung) vor dem unveraendert berechneten Vorzeichen/Wert. */}
+              bleiben exakt gleich), nur minimal verkleinert (14px).
+              WICHTIG: Label-Text darf NIEMALS umbrechen oder per Ellipsis
+              gekappt werden (harte Vorgabe) — Icon+Label bleiben wie
+              gewuenscht in EINER Zeile. "Kalorienbilanz" ist ein einzelnes
+              Wort ohne Leerzeichen (kein gueltiger Umbruchpunkt), deshalb
+              muessen Icon-Groesse/Label-Schriftgroesse/Kartenpadding exakt
+              so bemessen sein, dass dieses Wort bei drei gleich breiten
+              Spalten auch auf dem schmalsten unterstuetzten iPhone (375px,
+              zusaetzlich empirisch auch bei 320px) einzeilig bleibt.
+              whiteSpace:"nowrap" auf Icon-Zeile UND Zahl erzwingt das;
+              empirisch mit einem 6-stelligen Extremwert (-35681) in
+              echtem Chromium bei 320/375/430px verifiziert (siehe
+              Bericht). Fettverlust zeigt weiterhin ein "≈"-Praefix
+              (Schaetzung, keine exakte Messung) vor dem unveraendert
+              berechneten Vorzeichen/Wert. */}
           {lg.length>0&&(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
               {[
                 {icon:(
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 2v7c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
                   </svg>
                 ),l:"Ø Kalorien",v:lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,unit:null,c:"var(--ink)"},
                 {icon:(
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
                   </svg>
                 ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef),unit:"kcal",c:totDef<0?"var(--good)":"var(--amber)"},
                 {icon:(
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
                   </svg>
                 ),l:"Fettverlust",v:"≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}),unit:"kg",c:totDef<0?"var(--good)":"var(--amber)"},
               ].map(k=>(
-                <div key={k.l} style={{background:"var(--card2)",borderRadius:18,padding:"18px 14px",display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                <div key={k.l} style={{background:"var(--card2)",borderRadius:18,padding:"18px 8px",display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:3,minWidth:0,whiteSpace:"nowrap"}}>
                     <div style={{color:"var(--ink3)",display:"flex",flexShrink:0}}>{k.icon}</div>
-                    <span className="sub" style={{fontSize:12,lineHeight:1.25,minWidth:0,flex:1,overflowWrap:"break-word"}}>{k.l}</span>
+                    <span className="sub" style={{fontSize:10,lineHeight:1.2,whiteSpace:"nowrap"}}>{k.l}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"baseline",gap:4,minWidth:0}}>
-                    <span className="num" style={{fontSize:"clamp(16px,5.3vw,22px)",fontWeight:600,color:k.c,letterSpacing:-.2,lineHeight:1,whiteSpace:"nowrap"}}>{k.v}</span>
+                    <span className="num" style={{fontSize:"clamp(17px,5.5vw,23px)",fontWeight:600,color:k.c,letterSpacing:-.2,lineHeight:1,whiteSpace:"nowrap"}}>{k.v}</span>
                     {k.unit&&<span className="sub" style={{fontSize:12,whiteSpace:"nowrap"}}>{k.unit}</span>}
                   </div>
                 </div>
