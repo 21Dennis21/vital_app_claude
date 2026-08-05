@@ -247,8 +247,10 @@ input::placeholder{color:var(--ink3);}
    hatte das Label die volle Kartenbreite fuer sich allein). */
 .vl-kpi-label{font-size:clamp(6.2px,2.1vw,11px);color:var(--ink2);font-weight:500;line-height:1.2;white-space:nowrap;min-width:0;}
 /* white-space:nowrap + konservativer clamp(): die Zahl darf NIEMALS
-   umbrechen, auch nicht bei sechs-/siebenstelligen Extremwerten. */
-.vl-kpi-value{font-size:clamp(17px,5.8vw,24px);font-weight:700;letter-spacing:-.3px;line-height:1.05;white-space:nowrap;}
+   umbrechen, auch nicht bei sechs-/siebenstelligen Extremwerten.
+   Ca. 12% kleiner als zuvor (clamp(17px,5.8vw,24px)) — Zahl bleibt der
+   dominante Blickfang, wirkt aber weniger wuchtig. */
+.vl-kpi-value{font-size:clamp(15px,5.1vw,21px);font-weight:700;letter-spacing:-.3px;line-height:1.05;white-space:nowrap;}
 .vl-kpi-row2{display:flex;align-items:baseline;gap:4px;min-width:0;}
 .vl-kpi-unit{font-size:12px;color:var(--ink3);white-space:nowrap;}
 .foodrow{width:100%;text-align:left;background:var(--card2);border:1.5px solid transparent;border-radius:14px;padding:12px 14px;font:inherit;color:var(--ink);cursor:pointer;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
