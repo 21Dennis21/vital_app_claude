@@ -3046,7 +3046,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           )}
           {/* --- KPI-KARTEN: Premium-Redesign (Apple-Health-Stil) ---
               Reines UI-Redesign — dieselben drei bereits vorhandenen Werte
-              (Ø Kalorien/Kalorienbilanz/Fettverlust), IDENTISCH berechnet
+              (Ø Kalorien/Kalorienbilanz/dritte Kachel), IDENTISCH berechnet
               wie zuvor (keine Formel/Rundung/Vorzeichen-Logik veraendert,
               nur Darstellung/Text/Reihenfolge). Icons UNVERAENDERT aus der
               vorherigen Fassung uebernommen (Pfade/viewBox/strokeWidth
@@ -3062,10 +3062,42 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               whiteSpace:"nowrap" auf Icon-Zeile UND Zahl erzwingt das;
               empirisch mit einem 6-stelligen Extremwert (-35681) in
               echtem Chromium bei 320/375/430px verifiziert (siehe
-              Bericht). Fettverlust zeigt weiterhin ein "≈"-Praefix
-              (Schaetzung, keine exakte Messung) vor dem unveraendert
-              berechneten Vorzeichen/Wert. */}
-          {lg.length>0&&(
+              Bericht).
+              Dritte Kachel jetzt dynamisch anhand des aktiven Gewichtsziels
+              (inferWeightGoalDirection — dieselbe, bereits an anderer
+              Stelle in dieser Komponente fuer die Wochenkarten verwendete
+              Funktion, keine neue Business-Logik): Titel/Icon/Farbe passen
+              sich an "abnehmen"/"zunehmen"/"halten" an. Der eigentliche
+              Wert (≈-Praefix, Vorzeichen, kg-Betrag aus totDef/KCAL_PER_KG)
+              bleibt in JEDEM Fall exakt dieselbe, unveraenderte Berechnung
+              — nur wie er BENANNT/EINGEFAERBT wird, haengt vom Ziel ab.
+              Bei "abnehmen" ist die Farblogik exakt wie zuvor (Verlust=gruen,
+              Zunahme=amber); bei "zunehmen" spiegelbildlich (Zunahme=gruen,
+              Verlust=amber, entspricht demselben bereits etablierten
+              Zielausrichtungs-Muster wie dayGoalColor/weekGoalColor weiter
+              unten); bei "halten" neutral (keine Farbaussage), da dafuer
+              kein Toleranzwert vorgegeben wurde. */}
+          {lg.length>0&&(()=>{
+            const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
+            const theoreticalKg="≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
+            const thirdTile=goalDirection==="zunehmen"
+              ? {icon:(
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 17 9 11 13 15 21 6"/><polyline points="21 10 21 6 17 6"/>
+                  </svg>
+                ),l:"Gewichtszunahme",v:theoreticalKg,unit:"kg",c:totDef>0?"var(--good)":"var(--amber)"}
+              : goalDirection==="halten"
+              ? {icon:(
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 8l-3 6a3 3 0 0 0 6 0Z"/><path d="M19 8l-3 6a3 3 0 0 0 6 0Z"/>
+                  </svg>
+                ),l:"Gewichtsänderung",v:theoreticalKg,unit:"kg",c:"var(--ink)"}
+              : {icon:(
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                  </svg>
+                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",c:totDef<0?"var(--good)":"var(--amber)"};
+            return(
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
               {[
                 {icon:(
@@ -3078,16 +3110,20 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                     <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
                   </svg>
                 ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef),unit:"kcal",c:totDef<0?"var(--good)":"var(--amber)"},
-                {icon:(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
-                  </svg>
-                ),l:"Fettverlust",v:"≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}),unit:"kg",c:totDef<0?"var(--good)":"var(--amber)"},
+                thirdTile,
               ].map(k=>(
                 <div key={k.l} style={{background:"var(--card2)",borderRadius:18,padding:"18px 8px",display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:3,minWidth:0,whiteSpace:"nowrap"}}>
                     <div style={{color:"var(--ink3)",display:"flex",flexShrink:0}}>{k.icon}</div>
-                    <span className="sub" style={{fontSize:10,lineHeight:1.2,whiteSpace:"nowrap"}}>{k.l}</span>
+                    {/* Label-Schriftgroesse bleibt fuer "Ø Kalorien"/"Kalorienbilanz"
+                        exakt 10px (unveraendert). Die neuen zielabhaengigen Labels
+                        "Gewichtszunahme"/"Gewichtsänderung" sind laenger als das
+                        bisher tolerierte Maximum "Kalorienbilanz" (14 Zeichen) und
+                        wuerden bei 320-375px sonst ueber den Kartenrand hinauslaufen
+                        (empirisch in echtem Chromium verifiziert). Da Umbruch UND
+                        Abschneiden beide ausdruecklich verboten sind, schrumpft NUR
+                        fuer laengere Labels die Schrift proportional zur Zeichenzahl. */}
+                    <span className="sub" style={{fontSize:k.l.length>14?10*(11/k.l.length):10,lineHeight:1.2,whiteSpace:"nowrap"}}>{k.l}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"baseline",gap:4,minWidth:0}}>
                     <span className="num" style={{fontSize:"clamp(17px,5.5vw,23px)",fontWeight:600,color:k.c,letterSpacing:-.2,lineHeight:1,whiteSpace:"nowrap"}}>{k.v}</span>
@@ -3096,7 +3132,8 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
           <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:10,flexWrap:"wrap"}}>
             {[["Gewicht","var(--amber)"],["Defizit / Überschuss","var(--good)"]].map(([l,c])=>(
               <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
