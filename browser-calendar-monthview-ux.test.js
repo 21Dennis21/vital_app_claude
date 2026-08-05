@@ -71,15 +71,19 @@ async function main(){
   check(!!dayCell5, "Tageszelle für 5.8. gefunden");
   check(!!dayCell5 && !dayCell5.textContent.includes("km"), "Tageszelle enthält keine 'km'-Angabe mehr (erhalten: "+(dayCell5&&dayCell5.textContent)+")");
 
-  console.log("\n--- 4. KPI-Bereich: 3 größere Karten mit Icon-Badge, kein 'Sport km' mehr ---");
+  console.log("\n--- 4. KPI-Bereich: 3 kompakte Karten, kein 'Sport km' mehr ---");
   const rawData = JSON.parse(dom.window.localStorage.getItem("tracker_data"));
   check(rawData["2026-7-5"] && rawData["2026-7-5"].sports.length===1 && rawData["2026-7-5"].sports[0].km===20,
     "Sport-Eintrag (20km Rad) ist unveraendert in tracker_data gespeichert (nur die Anzeige entfernt, keine Daten)");
-  const kpiLabels = ["Ø kcal","Bilanz","Fettverlust"];
-  const kpiCards = [...d.querySelectorAll(".card")].filter(c=>!c.textContent.includes("KW ") && kpiLabels.some(l=>c.textContent.includes(l)));
+  // KPI-Kacheln tragen keine ".card"-Klasse mehr (eigenes, flacheres Kartendesign)
+  // — daher ueber den Grid-Container mit 3 Spalten identifiziert.
+  const kpiGrid = [...d.querySelectorAll("div")].find(e=>(e.style.gridTemplateColumns||"").includes("repeat(3"));
+  const kpiCards = kpiGrid ? [...kpiGrid.children] : [];
+  const kpiLabels = ["Ø kcal","Kalorienbilanz","Fettverlust"];
   check(kpiCards.length===3, "genau 3 KPI-Karten sichtbar (erhalten: "+kpiCards.length+")");
   check(!kpiCards.some(c=>c.textContent.includes("Sport")), "keine KPI-Karte enthält 'Sport' mehr");
   kpiLabels.forEach(l=>check(kpiCards.some(c=>c.textContent.includes(l)), "KPI '"+l+"' weiterhin vorhanden"));
+  check(!kpiCards.some(c=>/…|\.\.\./.test(c.textContent)), "keine KPI-Überschrift ist abgeschnitten (kein Ellipsis-Zeichen im Text)");
 
   console.log("\n--- 5. Legende zeigt kein 'Sport' mehr, jetzt 'Defizit / Überschuss' ---");
   const legendRow = [...d.querySelectorAll("div")].find(e=>e.style.justifyContent==="center" && e.style.gap==="14px");
