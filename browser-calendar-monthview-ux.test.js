@@ -79,7 +79,7 @@ async function main(){
   // — daher ueber den Grid-Container mit 3 Spalten identifiziert.
   const kpiGrid = [...d.querySelectorAll("div")].find(e=>(e.style.gridTemplateColumns||"").includes("repeat(3"));
   const kpiCards = kpiGrid ? [...kpiGrid.children] : [];
-  const kpiLabels = ["Ø kcal","Kalorienbilanz","Fettverlust"];
+  const kpiLabels = ["Ø Kalorien","Kalorienbilanz","Fettverlust"];
   check(kpiCards.length===3, "genau 3 KPI-Karten sichtbar (erhalten: "+kpiCards.length+")");
   check(!kpiCards.some(c=>c.textContent.includes("Sport")), "keine KPI-Karte enthält 'Sport' mehr");
   kpiLabels.forEach(l=>check(kpiCards.some(c=>c.textContent.includes(l)), "KPI '"+l+"' weiterhin vorhanden"));
