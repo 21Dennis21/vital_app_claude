@@ -3284,26 +3284,22 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                     style={{minHeight:86,justifyContent:"flex-start",gap:2,paddingTop:8,opacity:x.own?1:.35,
                       ...(isT?{boxShadow:"0 0 0 2px var(--accent)",background:"var(--accent-soft)"}:{})}}>
                     <div style={{fontSize:14,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
+                    {x.weight>0&&<div className="num" style={{fontSize:11,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
                     {/* Vollstaendig-geloggt-Indikator: nutzt exakt dieselbe,
                         bereits app-weit einzige Quelle fuer "Tag geloggt"
                         (isDayLogged — siehe week-engine.js, dieselbe
                         Funktion, die auch die Tageszahl-Farbe hier und
                         "X/7 Tage geloggt" ueberall sonst bestimmt), keine
                         neue Validierungsregel. Nur fuer Tage des aktuell
-                        angezeigten Monats (x.own), konsistent mit der
-                        Bilanz-Anzeige darunter. Nach der Tageszahl im JSX
-                        platziert (nicht davor), damit sie ueber
-                        position:absolute frei positioniert werden kann,
-                        OHNE die DOM-Reihenfolge der Tageszahl als erstes
-                        Kind-Element zu veraendern — mehrere bestehende
-                        Tests identifizieren die Tageszelle ueber genau
-                        dieses erste Kind-Element. */}
+                        angezeigten Monats (x.own). Bewusst im normalen
+                        Textfluss zwischen Gewicht und Bilanz platziert
+                        (nicht mehr position:absolute in der Ecke) — sitzt
+                        dadurch nie mehr an der Tageszahl. */}
                     {x.own&&isDayLogged(x)&&(
-                      <svg style={{position:"absolute",top:6,right:6}} width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--good)" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--good)" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12"/>
                       </svg>
                     )}
-                    {x.weight>0&&<div className="num" style={{fontSize:11,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
                     {def!==null&&<div className="num" style={{fontSize:12,fontWeight:700,marginTop:"auto",color:dayGoalColor(def)}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
                   </div>
                 );
