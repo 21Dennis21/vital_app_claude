@@ -72,6 +72,10 @@
   --pill-off:#EFEDE6; --pill-on:#FFFFFF;
   --nav-active:#2F6FED;
   --amber:#C4880F; --amber-soft:rgba(196,136,15,.12);
+  /* --violet = Kartenidentitaet der dritten KPI-Kachel (Fettverlust/
+     Gewichtsveränderung), analog zu --accent (Karte 1) und --good
+     (Karte 2) — ein fester Farbakzent pro Karte, unabhaengig vom Inhalt. */
+  --violet:#8E4FC4; --violet-soft:rgba(142,79,196,.10);
   --line:rgba(20,25,30,.08);
   --shadow:0 1px 2px rgba(15,20,25,.03),0 6px 16px rgba(15,20,25,.04);
   --tabbg:#FFFFFF; --ovbg:rgba(10,12,14,.35);
@@ -91,6 +95,7 @@
   --pill-off:#181C20; --pill-on:#272D33;
   --nav-active:#5B8DEF;
   --amber:#E0A83F; --amber-soft:rgba(224,168,63,.14);
+  --violet:#B57BE8; --violet-soft:rgba(181,123,232,.16);
   --line:rgba(255,255,255,.09);
   --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
   --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
@@ -106,6 +111,7 @@
   --pill-off:#181C20; --pill-on:#272D33;
   --nav-active:#5B8DEF;
     --amber:#E0A83F; --amber-soft:rgba(224,168,63,.14);
+    --violet:#B57BE8; --violet-soft:rgba(181,123,232,.16);
     --line:rgba(255,255,255,.09);
     --shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.24);
     --tabbg:#141A1F; --ovbg:rgba(0,0,0,.5);
@@ -3148,14 +3154,14 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               je nach inferWeightGoalDirection) bleibt davon unabhaengig
               vollstaendig erhalten.
               FARBTAUSCH (explizite Vorgabe "Kalorienbilanz sollte gruen
-              sein und Fettverlust sollte die Farbe haben [die zuvor
-              Kalorienbilanz hatte] — einfach nur tauschen"): Karte 2
-              ("Kalorienbilanz") ist jetzt gruen (--good) statt orange,
-              Karte 3 ist bei "abnehmen"/"zunehmen" jetzt orange (--amber)
-              statt gruen. Bei "halten" bleibt die Karte unveraendert
-              neutral grau (--ink3), da dieser Zustand von der Tausch-
-              Vorgabe nicht erwaehnt wurde. Karte 1 ("Ø Kalorien", blau)
-              ist von diesem Tausch nicht betroffen. */}
+              sein — einfach nur tauschen"): Karte 2 ("Kalorienbilanz")
+              ist jetzt gruen (--good) statt orange.
+              Karte 3 (explizite Vorgabe "Fettverlust sollte violett
+              sein"): einheitlich violett (--violet, neues Token analog
+              zu --accent/--good) in ALLEN drei Zielrichtungen
+              (Fettverlust/Gewichtszunahme-Zustand/Halten-Zustand) — wie
+              bei Karte 1 (blau) und Karte 2 (gruen) eine feste
+              Kartenidentitaet, unabhaengig vom Inhalt. */}
           {lg.length>0&&(()=>{
             const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
             const theoreticalKg="≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3164,18 +3170,18 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 17 9 11 13 15 21 6"/><polyline points="21 10 21 6 17 6"/>
                   </svg>
-                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"}
+                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--violet)",accentSoft:"var(--violet-soft)",valueColor:"var(--ink)"}
               : goalDirection==="halten"
               ? {icon:(
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 8l-3 6a3 3 0 0 0 6 0Z"/><path d="M19 8l-3 6a3 3 0 0 0 6 0Z"/>
                   </svg>
-                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--ink3)",accentSoft:"var(--card2)",valueColor:"var(--ink)"}
+                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--violet)",accentSoft:"var(--violet-soft)",valueColor:"var(--ink)"}
               : {icon:(
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
                   </svg>
-                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"};
+                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--violet)",accentSoft:"var(--violet-soft)",valueColor:"var(--ink)"};
             const kpis=[
               {icon:(
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
