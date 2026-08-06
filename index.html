@@ -3142,13 +3142,20 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               zwecks eines Referenzbilds so gebaut, wird hier aber durch
               die aktuelle, explizite Anweisung ersetzt. Icon-Badge/obere
               Randlinie jeder Karte (accent/accentSoft) behalten dagegen
-              unveraendert ihre Farbe (blau/orange/gruen bzw. neutral bei
-              "halten") — nur "Icons"/"Farbakzente", nicht die Zahl, sollen
-              laut Vorgabe farbig bleiben. Die dynamische Ziel-Logik der
-              dritten Kachel (Fettverlust/Gewichtszunahme/Gewichtsänderung
+              unveraendert ihre Farbe — nur "Icons"/"Farbakzente", nicht
+              die Zahl, sollen laut Vorgabe farbig bleiben. Die dynamische
+              Ziel-Logik der dritten Kachel (Fettverlust/Gewichtsveränderung
               je nach inferWeightGoalDirection) bleibt davon unabhaengig
-              vollstaendig erhalten — nur ihre Zahlenfarbe ist jetzt immer
-              weiss statt gruen/amber. */}
+              vollstaendig erhalten.
+              FARBTAUSCH (explizite Vorgabe "Kalorienbilanz sollte gruen
+              sein und Fettverlust sollte die Farbe haben [die zuvor
+              Kalorienbilanz hatte] — einfach nur tauschen"): Karte 2
+              ("Kalorienbilanz") ist jetzt gruen (--good) statt orange,
+              Karte 3 ist bei "abnehmen"/"zunehmen" jetzt orange (--amber)
+              statt gruen. Bei "halten" bleibt die Karte unveraendert
+              neutral grau (--ink3), da dieser Zustand von der Tausch-
+              Vorgabe nicht erwaehnt wurde. Karte 1 ("Ø Kalorien", blau)
+              ist von diesem Tausch nicht betroffen. */}
           {lg.length>0&&(()=>{
             const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
             const theoreticalKg="≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3157,7 +3164,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 17 9 11 13 15 21 6"/><polyline points="21 10 21 6 17 6"/>
                   </svg>
-                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"}
+                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"}
               : goalDirection==="halten"
               ? {icon:(
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -3168,7 +3175,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
                   </svg>
-                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"};
+                ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"};
             const kpis=[
               {icon:(
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -3179,7 +3186,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
                 </svg>
-              ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef).toLocaleString("de-DE"),unit:"kcal",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"},
+              ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef).toLocaleString("de-DE"),unit:"kcal",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"},
               thirdTile,
             ];
             return(
