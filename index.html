@@ -3230,21 +3230,43 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
             {DS.map(x=><div key={x} className="sub" style={{textAlign:"center",fontSize:12}}>{x}</div>)}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:14}}>
-            {monthGridDays(sy,sm,data).map((x,i)=>{
-              const def=isDayLogged(x)&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
-              const isT=x.own&&isToday(x.d);
-              return(
-                <div key={i} className="cell" onClick={()=>{if(x.own){tapH();openDay(sy,sm,x.d);}}}
-                  style={{minHeight:86,justifyContent:"flex-start",gap:2,paddingTop:8,opacity:x.own?1:.35,
-                    ...(isT?{boxShadow:"0 0 0 2px var(--accent)",background:"var(--accent-soft)"}:{})}}>
-                  <div style={{fontSize:14,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
-                  {x.weight>0&&<div className="num" style={{fontSize:11,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
-                  {def!==null&&<div className="num" style={{fontSize:12,fontWeight:700,marginTop:"auto",color:def<0?"var(--good)":"var(--amber)"}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
-                </div>
-              );
-            })}
-          </div>
+          {/* Tageszellen: Farbe der Kalorienbilanz jetzt zielabhaengig statt
+              nur nach Vorzeichen. Wiederverwendet dieselbe, bereits an
+              anderer Stelle in dieser Komponente etablierte Bewertungslogik
+              (inferWeightGoalDirection + 150-kcal-Toleranz fuer "halten",
+              siehe dayGoalColor im Rueckblick-Segment weiter unten) — bewusst
+              hier als eigene lokale Kopie belassen statt die Definitionen
+              nach oben zu verschieben, da diese Aufgabe sich ausdruecklich
+              NUR auf die Kalendertage bezieht und keine anderen Codestellen
+              angefasst werden sollen. Keine neue Berechnung: totDef/tdee/
+              kcalIn/kcalBurned bleiben exakt wie zuvor, nur die Farbzuordnung
+              fuer den bereits berechneten Tageswert "def" aendert sich. */}
+          {(()=>{
+            const goalDirection=inferWeightGoalDirection(goals,lastWeight(data));
+            const MAINTAIN_TOLERANCE_KCAL=150;
+            const dayGoalColor=bilanz=>{
+              if(goalDirection==="abnehmen")return bilanz<0?"var(--good)":"var(--amber)";
+              if(goalDirection==="zunehmen")return bilanz>0?"var(--good)":"var(--amber)";
+              return Math.abs(bilanz)<=MAINTAIN_TOLERANCE_KCAL?"var(--good)":"var(--amber)";
+            };
+            return(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:14}}>
+              {monthGridDays(sy,sm,data).map((x,i)=>{
+                const def=isDayLogged(x)&&x.own&&tdee?(x.kcalIn||0)-tdee-(x.kcalBurned||0):null;
+                const isT=x.own&&isToday(x.d);
+                return(
+                  <div key={i} className="cell" onClick={()=>{if(x.own){tapH();openDay(sy,sm,x.d);}}}
+                    style={{minHeight:86,justifyContent:"flex-start",gap:2,paddingTop:8,opacity:x.own?1:.35,
+                      ...(isT?{boxShadow:"0 0 0 2px var(--accent)",background:"var(--accent-soft)"}:{})}}>
+                    <div style={{fontSize:14,fontWeight:isT?700:500,color:isT?"var(--accent)":isDayLogged(x)?"var(--ink)":"var(--ink3)"}}>{x.d}</div>
+                    {x.weight>0&&<div className="num" style={{fontSize:11,fontWeight:600,color:"var(--amber)"}}>{x.weight}</div>}
+                    {def!==null&&<div className="num" style={{fontSize:12,fontWeight:700,marginTop:"auto",color:dayGoalColor(def)}}>{def<0?"−":"+"}{Math.abs(def)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            );
+          })()}
 
           {/* --- ABSCHNITT "WOCHENÜBERSICHT" ---
               UX-Verbesserung: soll eindeutig als neuer Hauptabschnitt
