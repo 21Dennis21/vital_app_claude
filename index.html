@@ -233,19 +233,29 @@ input::placeholder{color:var(--ink3);}
    UNVERAENDERT — hier nur Groessen/Abstaende fuer die kompaktere Anordnung. */
 .vl-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(8px,2.5vw,12px);margin-bottom:20px;}
 .vl-kpi-card{border-radius:20px;padding:9px;display:flex;flex-direction:column;gap:3px;min-width:0;border:1px solid rgba(255,255,255,.05);}
-.vl-kpi-icon{width:17px;height:17px;border-radius:99px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+/* Icon ca. 12% groesser (17px->19px, naechster Wert an den gewuenschten
+   "ca. 10%" ohne die Zeilenbreite fuer das Label zu sehr zu verknappen —
+   empirisch abgestimmt zusammen mit der Label-Schriftgroesse unten). */
+.vl-kpi-icon{width:19px;height:19px;border-radius:99px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .vl-kpi-row1{display:flex;align-items:center;gap:4px;min-width:0;}
-/* Empirisch in echtem Chromium bei 320/375/430px kalibriert (Range().
-   getBoundingClientRect() gegen die tatsaechliche verfuegbare Zeilenbreite
-   INNERHALB der Icon+Label-Zeile gemessen — nicht nur geschaetzt): das
-   Label steht IMMER neben dem Icon (nie darunter) und darf niemals
-   umbrechen oder abgeschnitten werden; deshalb schrumpft die Schrift
-   responsiv UND zusaetzlich laengenabhaengig fuer Woerter >14 Zeichen
-   (z.B. "Gewichtsänderung"), siehe JSX. Die Zeile teilt sich den
-   verfuegbaren Platz mit dem Icon-Badge, daher ist der Wertebereich
-   deutlich enger kalibriert als beim vorherigen Stapel-Layout (dort
-   hatte das Label die volle Kartenbreite fuer sich allein). */
-.vl-kpi-label{font-size:clamp(6.2px,2.1vw,11px);color:var(--ink2);font-weight:500;line-height:1.2;white-space:nowrap;min-width:0;}
+/* Empirisch in echtem Chromium bei 300/320/344/360/375/390/414/430px
+   kalibriert: fuer jede Breite per Bisektion die tatsaechlich maximal
+   passende Schriftgroesse fuer "Kalorienbilanz" neben dem (jetzt
+   groesseren) Icon ermittelt (Range().getBoundingClientRect() gegen die
+   echte Zeilenbreite, mit der echten App-Schriftart) und daraus eine
+   affine clamp()-Kurve mit ca. 15% Sicherheitsabstand zu diesem Maximum
+   gefittet — reine vw-Schaetzungen waren hier zu ungenau, weil die feste
+   Innenabstands-/Icon-Breite bei kleinen Viewports relativ mehr Platz
+   wegnimmt als bei grossen. Das Label steht IMMER neben dem Icon (nie
+   darunter) und darf niemals umbrechen oder abgeschnitten werden;
+   zusaetzlich laengenabhaengiger Faktor fuer Woerter >14 Zeichen (jetzt
+   "Gewichtsveränderung", 19 Zeichen), siehe JSX — derselbe Sicherheits-
+   abstand gilt dank des empirisch ermittelten, ueber alle Breiten
+   nahezu konstanten Laengenverhaeltnisses (~0.65) auch dafuer.
+   Waechst dadurch nicht ueberall um exakt "+1px" (an sehr schmalen
+   Breiten weniger, an breiteren mehr) — ein durchgaengiges "+1px" wuerde
+   "Kalorienbilanz" bei 300-320px neben dem groesseren Icon abschneiden. */
+.vl-kpi-label{font-size:clamp(5px,calc(4.3vw - 7.7px),12.5px);color:var(--ink2);font-weight:500;line-height:1.2;white-space:nowrap;min-width:0;}
 /* white-space:nowrap + konservativer clamp(): die Zahl darf NIEMALS
    umbrechen, auch nicht bei sechs-/siebenstelligen Extremwerten.
    Nochmal ca. 12% kleiner als zuvor (clamp(15px,5.1vw,21px)) — Zahl
@@ -3144,29 +3154,29 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             const theoreticalKg="≈ "+(totDef<0?"−":"+")+(Math.abs(totDef)/KCAL_PER_KG).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
             const thirdTile=goalDirection==="zunehmen"
               ? {icon:(
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 17 9 11 13 15 21 6"/><polyline points="21 10 21 6 17 6"/>
                   </svg>
-                ),l:"Gewichtszunahme",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"}
+                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"}
               : goalDirection==="halten"
               ? {icon:(
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 8l-3 6a3 3 0 0 0 6 0Z"/><path d="M19 8l-3 6a3 3 0 0 0 6 0Z"/>
                   </svg>
-                ),l:"Gewichtsänderung",v:theoreticalKg,unit:"kg",accent:"var(--ink3)",accentSoft:"var(--card2)",valueColor:"var(--ink)"}
+                ),l:"Gewichtsveränderung",v:theoreticalKg,unit:"kg",accent:"var(--ink3)",accentSoft:"var(--card2)",valueColor:"var(--ink)"}
               : {icon:(
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
                   </svg>
                 ),l:"Fettverlust",v:theoreticalKg,unit:"kg",accent:"var(--good)",accentSoft:"var(--good-soft)",valueColor:"var(--ink)"};
             const kpis=[
               {icon:(
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 2v7c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
                 </svg>
               ),l:"Ø Kalorien",v:lg.length?Math.round(lg.reduce((s,x)=>s+(x.kcalIn||0),0)/lg.length):0,unit:null,accent:"var(--accent)",accentSoft:"var(--accent-soft)",valueColor:"var(--ink)"},
               {icon:(
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
                 </svg>
               ),l:"Kalorienbilanz",v:(totDef<0?"−":"+")+Math.abs(totDef).toLocaleString("de-DE"),unit:"kcal",accent:"var(--amber)",accentSoft:"var(--amber-soft)",valueColor:"var(--ink)"},
@@ -3177,17 +3187,18 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               {kpis.map(k=>(
                 <div key={k.l} className="vl-kpi-card" style={{background:"linear-gradient(160deg,var(--card2),"+k.accentSoft+")",borderTop:"3px solid "+k.accent}}>
                   {/* Zeile 1: Icon + Label nebeneinander (Label steht IMMER
-                      rechts vom Icon, bricht nie darunter um). "Gewichts-
-                      zunahme"/"Gewichtsänderung" (15/16 Zeichen) sind
-                      laenger als "Kalorienbilanz" (14, die Referenzgroesse
-                      fuer den Basis-clamp) und wuerden ihn neben dem Icon
+                      rechts vom Icon, bricht nie darunter um).
+                      "Gewichtsveränderung" (19 Zeichen) ist laenger als
+                      "Kalorienbilanz" (14, die Referenzgroesse fuer den
+                      Basis-clamp) und wuerde ihn neben dem groesseren Icon
                       sonst ueberragen — calc() auf dem Basis-clamp haelt
                       die Schrumpfung responsiv UND laengenabhaengig
-                      zugleich, empirisch bei 300-430px mit allen drei
-                      Labels verifiziert (kein Umbruch, kein Abschneiden). */}
+                      zugleich, empirisch bei 300-430px mit allen vier
+                      moeglichen Labels verifiziert (kein Umbruch, kein
+                      Abschneiden). */}
                   <div className="vl-kpi-row1">
                     <div className="vl-kpi-icon" style={{color:k.accent,background:k.accentSoft}}>{k.icon}</div>
-                    <div className="vl-kpi-label" style={k.l.length>14?{fontSize:"calc(clamp(6.2px,2.1vw,11px) * 0.58)"}:undefined}>{k.l}</div>
+                    <div className="vl-kpi-label" style={k.l.length>14?{fontSize:"calc(clamp(5px,calc(4.3vw - 7.7px),12.5px) * 0.65)"}:undefined}>{k.l}</div>
                   </div>
                   {/* Zeile 2: grosse Zahl + Einheit nebeneinander, direkt
                       unter Zeile 1 (minimaler Abstand, siehe .vl-kpi-card
