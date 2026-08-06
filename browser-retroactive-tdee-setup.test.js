@@ -25,7 +25,7 @@ function check(cond, label){
   await flush(dom);
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹"); // August -> Juli
+  clickByText(d, "Vorheriger Monat"); // August -> Juli
   await flush(dom);
   check(d.body.textContent.includes("Juli 2026"), "Kalender zeigt Juli 2026 nach Zurueck-Navigation");
   check(d.body.textContent.includes("ist noch kein Grundbedarf eingerichtet"), "Hinweis auf fehlenden Grundbedarf fuer Juli erscheint");

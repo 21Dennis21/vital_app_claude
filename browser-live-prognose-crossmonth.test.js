@@ -69,7 +69,7 @@ async function main(){
   console.log("\n--- 2. 7. gueltigen Tag (28.7.) ueber die ECHTE Ernaehrungs-UI nachtragen ---");
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹"); // einen Monat zurueck: August -> Juli
+  clickByText(d, "Vorheriger Monat"); // einen Monat zurueck: August -> Juli
   await flush(dom);
   check(d.body.textContent.includes("Juli 2026"), "Kalender zeigt jetzt Juli 2026");
   const dayCell28 = [...d.querySelectorAll(".cell")].find(c=>{

@@ -2099,13 +2099,32 @@ function DragList({items,itemKey,rowHeight=64,onReorder,renderRow}){
    verhaelt sich MonthNav exakt wie zuvor. Nur die Kalender-Segment-
    Einsatzstelle in VerlaufView setzt variant="hero"; die zweite
    Einsatzstelle (Sport-Segment) bleibt unveraendert. */
+/* Pfeil-Icons als kraeftige SVG-Chevrons statt der duennen "‹"/"›"-
+   Textzeichen — gleicher Stil wie die uebrigen SVG-Icons der App
+   (viewBox 24x24, stroke=currentColor), aber bewusst mit deutlich
+   dickerem strokeWidth (2.75 statt der sonst ueblichen ~1.8-1.9) und
+   rounded caps/joins fuer eine kraeftige, moderne Anmutung. Groesse nur
+   minimal ggue. den vorherigen Text-Glyphen erhoeht (~10-15%), Position/
+   Farbe (currentColor, folgt weiterhin der Button-Textfarbe)/Funktion
+   unveraendert. */
+const ChevronLeft=(size)=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+);
+const ChevronRight=(size)=>(
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+);
 function MonthNav({y,m,onPrev,onNext,marginBottom="var(--sp-2)",variant}){
   const hero=variant==="hero";
+  const arrowSize=hero?20:18;
   return(
     <div style={{display:"grid",gridTemplateColumns:hero?"40px 1fr 40px":"36px 1fr 36px",alignItems:"center",marginBottom}}>
-      <button className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onPrev();}} style={hero?{justifySelf:"end"}:{justifySelf:"end",fontSize:17}}>‹</button>
+      <button aria-label="Vorheriger Monat" className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onPrev();}} style={{display:"flex",alignItems:"center",justifyContent:"center",...(hero?{justifySelf:"end"}:{justifySelf:"end"})}}>{ChevronLeft(arrowSize)}</button>
       <div style={{fontSize:hero?"clamp(21px,6.2vw,26px)":20,fontWeight:hero?800:700,textAlign:"center",letterSpacing:-.3}}>{MN[m]} {y}</div>
-      <button className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onNext();}} style={hero?{justifySelf:"start"}:{justifySelf:"start",fontSize:17}}>›</button>
+      <button aria-label="Nächster Monat" className={"nav"+(hero?" nav-square":"")} onClick={()=>{tapH();onNext();}} style={{display:"flex",alignItems:"center",justifyContent:"center",...(hero?{justifySelf:"start"}:{justifySelf:"start"})}}>{ChevronRight(arrowSize)}</button>
     </div>
   );
 }
