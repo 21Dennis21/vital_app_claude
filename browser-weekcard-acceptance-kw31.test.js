@@ -62,7 +62,7 @@ function barsOf(card){
   // --- Julansicht: dieselbe Woche muss identisch aussehen ---
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹");
+  clickByText(d, "Vorheriger Monat");
   await flush(dom);
   kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Juli-Ansicht gefunden");

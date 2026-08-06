@@ -112,7 +112,7 @@ async function main(){
   await flush(dom);
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹");
+  clickByText(d, "Vorheriger Monat");
   await flush(dom);
   check(bodyHas(d,"Juli 2026"), "Kalender zeigt Juli 2026 nach Zurück-Navigation");
   check(bodyHas(d,"ist noch kein Grundbedarf eingerichtet"), "Juli hat zu diesem Zeitpunkt noch keinen Grundbedarf");
@@ -180,7 +180,7 @@ async function main(){
   // zwischendurch zu "Heute"/anderen Tabs gewechselt wird.
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹");
+  clickByText(d, "Vorheriger Monat");
   await flush(dom);
   check(bodyHas(d,"Juli 2026"), "Kalender zeigt nach dem Tab-Ausflug wieder Juli 2026 (Monats-Cursor wurde zurueckgesetzt, erneute Navigation noetig)");
   check(await logDayViaRealUi(d, dom, 28), "Juli-Tag 28 über die echte Ernährungs-UI nachgetragen");

@@ -1,6 +1,7 @@
 function clickByText(doc, text, tag){
   const els = [...doc.querySelectorAll(tag||"*")];
   const el = els.find(e=>e.children.length===0 && e.textContent && e.textContent.trim()===text)
+    || els.find(e=>e.getAttribute && e.getAttribute("aria-label")===text)
     || els.find(e=>e.textContent && e.textContent.includes(text) && (tag?e.tagName.toLowerCase()===tag:true));
   if(!el) throw new Error("Element mit Text nicht gefunden: "+text);
   const clickable = el.closest("[class*='dc'],button") || el;

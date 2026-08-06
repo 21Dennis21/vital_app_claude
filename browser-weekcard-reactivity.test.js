@@ -58,7 +58,7 @@ function barsOf(kw31){
   // Lebensmittelsuche simulieren zu muessen.)
   clickByText(d, "Kalender");
   await flush(dom);
-  clickByText(d, "‹"); // einen Monat zurueck: August -> Juli
+  clickByText(d, "Vorheriger Monat"); // einen Monat zurueck: August -> Juli
   await flush(dom);
   check(d.body.textContent.includes("Juli 2026"), "Kalender zeigt jetzt Juli 2026");
   const dayCell31 = [...d.querySelectorAll(".cell")].find(c=>{
