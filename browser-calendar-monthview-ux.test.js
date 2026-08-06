@@ -131,11 +131,15 @@ async function testGoalAwareThirdTile(){
   console.log("\n--- 8. Dritte KPI-Kachel passt sich dynamisch an das Gewichtsziel an ---");
 
   // Ziel "zunehmen" (Zielgewicht deutlich > aktuelles Gewicht) + Ueberschuss
-  // (totDef>0) -> Titel "Gewichtszunahme", PLUS-Vorzeichen, gruen (Zunahme
-  // entspricht bei diesem Ziel dem gewuenschten Fortschritt). Kein manuelles
+  // (totDef>0) -> Titel "Gewichtszunahme", PLUS-Vorzeichen. Kein manuelles
   // TDEE-Feld: die Engine berechnet TDEE ausschliesslich aus weight/fat/
   // activityIdx (Katch-McArdle), hier weight=70,fat=20,activityIdx=1 ->
   // TDEE=2291 -> bei kcalIn=2500 ein Ueberschuss von +209 kcal.
+  // Zahlenfarbe: seit der expliziten Vorgabe "Alle Hauptwerte in Weiß
+  // darstellen (keine gelbe oder grüne Schrift)" zeigt die Zahl IMMER
+  // --ink (weiss), unabhaengig von Ziel-Erreichung — die vorherige gruen/
+  // amber-Erfolgslogik wurde bewusst durch diese explizite Anweisung
+  // ersetzt (nur Icon-Badge/obere Randlinie bleiben farbig).
   {
     const dom = createApp((win)=>{
       win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:70,fat:20,activityIdx:1}}));
@@ -154,15 +158,17 @@ async function testGoalAwareThirdTile(){
     check(!!tile && !tile.textContent.includes("Fettverlust"), "Ziel 'zunehmen': KEIN 'Fettverlust' angezeigt");
     check(!!tile && /≈\s*\+/.test(tile.textContent), "Ziel 'zunehmen' + Ueberschuss: Wert hat PLUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
     const numSpan = tile && tile.querySelector(".num");
-    check(!!numSpan && numSpan.style.color==="var(--good)", "Ziel 'zunehmen' + Ueberschuss: Zahl ist gruen (erhalten: "+(numSpan&&numSpan.style.color)+")");
+    check(!!numSpan && numSpan.style.color==="var(--ink)", "Ziel 'zunehmen' + Ueberschuss: Zahl ist weiss/neutral (erhalten: "+(numSpan&&numSpan.style.color)+")");
     dom.window.close();
   }
 
   // Ziel "zunehmen" + DEFIZIT (totDef<0, Nutzer isst zu wenig fuer sein
   // Zunehmen-Ziel) -> weiterhin Titel "Gewichtszunahme", aber MINUS-
-  // Vorzeichen (spiegelt die tatsaechliche Bilanz wider) und amber (Ziel
-  // wird gerade NICHT erreicht). Gleiche Personendaten wie oben, aber
-  // kcalIn=1400 < TDEE 2291 -> Defizit von -891 kcal.
+  // Vorzeichen (spiegelt die tatsaechliche Bilanz wider). Zahlenfarbe
+  // bleibt trotzdem weiss (siehe Kommentar oben) — die Ziel-Erreichung
+  // wird nicht mehr ueber die Zahlenfarbe signalisiert. Gleiche
+  // Personendaten wie oben, aber kcalIn=1400 < TDEE 2291 -> Defizit von
+  // -891 kcal.
   {
     const dom = createApp((win)=>{
       win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:70,fat:20,activityIdx:1}}));
@@ -180,7 +186,7 @@ async function testGoalAwareThirdTile(){
     check(!!tile && tile.textContent.includes("Gewichtszunahme"), "Ziel 'zunehmen' + Defizit: Titel bleibt 'Gewichtszunahme' (erhalten: "+(tile&&tile.textContent)+")");
     check(!!tile && /≈\s*[−-]/.test(tile.textContent), "Ziel 'zunehmen' + Defizit: Wert hat MINUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
     const numSpan2 = tile && tile.querySelector(".num");
-    check(!!numSpan2 && numSpan2.style.color==="var(--amber)", "Ziel 'zunehmen' + Defizit: Zahl ist amber/warnfarbe (erhalten: "+(numSpan2&&numSpan2.style.color)+")");
+    check(!!numSpan2 && numSpan2.style.color==="var(--ink)", "Ziel 'zunehmen' + Defizit: Zahl ist weiss/neutral (erhalten: "+(numSpan2&&numSpan2.style.color)+")");
     dom.window.close();
   }
 
