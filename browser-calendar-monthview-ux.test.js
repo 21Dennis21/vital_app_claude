@@ -131,10 +131,13 @@ async function testGoalAwareThirdTile(){
   console.log("\n--- 8. Dritte KPI-Kachel passt sich dynamisch an das Gewichtsziel an ---");
 
   // Ziel "zunehmen" (Zielgewicht deutlich > aktuelles Gewicht) + Ueberschuss
-  // (totDef>0) -> Titel "Gewichtszunahme", PLUS-Vorzeichen. Kein manuelles
-  // TDEE-Feld: die Engine berechnet TDEE ausschliesslich aus weight/fat/
-  // activityIdx (Katch-McArdle), hier weight=70,fat=20,activityIdx=1 ->
-  // TDEE=2291 -> bei kcalIn=2500 ein Ueberschuss von +209 kcal.
+  // (totDef>0) -> Titel "Gewichtsveränderung" (seit der expliziten Vorgabe
+  // "Zunehmen ODER Halten -> Gewichtsveränderung" teilen sich beide Ziele
+  // denselben Titeltext, nur Icon/Randfarbe unterscheiden sie noch),
+  // PLUS-Vorzeichen. Kein manuelles TDEE-Feld: die Engine berechnet TDEE
+  // ausschliesslich aus weight/fat/activityIdx (Katch-McArdle), hier
+  // weight=70,fat=20,activityIdx=1 -> TDEE=2291 -> bei kcalIn=2500 ein
+  // Ueberschuss von +209 kcal.
   // Zahlenfarbe: seit der expliziten Vorgabe "Alle Hauptwerte in Weiß
   // darstellen (keine gelbe oder grüne Schrift)" zeigt die Zahl IMMER
   // --ink (weiss), unabhaengig von Ziel-Erreichung — die vorherige gruen/
@@ -154,16 +157,17 @@ async function testGoalAwareThirdTile(){
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Ueberschuss)");
-    check(!!tile && tile.textContent.includes("Gewichtszunahme"), "Ziel 'zunehmen': Titel ist 'Gewichtszunahme' (erhalten: "+(tile&&tile.textContent)+")");
+    check(!!tile && tile.textContent.includes("Gewichtsveränderung"), "Ziel 'zunehmen': Titel ist 'Gewichtsveränderung' (erhalten: "+(tile&&tile.textContent)+")");
     check(!!tile && !tile.textContent.includes("Fettverlust"), "Ziel 'zunehmen': KEIN 'Fettverlust' angezeigt");
     check(!!tile && /≈\s*\+/.test(tile.textContent), "Ziel 'zunehmen' + Ueberschuss: Wert hat PLUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
     const numSpan = tile && tile.querySelector(".num");
     check(!!numSpan && numSpan.style.color==="var(--ink)", "Ziel 'zunehmen' + Ueberschuss: Zahl ist weiss/neutral (erhalten: "+(numSpan&&numSpan.style.color)+")");
+    check(!!tile && !/…|\.\.\./.test(tile.textContent), "Ziel 'zunehmen': Titel 'Gewichtsveränderung' (19 Zeichen, laenger als 'Kalorienbilanz') ist NICHT abgeschnitten");
     dom.window.close();
   }
 
   // Ziel "zunehmen" + DEFIZIT (totDef<0, Nutzer isst zu wenig fuer sein
-  // Zunehmen-Ziel) -> weiterhin Titel "Gewichtszunahme", aber MINUS-
+  // Zunehmen-Ziel) -> weiterhin Titel "Gewichtsveränderung", aber MINUS-
   // Vorzeichen (spiegelt die tatsaechliche Bilanz wider). Zahlenfarbe
   // bleibt trotzdem weiss (siehe Kommentar oben) — die Ziel-Erreichung
   // wird nicht mehr ueber die Zahlenfarbe signalisiert. Gleiche
@@ -183,7 +187,7 @@ async function testGoalAwareThirdTile(){
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Defizit)");
-    check(!!tile && tile.textContent.includes("Gewichtszunahme"), "Ziel 'zunehmen' + Defizit: Titel bleibt 'Gewichtszunahme' (erhalten: "+(tile&&tile.textContent)+")");
+    check(!!tile && tile.textContent.includes("Gewichtsveränderung"), "Ziel 'zunehmen' + Defizit: Titel bleibt 'Gewichtsveränderung' (erhalten: "+(tile&&tile.textContent)+")");
     check(!!tile && /≈\s*[−-]/.test(tile.textContent), "Ziel 'zunehmen' + Defizit: Wert hat MINUS-Vorzeichen (erhalten: "+(tile&&tile.textContent)+")");
     const numSpan2 = tile && tile.querySelector(".num");
     check(!!numSpan2 && numSpan2.style.color==="var(--ink)", "Ziel 'zunehmen' + Defizit: Zahl ist weiss/neutral (erhalten: "+(numSpan2&&numSpan2.style.color)+")");
@@ -191,8 +195,9 @@ async function testGoalAwareThirdTile(){
   }
 
   // Ziel "halten" (leeres Ziel-Array, kein weight-/deficit-/surplus-Goal
-  // aktiv) -> Titel "Gewichtsänderung", neutrale Farbe (--ink), unabhaengig
-  // vom Vorzeichen der Bilanz.
+  // aktiv) -> ebenfalls Titel "Gewichtsveränderung" (dasselbe Wort wie bei
+  // "zunehmen", siehe oben), neutrale Farbe (--ink), unabhaengig vom
+  // Vorzeichen der Bilanz.
   {
     const dom = createApp((win)=>{
       win.localStorage.setItem("tracker_mset", JSON.stringify({"2026-7":{weight:90,fat:25,activityIdx:1}}));
@@ -207,11 +212,11 @@ async function testGoalAwareThirdTile(){
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: halten / kein Ziel gesetzt)");
-    check(!!tile && tile.textContent.includes("Gewichtsänderung"), "Ziel 'halten': Titel ist 'Gewichtsänderung' (erhalten: "+(tile&&tile.textContent)+")");
-    check(!!tile && !tile.textContent.includes("Fettverlust") && !tile.textContent.includes("Gewichtszunahme"), "Ziel 'halten': weder 'Fettverlust' noch 'Gewichtszunahme' angezeigt");
+    check(!!tile && tile.textContent.includes("Gewichtsveränderung"), "Ziel 'halten': Titel ist 'Gewichtsveränderung' (erhalten: "+(tile&&tile.textContent)+")");
+    check(!!tile && !tile.textContent.includes("Fettverlust"), "Ziel 'halten': KEIN 'Fettverlust' angezeigt");
     const numSpan = tile && tile.querySelector(".num");
     check(!!numSpan && numSpan.style.color==="var(--ink)", "Ziel 'halten': Zahl ist neutral (var(--ink)), erhalten: "+(numSpan&&numSpan.style.color));
-    check(!!tile && !/…|\.\.\./.test(tile.textContent), "Ziel 'halten': Titel 'Gewichtsänderung' (16 Zeichen, laenger als 'Kalorienbilanz') ist NICHT abgeschnitten");
+    check(!!tile && !/…|\.\.\./.test(tile.textContent), "Ziel 'halten': Titel 'Gewichtsveränderung' (19 Zeichen, laenger als 'Kalorienbilanz') ist NICHT abgeschnitten");
     dom.window.close();
   }
 }
