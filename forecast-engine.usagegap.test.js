@@ -127,14 +127,15 @@ console.log("========== TEST 10: Alter persoenlicher Faktor bleibt nach Nutzungs
   assertTrue(withGap.usageGapPenaltyKg>0,"Test10: usageGapPenaltyKg > 0 direkt nach der Pause");
 }
 
-console.log("========== TEST 11: Nach Nutzungspause erst 4 neue Log-Tage -> keine reguläre Prognose ==========");
+console.log("========== TEST 11: Nach Nutzungspause erst 4 neue Log-Tage -> Prognose moeglich, aber Datenqualitaet 'insufficient' ==========");
 {
   const now=new Date(2026,7,15);
   const monthlySettings={"2026-08":{tdee:2700}};
   const dailyData=mkDailyData(daySeries(new Date(2026,7,12),4,2700,-500)); // nur 4 Tage
   const weightEntries=[{date:now,weight:84}];
   const f=E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
-  assertEq(f.status,"insufficient_data","Test11: keine reguläre Prognose bei nur 4 Tagen");
+  assertEq(f.status,"ok","Test11: einfaches Modell hat keine Mindestanzahl mehr, Prognose bleibt moeglich");
+  assertEq(f.dataQuality.stage,"insufficient","Test11: Datenqualitaet bei nur 4 Tagen dennoch als 'insufficient' markiert");
 }
 
 console.log("========== TEST 12: Nach Nutzungspause 10 neue Log-Tage -> vorlaeufige Prognose mit breiterem Bereich ==========");

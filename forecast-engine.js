@@ -608,9 +608,61 @@ function calculateForecastUncertainty({calibrationProfile, futureDays, quality, 
     horizonPenalty:round2(horizonPenalty), usageGapPenaltyKg:round2(usageGapPenaltyKg), finalMarginKg:round2(finalMarginKg)};
 }
 
-/* ===== 1/7/8/9/10. Zentrale Monatsend-Prognose ===== */
-function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightEntries, calibrationProfile, weightConfirmations}){
-  calibrationProfile = calibrationProfile || DEFAULT_CALIBRATION_PROFILE();
+/* ===== Einfaches Monatsend-Prognosemodell =====
+   Bewusst auf ein einfaches, transparentes Modell zurueckgesetzt — KEINE
+   Winsorisierung, KEINE Trendgewichtung, KEINE 7-/14-Tage-Sonderlogik,
+   KEINE Kalibrierungsfaktoren, KEINE kuenstliche Glaettung, KEINE
+   komplizierten Coverage-Faktoren, KEINE monatlich getrennten Datensaetze,
+   KEIN zusaetzliches statistisches Modell. Ablauf:
+     1. Datengrundlage: die gueltigen Tagesbilanzen der letzten maximal
+        SIMPLE_FORECAST_WINDOW_DAYS Kalendertage (kalenderuebergreifend —
+        jeder Tag nutzt seinen EIGENEN Monatsbedarf, die Monatsgrenze
+        spielt fuer die Datenauswahl keine Rolle). Fehlende Tage werden
+        NICHT mit 0 aufgefuellt — es zaehlen ausschliesslich tatsaechlich
+        geloggte, gueltige Tage; stehen weniger als das volle Fenster zur
+        Verfuegung, werden nur die tatsaechlich vorhandenen verwendet.
+     2. durchschnittliche Tagesbilanz = Summe aller gueltigen Tagesbilanzen
+        / Anzahl gueltiger Tage.
+     3. Hochrechnung: Durchschnitt x verbleibende Tage bis Monatsende.
+     4. 7.700 kcal ≈ 1 kg Koerpergewicht.
+     5. Prognose Monatsende = aktuelles (letztes bekanntes) Gewicht +
+        prognostizierte Gewichtsaenderung. */
+const SIMPLE_FORECAST_WINDOW_DAYS = 30;
+
+/* Gueltige Tagesbilanzen der letzten windowDays Kalendertage (inkl. heute,
+   falls bereits gueltig geloggt) — fester Kalendertage-Fensterscan, kein
+   "weiter zurueck suchen bis genug gueltige Tage gefunden sind". */
+function getRecentValidBalanceDaysSimple(dailyData, now, monthlySettings, windowDays){
+  windowDays = windowDays || SIMPLE_FORECAST_WINDOW_DAYS;
+  const out=[];
+  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for(let i=0;i<windowDays;i++){
+    const y=cursor.getFullYear(), m=cursor.getMonth();
+    const monthlyTdee = getMonthlyTdee(y,m,monthlySettings); // jeder Tag nutzt SEINEN EIGENEN Monatsbedarf
+    const day = dailyData[dayKey(y,m,cursor.getDate())];
+    if(isValidForecastDay(day, monthlyTdee)){
+      out.push({date:new Date(cursor), balance: calculateDailyEnergyBalance(day, monthlyTdee)});
+    }
+    cursor.setDate(cursor.getDate()-1);
+  }
+  return out.reverse(); // chronologisch aufsteigend
+}
+
+/* Letztes bekanntes Gewicht bis inkl. "now" — bewusst ohne jede weitere
+   Plausibilisierung/Alters-Grenze (die Gewichtseintrags-Validierung selbst
+   passiert unveraendert an anderer Stelle beim Speichern, siehe
+   validateWeightEntry/attemptSaveWeight; hier wird nur noch das zeitlich
+   juengste bereits gespeicherte Gewicht abgelesen). */
+function getLatestKnownWeight(weightEntries, now){
+  const sorted = (weightEntries||[])
+    .filter(e=>e && e.weight>0 && isFinite(e.weight) && e.date && startOfDay(e.date)<=startOfDay(now))
+    .slice().sort((a,b)=>startOfDay(a.date)-startOfDay(b.date));
+  if(sorted.length===0) return null;
+  return sorted[sorted.length-1];
+}
+
+/* ===== Zentrale Monatsend-Prognose ===== */
+function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightEntries}){
   const y=now.getFullYear(), m=now.getMonth();
 
   const monthlyTdee = getMonthlyTdee(y,m,monthlySettings);
@@ -619,57 +671,35 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
   }
 
   const monthEnd = new Date(y,m+1,0);
-  if(startOfDay(now)>startOfDay(monthEnd)){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["month_already_ended"], forecastBuildId:FORECAST_BUILD_ID};
-  }
 
-  const anchor = getLatestValidWeightEntry(weightEntries, now, FORECAST_CONFIG, dailyData, monthlySettings, weightConfirmations);
+  const anchor = getLatestKnownWeight(weightEntries, now);
   if(!anchor){
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["missing_anchor_weight"], forecastBuildId:FORECAST_BUILD_ID};
   }
-  const anchorAgeDays = daysBetween(anchor.date, now);
-  if(anchorAgeDays>FORECAST_CONFIG.maxAnchorAgeDays){
-    return {status:"insufficient_data", forecastWeightKg:null, reasons:["anchor_weight_too_old"],
-      requirements:{maxAnchorAgeDays:FORECAST_CONFIG.maxAnchorAgeDays, anchorAgeDays},
-      anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
-  }
 
-  const recentDays = getRecentValidBalanceDays(dailyData, now, monthlySettings, FORECAST_CONFIG.maxRecentValidDays);
-  if(recentDays.length<FORECAST_CONFIG.minForecastValidDays){
-    // anchorDate/anchorWeightKg werden HIER absichtlich mit ausgegeben, obwohl
-    // status "insufficient_data" ist: der Anker wurde oben bereits gefunden
-    // (sonst waere schon "missing_anchor_weight" zurueckgegeben worden) -- es
-    // ist keine zweite/neue Berechnung, nur dieselben bereits vorhandenen
-    // Werte auch in diesem Rueckgabezweig sichtbar zu machen (Diagnose).
+  const recentDays = getRecentValidBalanceDaysSimple(dailyData, now, monthlySettings, SIMPLE_FORECAST_WINDOW_DAYS);
+  if(recentDays.length===0){
     return {status:"insufficient_data", forecastWeightKg:null, reasons:["not_enough_valid_log_days"],
-      requirements:{validDaysRequired:FORECAST_CONFIG.minForecastValidDays, validDaysAvailable:recentDays.length},
+      requirements:{validDaysRequired:1, validDaysAvailable:0},
       anchorDate:dateToIso(anchor.date), anchorWeightKg:round1(anchor.weight), forecastBuildId:FORECAST_BUILD_ID};
   }
 
-  const robust = calculateRobustAverageBalance(recentDays, FORECAST_CONFIG);
-  const actualSinceAnchor = calculateActualBalanceSinceAnchor(anchor.date, now, dailyData, monthlySettings);
-  const futureDays = Math.max(0, daysBetween(now, monthEnd)); // Tage NACH heute bis inkl. Monatsende
-  const projectedFutureBalanceKcal = robust.averageBalanceKcal*futureDays;
-  const totalProjectedBalanceFromAnchor = actualSinceAnchor.actualBalanceSinceAnchorKcal + projectedFutureBalanceKcal;
-  const theoreticalWeightChangeKg = totalProjectedBalanceFromAnchor / FORECAST_CONFIG.kcalPerKg;
-
-  const personalEnergyFactor = calibrationProfile.personalEnergyFactor || 1.0;
-  const expectedChangeKg = theoreticalWeightChangeKg*personalEnergyFactor;
+  const averageDailyBalanceKcal = recentDays.reduce((s,d)=>s+d.balance,0)/recentDays.length;
+  const remainingDays = Math.max(0, daysBetween(now, monthEnd)); // Tage NACH heute bis inkl. Monatsende
+  const projectedFutureBalanceKcal = averageDailyBalanceKcal*remainingDays;
+  const expectedChangeKg = projectedFutureBalanceKcal/FORECAST_CONFIG.kcalPerKg;
   const forecastWeightKg = anchor.weight+expectedChangeKg;
 
-  const quality = calculateCurrentDataQuality({recentDays, anchorAgeDays, calibrationProfile, now});
-  const anchorHadUsageGap = !!(anchor.validation && anchor.validation.usageGapDetected);
-  /* WICHTIG: Fuer den Unsicherheitsabbau nach einer Nutzungspause zaehlen
-     ausschliesslich gueltige Prognosetage NACH dem (neuen, bestaetigten)
-     Anker — actualSinceAnchor.usedDays. recentDays.length waere fachlich
-     falsch: das ist der Datenumfang fuer den robusten Bilanz-Durchschnitt
-     ueber den GESAMTEN laufenden Monat, der auch Tage VOR dem neuen Anker
-     enthalten kann und die Nutzungspause-Strafe dadurch zu frueh abbauen
-     wuerde. */
-  const uncertainty = calculateForecastUncertainty({calibrationProfile, futureDays, quality,
-    anchorHadUsageGap, validBalanceDaysSinceAnchor: actualSinceAnchor.usedDays});
-  const stage = getCalibrationStage(calibrationProfile.calibratedMonths||0);
-  const confidenceStage = recentDays.length<FORECAST_CONFIG.regularForecastValidDays ? "provisional" : "regular";
+  const validDays = recentDays.length;
+  const dqStage = validDays>=FORECAST_CONFIG.regularForecastValidDays ? "good"
+    : validDays>=FORECAST_CONFIG.minForecastValidDays ? "provisional" : "insufficient";
+  const dataQuality = {
+    score: round4(Math.min(1, validDays/SIMPLE_FORECAST_WINDOW_DAYS)),
+    stage: dqStage,
+    validDays,
+    coverage: round4(Math.min(1, validDays/SIMPLE_FORECAST_WINDOW_DAYS)),
+    anchorAgeDays: daysBetween(anchor.date, now)
+  };
 
   return {
     status: "ok",
@@ -677,21 +707,18 @@ function calculateCurrentMonthForecast({now, dailyData, monthlySettings, weightE
     forecastDate: dateToIso(monthEnd),
     anchorDate: dateToIso(anchor.date),
     anchorWeightKg: round1(anchor.weight),
-    anchorAfterUsageGap: anchorHadUsageGap,
-    validBalanceDays: recentDays.length,
-    averageDailyBalanceKcal: Math.round(robust.averageBalanceKcal),
-    actualBalanceSinceAnchorKcal: Math.round(actualSinceAnchor.actualBalanceSinceAnchorKcal),
+    validBalanceDays: validDays,
+    averageDailyBalanceKcal: Math.round(averageDailyBalanceKcal),
     projectedFutureBalanceKcal: Math.round(projectedFutureBalanceKcal),
-    personalEnergyFactor: round4(personalEnergyFactor),
+    personalEnergyFactor: 1,
     expectedChangeKg: round2(expectedChangeKg),
     forecastWeightKg: round1(forecastWeightKg),
-    lowerBoundKg: round1(forecastWeightKg-uncertainty.finalMarginKg),
-    upperBoundKg: round1(forecastWeightKg+uncertainty.finalMarginKg),
-    confidenceStage,
-    calibrationStage: stage,
-    calibratedMonths: calibrationProfile.calibratedMonths||0,
-    dataQuality: quality,
-    uncertainty,
+    lowerBoundKg: round1(forecastWeightKg),
+    upperBoundKg: round1(forecastWeightKg),
+    confidenceStage: validDays>=FORECAST_CONFIG.regularForecastValidDays ? "regular" : "provisional",
+    calibrationStage: "unpersonalized",
+    calibratedMonths: 0,
+    dataQuality,
     reasons: [],
     forecastBuildId: FORECAST_BUILD_ID
   };
@@ -1100,6 +1127,7 @@ if(typeof module!=="undefined" && module.exports){
     FORECAST_CONFIG, round1, round2, round4, monthIdOf, dateToIso, parseLocalIsoDate, dayKey, addMonthsSimple,
     getMonthlyTdee, calculateDailyEnergyBalance, isValidForecastDay, sanitizeBalanceForForecast,
     getRecentValidBalanceDays, debugRecentForecastDays, buildDayForecastDiagnostic, FORECAST_BUILD_ID, calculateRobustAverageBalance,
+    getRecentValidBalanceDaysSimple, getLatestKnownWeight, SIMPLE_FORECAST_WINDOW_DAYS,
     validateWeightEntry, evaluateWeightEntryContext, classifyWeightEntries,
     weightEntryConfirmationKey, isEntryConfirmed, recordWeightConfirmation, removeWeightConfirmation,
     getLatestValidWeightEntry,

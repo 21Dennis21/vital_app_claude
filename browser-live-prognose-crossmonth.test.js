@@ -2,12 +2,13 @@ const { createApp, flush } = require("./browser-test-harness.js");
 const { clickByText, setNativeInputValue, blurInput } = require("./dom-test-helpers.js");
 
 /* Browser-Verdrahtungstest fuer die kalenderuebergreifende Datenauswahl der
-   Live-Prognose (Engine-Fix in forecast-engine.js): bestaetigt, dass der
-   sichtbare Text im Empty-State wirklich die richtige Zahl zeigt ("noch 1
-   vollstaendiger Ernaehrungstag", nicht "noch 6") UND dass nach dem 7.
-   gueltigen Tag SOFORT, ohne Reload/Remount, die volle Prognosekarte
-   erscheint. Die Engine-Unit-Tests (forecast-engine.test.js) decken die
-   Logik ab -- dieser Test prueft nur die Verdrahtung zur UI. */
+   Live-Prognose (einfaches Monatsend-Prognosemodell, forecast-engine.js):
+   bestaetigt, dass die Prognosekarte die kalenderuebergreifend gezaehlten
+   gueltigen Tage korrekt anzeigt (6 Tage, davon 3 aus dem Vormonat) UND dass
+   nach einem weiteren gueltigen Tag SOFORT, ohne Reload/Remount, die
+   Tageszahl in der Karte mitwaechst. Die Engine-Unit-Tests
+   (forecast-engine.test.js) decken die Logik ab -- dieser Test prueft nur
+   die Verdrahtung zur UI. */
 
 let passed=0, failed=0;
 function check(cond, label){
@@ -54,16 +55,16 @@ async function main(){
   const d = dom.window.document;
 
   // =================================================================
-  console.log("\n--- 1. Empty-State zeigt die richtige Zahl (6 gueltige Tage -> noch 1 noetig) ---");
+  console.log("\n--- 1. Prognosekarte zaehlt kalenderuebergreifend korrekt (6 gueltige Tage, 3x Juli + 3x August) ---");
   clickByText(d, "Verlauf");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
-  check(bodyHas(d,"Live-Prognose"), "Live-Prognose-Karte (Empty-State) wird angezeigt");
-  check(bodyHas(d,"Logge noch 1 vollständige Ernährungstage"),
-    "Text zeigt korrekt 'noch 1' (6 kalenderuebergreifende gueltige Tage erkannt, nicht nur die August-Tage)");
-  check(!bodyHas(d,"Logge noch 6") && !bodyHas(d,"Logge noch 4") && !bodyHas(d,"Logge noch 7"),
-    "Text zeigt NICHT die alte, auf den laufenden Monat begrenzte Zahl");
+  check(bodyHas(d,"Live-Prognose"), "Live-Prognose-Karte wird angezeigt");
+  check(bodyHas(d,"Basis: Ø der letzten 6 geloggten Tage"),
+    "Karte zeigt korrekt 6 Tage (6 kalenderuebergreifende gueltige Tage erkannt, nicht nur die August-Tage)");
+  check(!bodyHas(d,"letzten 3 geloggten Tage"),
+    "Text zeigt NICHT die alte, auf den laufenden Monat begrenzte Zahl (nur die 3 August-Tage)");
 
   // =================================================================
   console.log("\n--- 2. 7. gueltigen Tag (28.7.) ueber die ECHTE Ernaehrungs-UI nachtragen ---");
@@ -105,14 +106,13 @@ async function main(){
   await flush(dom);
 
   // =================================================================
-  console.log("\n--- 3. OHNE Reload/Remount: Prognosekarte erscheint sofort ---");
+  console.log("\n--- 3. OHNE Reload/Remount: Tageszahl in der Prognosekarte waechst sofort mit ---");
   clickByText(d, "Verlauf");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
   check(bodyHas(d,"Basis: Ø der letzten 7 geloggten Tage"),
     "Prognosekarte zeigt SOFORT 7 gueltige Tage (28.7.-3.8.), ohne Reload");
-  check(!bodyHas(d,"Logge noch"), "Empty-State-Text ist verschwunden -- echte Prognosekarte ersetzt ihn");
 
   console.log("\n================================");
   console.log(passed+" bestanden, "+failed+" fehlgeschlagen");

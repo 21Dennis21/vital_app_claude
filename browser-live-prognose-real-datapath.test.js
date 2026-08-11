@@ -153,18 +153,16 @@ async function main(){
   // =================================================================
   console.log("\n--- 5. Engine-Ergebnis und UI-Text müssen exakt übereinstimmen ---");
   const forecast = dom.window.calculateCurrentMonthForecast({now, dailyData:built.dailyData, monthlySettings:built.monthlySettings, weightEntries:built.weightEntries});
-  check(forecast.status==="insufficient_data" && forecast.reasons.includes("not_enough_valid_log_days"),
-    "Engine: insufficient_data / not_enough_valid_log_days (erhalten: "+JSON.stringify(forecast.reasons)+")");
-  check(forecast.requirements.validDaysAvailable===6, "Engine: validDaysAvailable=6 (erhalten: "+(forecast.requirements&&forecast.requirements.validDaysAvailable)+")");
-  check(forecast.requirements.validDaysRequired===7, "Engine: validDaysRequired=7");
+  check(forecast.status==="ok", "Engine: ok (einfaches Modell hat keine Mindestanzahl an Tagen mehr, erhalten: "+forecast.status+")");
+  check(forecast.validBalanceDays===6, "Engine: validBalanceDays=6 (erhalten: "+forecast.validBalanceDays+")");
 
   clickByText(d, "Verlauf");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
-  check(bodyHas(d,"Logge noch 1 vollständige Ernährungstage"),
-    "UI zeigt 'noch 1' — exakt aus forecast.requirements abgeleitet, keine eigene Zählung");
-  check(!bodyHas(d,"Logge noch 4") && !bodyHas(d,"Logge noch 3") && !bodyHas(d,"Logge noch 6"),
+  check(bodyHas(d,"Basis: Ø der letzten 6 geloggten Tage"),
+    "UI zeigt 6 Tage — exakt aus forecast.validBalanceDays abgeleitet, keine eigene Zählung");
+  check(!bodyHas(d,"letzten 4 geloggten Tage") && !bodyHas(d,"letzten 3 geloggten Tage"),
     "UI zeigt NICHT die im Praxis-Fehler gemeldete falsche Zahl");
 
   // =================================================================
@@ -189,7 +187,6 @@ async function main(){
   clickByText(d, "Gewicht");
   await flush(dom);
   check(bodyHas(d,"Basis: Ø der letzten 7 geloggten Tage"), "Prognosekarte zeigt SOFORT 7 gültige Tage, ohne Reload");
-  check(!bodyHas(d,"Logge noch"), "Empty-State-Text ist verschwunden");
 
   console.log("\n================================");
   console.log(passed+" bestanden, "+failed+" fehlgeschlagen");

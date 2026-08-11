@@ -89,17 +89,22 @@ console.log("========== PUNKT 6: Leerzustand-Reason-Codes sind fachlich korrekt 
   r = E.calculateCurrentMonthForecast({now:NOW, dailyData:dailyData2, monthlySettings:{"2026-08":{tdee:2700}}, weightEntries:[]});
   assertEq(r.reasons[0],"missing_anchor_weight","kein Gewicht -> korrekter Reason");
 
-  // anchor_weight_too_old
+  // Ein altes Ankergewicht (26 Tage) wird im einfachen Modell weiterhin verwendet — keine Alters-Grenze mehr.
   const oldWeight=[{date:new Date(2026,6,20),weight:85}]; // 26 Tage alt
   r = E.calculateCurrentMonthForecast({now:NOW, dailyData:dailyData2, monthlySettings:{"2026-08":{tdee:2700}}, weightEntries:oldWeight});
-  assertEq(r.reasons[0],"anchor_weight_too_old","zu altes Gewicht -> korrekter Reason");
+  assertEq(r.status,"ok","altes Gewicht wird weiterhin als Anker akzeptiert");
+  assertEq(r.anchorWeightKg,85,"altes Gewicht wird tatsaechlich als Ankerwert uebernommen");
 
-  // not_enough_valid_log_days
+  // not_enough_valid_log_days (nur bei GAR KEINEN gueltigen Tagen)
   const fewDays = mkDailyData([{y:2026,m:7,d:14,kcalIn:2200},{y:2026,m:7,d:15,kcalIn:2200}]);
   r = E.calculateCurrentMonthForecast({now:NOW, dailyData:fewDays, monthlySettings:{"2026-08":{tdee:2700}}, weightEntries:[{date:NOW,weight:85}]});
-  assertEq(r.reasons[0],"not_enough_valid_log_days","zu wenige Log-Tage -> korrekter Reason");
-  assertEq(r.requirements.validDaysAvailable,2,"Anzahl vorhandener Tage korrekt für UI-Text nutzbar");
-  assertEq(r.requirements.validDaysRequired,7,"Anzahl benötigter Tage korrekt für UI-Text nutzbar");
+  assertEq(r.status,"ok","2 gueltige Tage reichen im einfachen Modell fuer eine Prognose");
+  assertEq(r.validBalanceDays,2,"Anzahl vorhandener Tage korrekt gezaehlt");
+
+  const noDays = mkDailyData([]);
+  r = E.calculateCurrentMonthForecast({now:NOW, dailyData:noDays, monthlySettings:{"2026-08":{tdee:2700}}, weightEntries:[{date:NOW,weight:85}]});
+  assertEq(r.reasons[0],"not_enough_valid_log_days","gar keine gueltigen Tage -> korrekter Reason");
+  assertEq(r.requirements.validDaysAvailable,0,"Anzahl vorhandener Tage korrekt für UI-Text nutzbar");
 }
 
 console.log("========== PUNKT 7+8: Ausstehende Monate — alle prüfen, temporär vs. dauerhaft ==========");
