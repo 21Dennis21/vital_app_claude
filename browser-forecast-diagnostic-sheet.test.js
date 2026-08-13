@@ -47,15 +47,15 @@ async function main(){
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
-  check(bodyHas(d,"Logge noch 1 vollständige Ernährungstage"), "Karte zeigt zunächst den Leerzustand (6 gültige Tage, noch 1 nötig)");
+  check(bodyHas(d,"Basis: Ø der letzten 6 geloggten Tage"), "Karte zeigt sofort die reguläre Prognose (6 gültige Tage, einfaches Modell hat keine Mindestanzahl)");
   clickByText(d, "Live-Prognose");
   await flush(dom);
   check(bodyHas(d,"Live-Prognose Diagnose"), "Diagnose-Sheet öffnet sich beim Antippen der Überschrift");
 
   console.log("\n--- 2. Engine-Status-Block zeigt exakt das reale forecast-Objekt ---");
   check(bodyHas(d,"cross-month-valid-days-v1"), "forecastBuildId ist sichtbar (Deployment-Marker)");
-  check(bodyHas(d,"insufficient_data"), "status wird angezeigt");
-  check(bodyHas(d,"not_enough_valid_log_days"), "reasons wird angezeigt");
+  check(bodyHas(d,"status") && bodyHas(d,"ok"), "status wird angezeigt");
+  check(bodyHas(d,"reguläre Karte, kein Leerzustand-Text"), "kein Leerzustand-Text, da 6 Tage im einfachen Modell bereits reichen");
 
   console.log("\n--- 3. Monatseinstellungen für Juli und August ---");
   check(bodyHas(d,"Juli 2026") && bodyHas(d,"2026-07"), "Juli-Monatsinfo (Label + monthId) vorhanden");

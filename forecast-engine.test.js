@@ -66,14 +66,15 @@ console.log("========== TEST 2: Monatsbedarf vorhanden, keine Log-Tage =========
   assert(r.reasons.includes("not_enough_valid_log_days"),"Test2: reason");
 }
 
-console.log("========== TEST 3: Nur 4 gueltige Tage -> keine Prognose ==========");
+console.log("========== TEST 3: Nur 4 gueltige Tage -> Prognose trotzdem moeglich (einfaches Modell hat keine Mindestanzahl) ==========");
 {
   const dailyData = mkDailyData(dailySeries(NOW,4,2700,-500));
   const monthlySettings = mkMonthlySettings({[MID]:2700});
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:14,weight:84.2}]);
   const r = E.calculateCurrentMonthForecast({now:NOW,dailyData,monthlySettings,weightEntries});
-  assertEq(r.status,"insufficient_data","Test3: status");
-  assertEq(r.requirements.validDaysAvailable,4,"Test3: validDaysAvailable");
+  assertEq(r.status,"ok","Test3: status ok trotz nur 4 Tagen");
+  assertEq(r.validBalanceDays,4,"Test3: validBalanceDays");
+  assertEq(r.dataQuality.stage,"insufficient","Test3: Datenqualitaet dennoch als 'insufficient' markiert");
 }
 
 console.log("========== TEST 4: 7 gueltige Tage -> vorlaeufige Prognose ==========");
@@ -125,36 +126,41 @@ console.log("========== TEST 8: Extremer Ueberschuss wird begrenzt ==========");
   assert(sanitized.wasClamped,"Test8: wasClamped=true");
 }
 
-console.log("========== TEST 9: Ankergewicht heute -> nur zukuenftige Tage prognostiziert ==========");
+console.log("========== TEST 9: Ankergewicht heute -> Hochrechnung nutzt exakt die Tage bis Monatsende (einfaches Modell) ==========");
 {
   const dailyData = mkDailyData(dailySeries(NOW,14,2700,-500));
   const monthlySettings = mkMonthlySettings({[MID]:2700});
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:15,weight:84.2}]); // = NOW
   const r = E.calculateCurrentMonthForecast({now:NOW,dailyData,monthlySettings,weightEntries});
   assertEq(r.anchorDate,"2026-08-15","Test9: anchorDate = heute");
-  // Bei Anker=heute darf actualBalanceSinceAnchor = 0 sein (Ankertag selbst zaehlt nicht mehr)
-  assertEq(r.actualBalanceSinceAnchorKcal,0,"Test9: keine Vergangenheitsbilanz nach dem Anker");
+  assertEq(r.averageDailyBalanceKcal,-500,"Test9: Ø Tagesbilanz");
+  assertEq(r.projectedFutureBalanceKcal,-8000,"Test9: Hochrechnung = Ø x 16 verbleibende Tage bis Monatsende (15.8.-31.8.)");
+  assertEq(r.forecastWeightKg,83.2,"Test9: Prognose = Ankergewicht + Hochrechnung/7700",0.05);
 }
 
-console.log("========== TEST 10: Ankergewicht vor 5 Tagen -> tatsaechliche + projizierte Bilanz ==========");
+console.log("========== TEST 10: Ankergewicht vor 5 Tagen -> Hochrechnung unveraendert, nur der Ausgangswert des Gewichts aendert sich ==========");
 {
   const dailyData = mkDailyData(dailySeries(NOW,14,2700,-500));
   const monthlySettings = mkMonthlySettings({[MID]:2700});
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:10,weight:85.0}]); // 5 Tage vor NOW
   const r = E.calculateCurrentMonthForecast({now:NOW,dailyData,monthlySettings,weightEntries});
   assertEq(r.anchorDate,"2026-08-10","Test10: anchorDate korrekt");
-  // 5 Tage seit Anker (11.-15.8) sollten je -500 kcal beitragen = -2500
-  assertEq(r.actualBalanceSinceAnchorKcal,-2500,"Test10: tatsaechliche Bilanz seit Anker",5);
+  // Das Datenfenster (letzte 30 Kalendertage vor "now") und damit Ø-Bilanz/Hochrechnung
+  // haengen NICHT vom Ankerdatum ab — nur der Startwert (Ankergewicht) aendert sich.
+  assertEq(r.averageDailyBalanceKcal,-500,"Test10: Ø Tagesbilanz unveraendert");
+  assertEq(r.projectedFutureBalanceKcal,-8000,"Test10: Hochrechnung unveraendert (16 Tage bis Monatsende)");
+  assertEq(r.forecastWeightKg,84.0,"Test10: 85.0 + (-8000/7700)",0.05);
 }
 
-console.log("========== TEST 11: Ankergewicht aelter als 14 Tage -> keine reguläre Prognose ==========");
+console.log("========== TEST 11: Ankergewicht aelter als 14 Tage -> im einfachen Modell weiterhin gueltig (keine Alters-Grenze mehr) ==========");
 {
   const dailyData = mkDailyData(dailySeries(NOW,14,2700,-500));
   const monthlySettings = mkMonthlySettings({[MID]:2700});
   const weightEntries = mkWeightEntries([{y:2026,m:6,d:30,weight:86.0}]); // 16 Tage vor NOW
   const r = E.calculateCurrentMonthForecast({now:NOW,dailyData,monthlySettings,weightEntries});
-  assertEq(r.status,"insufficient_data","Test11: status");
-  assert(r.reasons.includes("anchor_weight_too_old"),"Test11: reason");
+  assertEq(r.status,"ok","Test11: Prognose weiterhin verfuegbar, keine Alters-Ablehnung mehr");
+  assertEq(r.anchorDate,"2026-07-30","Test11: aelteres Ankergewicht wird dennoch verwendet");
+  assertEq(r.anchorWeightKg,86.0,"Test11: Ankergewicht = letztes bekanntes Gewicht, unabhaengig vom Alter");
 }
 
 console.log("========== TEST 12: Defizit -> prognostiziertes Gewicht sinkt ==========");
@@ -329,8 +335,8 @@ console.log("========== TEST 26: Monatswechsel in lokaler Zeitzone -> Live-Progn
   assertEq(r.validBalanceDays,14,"Test26: alle 14 Tage (Juli+August) zaehlen als gueltig");
   assertEq(r.confidenceStage,"regular","Test26: 14 gueltige Tage -> reguläre (keine vorlaeufige) Prognose");
   // Juli-Tage: kcalIn 2200 - Juli-TDEE 2600 = -400 kcal; August-Tag (1.8.): 2200 - August-TDEE 2700 = -500 kcal.
-  // Gewichteter robuster Durchschnitt (7 Tage Gewicht 1.0, 7 Tage Gewicht 0.65, keine Winsorisierung noetig): -409 kcal/Tag.
-  assertEq(r.averageDailyBalanceKcal,-409,"Test26: robuster Durchschnitt nutzt je Tag den EIGENEN Monatsbedarf (Juli- und August-TDEE gemischt)");
+  // Einfacher arithmetischer Durchschnitt (13x -400, 1x -500): (13*-400-500)/14 = -407,14 kcal/Tag.
+  assertEq(r.averageDailyBalanceKcal,-407,"Test26: einfacher Durchschnitt nutzt je Tag den EIGENEN Monatsbedarf (Juli- und August-TDEE gemischt)");
   assertEq(r.forecastDate,"2026-08-31","Test26: Prognoseziel bleibt Ende des laufenden Monats (August)");
 }
 
@@ -394,10 +400,10 @@ console.log("========== TEST 31: Akzeptanztest — 6 kalenderuebergreifende guel
 
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
   const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
-  assertEq(r.status,"insufficient_data","Test31: 6 gueltige Tage reichen noch nicht fuer die Mindestanzahl 7");
-  assert(r.reasons.includes("not_enough_valid_log_days"),"Test31: richtiger Grund");
-  assertEq(r.requirements.validDaysRequired,7,"Test31: Mindestanzahl bleibt 7");
-  assertEq(r.requirements.validDaysAvailable,6,"Test31: 6 kalenderuebergreifende gueltige Tage erkannt (Meldung darf nicht '1' zeigen)");
+  // Einfaches Modell: keine Mindestanzahl an Tagen mehr — 6 gueltige Tage reichen fuer eine Prognose.
+  assertEq(r.status,"ok","Test31: 6 kalenderuebergreifende gueltige Tage reichen im einfachen Modell");
+  assertEq(r.validBalanceDays,6,"Test31: 6 gueltige Tage werden gezaehlt");
+  assertEq(r.averageDailyBalanceKcal,-450,"Test31: Ø Tagesbilanz mischt Juli- und August-TDEE (3x -400, 3x -500)");
 }
 
 console.log("========== TEST 32: Ein weiterer gueltiger Tag (28.7. dazu, 7 insgesamt) -> vorlaeufige Prognose erscheint ==========");
@@ -431,8 +437,9 @@ console.log("========== TEST 33: Fehlender Vormonats-TDEE -> nur die betroffenen
 
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:3,weight:84.0}]);
   const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
-  assertEq(r.status,"insufficient_data","Test33b: Gesamtberechnung laeuft weiter (kein Absturz) und liefert ein normales insufficient_data-Ergebnis");
-  assertEq(r.requirements.validDaysAvailable,3,"Test33b: nur die 3 gueltigen August-Tage werden gezaehlt");
+  assertEq(r.status,"ok","Test33b: Gesamtberechnung laeuft weiter (kein Absturz) und liefert im einfachen Modell trotzdem eine Prognose");
+  assertEq(r.validBalanceDays,3,"Test33b: nur die 3 gueltigen August-Tage werden gezaehlt (Juli-Tage bleiben mangels TDEE aussen vor)");
+  assertEq(r.forecastWeightKg,82.2,"Test33b: Prognose aus den 3 gueltigen Tagen",0.05);
 }
 
 console.log("========== TEST 34: Monatswechsel veraendert die Anzahl gueltiger Tage nicht sprunghaft ==========");
@@ -446,7 +453,7 @@ console.log("========== TEST 34: Monatswechsel veraendert die Anzahl gueltiger T
   assertEq(recentAug1.length,14,"Test34: 1.8. sieht ebenfalls 14 gueltige Tage — kein Einbruch durch den Monatswechsel");
 }
 
-console.log("========== TEST 35: Keine Doppelzaehlung seit dem Gewichtsanker ==========");
+console.log("========== TEST 35: Ankerdatum beeinflusst nur den Startwert, nicht das Datenfenster (einfaches Modell) ==========");
 {
   const now = new Date(2026,7,10);
   const monthlySettings = mkMonthlySettings({"2026-08":2700});
@@ -454,15 +461,12 @@ console.log("========== TEST 35: Keine Doppelzaehlung seit dem Gewichtsanker ===
   const weightEntries = mkWeightEntries([{y:2026,m:7,d:7,weight:84.0}]); // Anker vor 3 Tagen (7.8.)
   const r = E.calculateCurrentMonthForecast({now,dailyData,monthlySettings,weightEntries});
   assertEq(r.status,"ok","Test35: Prognose verfuegbar");
-  // Tatsaechliche Bilanz seit Anker: NUR 8.8./9.8./10.8. (3 Tage a -500 kcal) — unabhaengig davon,
-  // dass dieselben Tage auch Teil der Stichprobe fuer den robusten Tages-Durchschnitt sind.
-  assertEq(r.actualBalanceSinceAnchorKcal,-1500,"Test35: tatsaechliche Bilanz seit Anker = genau 3 Tage a -500 kcal");
-  // Der robuste Durchschnitt (-500 kcal/Tag) wird ausschliesslich auf die 21 ZUKUENFTIGEN Tage
-  // (11.8.-31.8.) angewendet — nicht zusaetzlich auf die bereits in actualBalanceSinceAnchorKcal
-  // gezaehlten Tage 8.-10.8.
-  assertEq(r.averageDailyBalanceKcal,-500,"Test35: robuster Tagesdurchschnitt");
-  assertEq(r.projectedFutureBalanceKcal,-10500,"Test35: projizierte Zukunftsbilanz = -500 kcal x 21 zukuenftige Tage, keine Ueberschneidung mit actualBalanceSinceAnchorKcal");
-  assertEq(r.forecastWeightKg,82.4,"Test35: Gesamtergebnis ohne Doppelzaehlung (84.0 + (-1500-10500)/7700)");
+  // Das Datenfenster sind die letzten 30 Kalendertage VOR "now" (10.8.), unabhaengig vom
+  // Ankerdatum — alle 10 vorhandenen Tage (1.8.-10.8.) zaehlen, nicht nur die Tage nach dem Anker.
+  assertEq(r.validBalanceDays,10,"Test35: alle 10 vorhandenen Tage zaehlen, nicht nur die Tage nach dem Anker");
+  assertEq(r.averageDailyBalanceKcal,-500,"Test35: Ø Tagesbilanz");
+  assertEq(r.projectedFutureBalanceKcal,-10500,"Test35: Hochrechnung = Ø x 21 verbleibende Tage bis Monatsende (10.8.-31.8.)");
+  assertEq(r.forecastWeightKg,82.6,"Test35: 84.0 + (-10500/7700)",0.05);
 }
 
 console.log("========== TEST 36: Forecast-Zieldatum bleibt Monatsende des aktuellen Monats ==========");
