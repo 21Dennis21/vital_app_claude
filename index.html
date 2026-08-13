@@ -2971,18 +2971,36 @@ function WeightTrendChart({w,sy,sm,compact,noCard}){
    Zwischenwerte, keine Auffuellung fehlender Tage). Die ganze Karte ist
    antippbar und oeffnet die vollstaendige Gewicht-Detailansicht
    (WeightDetailPage) mit den Zeitraumfiltern 1W/1M/3M/6M/12M/Max. */
-function WeightPreviewCard({data,currentDay,onOpen}){
-  const pts=useMemo(()=>{
-    const inRangeFn=weightDetailInRangeFn("1W",currentDay);
-    return collectWeightPointsInRange(data,inRangeFn);
+/* Datengrundlage der Vorschau, mit Fallback: primaer die letzten 7
+   KALENDERTAGE (wie bisher). Sind darin keine Messungen vorhanden, aber
+   der Nutzer hat ANDERSWO (beliebig lange zurueckliegend) schon mal
+   Gewicht eingetragen, werden stattdessen dessen letzte 7 TATSAECHLICH
+   vorhandenen Messungen gezeigt (nie erfunden/interpoliert) — die Karte
+   markiert diesen Fall ueber isFallback in der Beschriftung ("Letzte 7
+   Messungen" statt "Letzte 7 Tage"), damit alte Werte nie faelschlich als
+   aktuell wirken. Erst wenn ueberhaupt keine einzige Messung existiert,
+   bleibt es beim Leerzustand. collectWeightPointsInRange sortiert bereits
+   chronologisch aufsteigend, daher reicht fuer den Fallback ein simples
+   slice(-7) der Gesamtmenge (liefert automatisch alle vorhandenen, falls
+   insgesamt weniger als 7 existieren). */
+function useWeightPreviewPoints(data,currentDay){
+  return useMemo(()=>{
+    const recent=collectWeightPointsInRange(data,weightDetailInRangeFn("1W",currentDay));
+    if(recent.length>0)return {pts:recent,isFallback:false};
+    const all=collectWeightPointsInRange(data,()=>true);
+    return {pts:all.slice(-7),isFallback:all.length>0};
   },[data,currentDay]);
+}
+
+function WeightPreviewCard({data,currentDay,onOpen}){
+  const {pts,isFallback}=useWeightPreviewPoints(data,currentDay);
 
   if(pts.length===0){
     return(
       <div className="card" onClick={()=>{tapH();onOpen();}} style={{cursor:"pointer",textAlign:"center",padding:"22px 20px"}}>
         <div className="lbl">Gewicht</div>
         <div className="sub" style={{marginBottom:12}}>Letzte 7 Tage</div>
-        <div className="sub">Noch keine Gewichtsmessungen in den letzten 7 Tagen.</div>
+        <div className="sub">Noch keine Gewichtsmessungen vorhanden.</div>
       </div>
     );
   }
@@ -2995,7 +3013,7 @@ function WeightPreviewCard({data,currentDay,onOpen}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:pts.length>=2?10:2}}>
         <div>
           <div className="lbl">Gewicht</div>
-          <div className="sub">Letzte 7 Tage</div>
+          <div className="sub">{isFallback?"Letzte 7 Messungen":"Letzte 7 Tage"}</div>
         </div>
         <div style={{textAlign:"right"}}>
           <div className="num" style={{fontSize:20,fontWeight:700}}>{fmtNum(last.w,1)} kg</div>
