@@ -2945,67 +2945,36 @@ function WeightTrendChart({w,sy,sm}){
   );
 }
 
-/* ===== Kompakte 7-Tage-Gewichtsvorschau (Verlauf -> Gewicht) =====
+/* ===== Kompakte Gewichtsvorschau: letzte 7 ECHTE Messungen (Verlauf -> Gewicht) =====
    Ersetzt dort die frueher direkt angezeigte grosse Gewichtsanalyse (Pill-
    Leiste Woche/Monat/Quartal/Halbjahr/Jahr/Gesamt + grosses Diagramm +
    Statistikleiste). Die ganze Karte ist antippbar und oeffnet die
    vollstaendige Gewicht-Detailansicht (WeightDetailPage) mit den
-   Zeitraumfiltern 1W/1M/3M/6M/12M/Max. */
-/* Baut die feste 7-Tage-Zeitachse (heute und die 6 Tage davor, IMMER genau
-   diese 7 Kalenderpositionen — nicht "die letzten 7 vorhandenen Punkte").
-   Fuer Tage OHNE eigene Messung wird ausschliesslich fuer die reine
-   Chartdarstellung der zuletzt bekannte Gewichtswert fortgefuehrt
-   (isReal:false) — das darf laut Vorgabe NIEMALS in die echten Rohdaten
-   zurueckgeschrieben werden (hier wird nirgends "data"/tracker_data
-   veraendert, nur eine rein lokale Anzeige-Struktur gebaut) und fliesst
-   nirgends sonst ein (Live-Prognose/Statistiken lesen weiterhin
-   ausschliesslich collectWeightPointsInRange direkt). Der fortgefuehrte
-   Wert darf auch von VOR dem 7-Tage-Fenster stammen (letzte tatsaechlich
-   bekannte Messung ueberhaupt) — nur wenn ueberhaupt noch NIE gemessen
-   wurde (weder im Fenster noch davor), bleibt der jeweilige Tag ohne Wert.
-   Slots ohne Wert werden trotzdem als Achsenposition (Wochentag+Datum)
-   gefuehrt, nur Linie/Punkt/Zahl fehlen dort. */
-function useWeightPreviewSeries(data,currentDay){
-  return useMemo(()=>{
-    const all=collectWeightPointsInRange(data,()=>true); // chronologisch aufsteigend, nur echte Messungen
-    const days=[];
-    for(let i=6;i>=0;i--){
-      const d=new Date(currentDay.getFullYear(),currentDay.getMonth(),currentDay.getDate());
-      d.setDate(d.getDate()-i);
-      days.push(d);
-    }
-    const series=days.map(d=>{
-      const ts=d.getTime();
-      const exact=all.find(p=>p.y===d.getFullYear()&&p.m===d.getMonth()&&p.d===d.getDate());
-      if(exact)return {y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),w:exact.w,isReal:true,ts};
-      let carry=null;
-      for(let i=all.length-1;i>=0;i--){ if(all[i].ts<ts){carry=all[i];break;} }
-      if(carry)return {y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),w:carry.w,isReal:false,ts};
-      return {y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),w:null,isReal:false,ts};
-    });
-    return {series,hasAnyData:all.length>0};
-  },[data,currentDay]);
+   Zeitraumfiltern 1W/1M/3M/6M/12M/Max.
+   WICHTIG: bewusst KEINE Kalendertage-Achse und KEIN Fortfuehren fehlender
+   Tage mehr (frueherer Ansatz) — jeder dargestellte Punkt ist exakt eine
+   tatsaechlich gespeicherte Gewichtsmessung, Tage ohne Eintrag werden
+   komplett ignoriert statt aufgefuellt. */
+function useWeightPreviewPoints(data){
+  return useMemo(()=>collectWeightPointsInRange(data,()=>true).slice(-7),[data]);
 }
 
-/* Kleines, eigenstaendiges 7-Tage-Diagramm ausschliesslich fuer die
-   Vorschaukarte — bewusst NICHT WeightTrendChart wiederverwendet: dort
-   braucht jeder Tag eine feste Achsenposition mit Wert-Beschriftung
-   darueber und Wochentag+Datum darunter, eine grundsaetzlich andere
-   Darstellungsform als der grosse, timestamp-basierte Detail-Chart (der
-   dadurch unangetastet bleibt). ALLE Elemente (Linie, Punkte, Wert-
-   Beschriftungen, Wochentage, Kalendertage) nutzen dasselbe, einmal
-   berechnete X-Positionsarray (xAt) ueber den festen 7er-Index — dadurch
-   liegt der Messpunkt eines Tages immer exakt unter/ueber seinem Datum,
-   nichts kann gegeneinander verrutschen. Echte Messungen bekommen einen
-   normalen gefuellten Punkt, fortgefuehrte Tage einen kleineren, nur
-   umrandeten "Geister"-Punkt (Linie bleibt fuer beide durchgezogen — sie
-   zeigt den zuletzt bekannten Stand, nicht nur echte Messtage). Interaktiv:
-   Ziehen/Druecken rastet auf den naechsten Tag mit Wert ein und hebt ihn
-   hervor (identisches Muster wie WeightTrendChart, nur indexbasiert statt
-   zeitstempelbasiert) — ein reiner TAP ohne Bewegung loest dagegen keine
-   Auswahl aus und laesst den Klick zum umschliessenden Karten-onClick
-   durchbubbeln (oeffnet die Detailansicht), siehe dragStateRef/moveDrag. */
-function WeightPreviewSpark({series}){
+/* Kleines, eigenstaendiges Diagramm ausschliesslich fuer die Vorschaukarte
+   — bewusst NICHT WeightTrendChart wiederverwendet: dort ist die X-Achse
+   zeitstempelbasiert (proportional zum Datum), hier dagegen bewusst
+   INDEXBASIERT gleichmaessig verteilt (ein "Verlauf der letzten 7
+   Messungen", keine kalenderproportionale Achse — der Detail-Chart bleibt
+   dadurch unangetastet). Linie/Punkte/Wochentag/Kalendertag nutzen alle
+   dieselbe xAt-Funktion, dadurch liegt jeder Punkt garantiert exakt ueber
+   seinem Datum. Keine permanenten Wert-Beschriftungen mehr ueber den
+   Punkten (wirkte unruhig) — der genaue Wert erscheint ausschliesslich
+   fuer den aktuell per Ziehen/Antippen ausgewaehlten Punkt in einer
+   Tooltip-Zeile oberhalb des Charts (Gewicht + Datum), exakt wie beim
+   grossen Detail-Chart, nur indexbasiert statt zeitstempelbasiert. Ein
+   reiner TAP ohne Bewegung loest keine Auswahl aus und laesst den Klick
+   zum umschliessenden Karten-onClick durchbubbeln (oeffnet die
+   Detailansicht) — siehe dragStateRef/moveDrag/justDraggedRef. */
+function WeightPreviewSpark({pts}){
   const svgRef=useRef(null);
   const [selIdx,setSelIdx]=useState(null);
   const [releasing,setReleasing]=useState(false);
@@ -3013,25 +2982,24 @@ function WeightPreviewSpark({series}){
   const dragStateRef=useRef({active:false,startX:0,startY:0});
   const DRAG_PX=6;
 
-  const n=series.length;
+  const n=pts.length;
   const W=300,H=46;
   /* Exakt dieselbe Formel wie die Spaltenmitte eines CSS-Grids mit n
      gleich breiten Spalten (repeat(n,1fr), siehe "cols" unten) ueber die
      VOLLE Breite W, ohne eigenes Padding — dadurch liegt jeder Punkt
-     garantiert exakt unter/ueber seiner Wert-/Datumsspalte, kein
-     separates Koordinatensystem, das verrutschen koennte. */
+     garantiert exakt ueber seiner Datumsspalte. Funktioniert unveraendert
+     auch fuer n=1 (ergibt W/2, die Mitte). */
   const xAt=i=>((i+0.5)/n)*W;
-  const plottable=series.map((p,i)=>p.w!=null?i:null).filter(i=>i!==null);
-  const vals=plottable.map(i=>series[i].w);
+  const vals=pts.map(p=>p.w);
   const span=Math.max(Math.max(...vals)-Math.min(...vals),0.4);
   const minV=Math.min(...vals);
   const yAt=v=>4+(1-((v-minV)/span))*(H-8);
-  const path=plottable.map((i,k)=>(k===0?"M":"L")+xAt(i)+","+yAt(series[i].w)).join(" ");
-  const lastPlottableIdx=plottable[plottable.length-1];
+  const path=pts.map((p,i)=>(i===0?"M":"L")+xAt(i)+","+yAt(p.w)).join(" ");
+  const lastIdx=n-1;
 
-  const nearestPlottableIdx=svgX=>{
-    let best=plottable[0],bestDist=Infinity;
-    plottable.forEach(i=>{const dist=Math.abs(xAt(i)-svgX);if(dist<bestDist){bestDist=dist;best=i;}});
+  const nearestIdx=svgX=>{
+    let best=0,bestDist=Infinity;
+    pts.forEach((p,i)=>{const dist=Math.abs(xAt(i)-svgX);if(dist<bestDist){bestDist=dist;best=i;}});
     return best;
   };
   const selectIdx=idx=>{
@@ -3043,7 +3011,7 @@ function WeightPreviewSpark({series}){
     setReleasing(false);
     const rect=svgRef.current.getBoundingClientRect();
     const relX=Math.min(1,Math.max(0,(clientX-rect.left)/rect.width));
-    selectIdx(nearestPlottableIdx(relX*W));
+    selectIdx(nearestIdx(relX*W));
   };
   const endSelection=()=>{
     setReleasing(true);
@@ -3089,34 +3057,37 @@ function WeightPreviewSpark({series}){
     if(justDraggedRef.current){e.stopPropagation();justDraggedRef.current=false;}
   };
 
+  const sel=selIdx!=null?pts[selIdx]:null;
+  const selDateLabel=sel?String(sel.d).padStart(2,"0")+"."+String(sel.m+1).padStart(2,"0")+".":"";
   const cols={display:"grid",gridTemplateColumns:"repeat("+n+",1fr)"};
   return(
     <div>
-      <div style={cols}>
-        {series.map((p,i)=>(
-          <div key={p.ts} className="num" style={{textAlign:"center",fontSize:10.5,
-            fontWeight:i===selIdx?700:600,
-            color:p.w==null?"transparent":(i===selIdx?"var(--ink)":p.isReal?"var(--ink2)":"var(--ink3)"),
-            transition:"color .15s"}}>{p.w!=null?fmtNum(p.w,1):"–"}</div>
-        ))}
+      {/* Fest reservierte Hoehe wie beim grossen Detail-Chart, damit nichts
+          springt — zeigt Gewicht+Datum AUSSCHLIESSLICH fuer den gerade
+          ausgewaehlten Punkt, sonst leer. */}
+      <div style={{height:16,textAlign:"center",fontSize:11,opacity:releasing?0:1,transition:"opacity .16s ease-out"}}>
+        {sel&&(
+          <span key={selIdx} className="tooltip-fade">
+            <span style={{fontWeight:700}}>{fmtNum(sel.w,1)} kg</span>
+            <span style={{color:"var(--ink2)"}}>{"  ·  "}</span>
+            <span style={{color:"var(--ink2)",fontWeight:500}}>{selDateLabel}</span>
+          </span>
+        )}
       </div>
-      <svg ref={svgRef} viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",height:H,marginTop:2,touchAction:"pan-y"}}
+      <svg ref={svgRef} viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",marginTop:2,touchAction:"pan-y"}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave} onClick={onChartClick}>
-        {plottable.length>1&&<path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+        {n>1&&<path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
         {selIdx!=null&&(
           <line x1={xAt(selIdx)} y1="2" x2={xAt(selIdx)} y2={H-2} stroke="var(--ink2)" strokeWidth="1" strokeDasharray="2,3" opacity={releasing?0:.6} style={{transition:"opacity .16s ease-out"}}/>
         )}
-        {plottable.map(i=>{
-          const p=series[i];
+        {pts.map((p,i)=>{
           const isSel=i===selIdx;
-          return p.isReal
-            ? <circle key={p.ts} cx={xAt(i)} cy={yAt(p.w)} r={isSel?4.2:(i===lastPlottableIdx?3.2:2.3)} fill="var(--accent)" stroke="var(--card)" strokeWidth={isSel?1.6:(i===lastPlottableIdx?1.3:1)} style={{transition:"r .12s"}}/>
-            : <circle key={p.ts} cx={xAt(i)} cy={yAt(p.w)} r={isSel?3.6:1.8} fill="var(--card)" stroke="var(--accent)" strokeWidth={isSel?1.6:1} opacity={isSel?1:.55} style={{transition:"r .12s,opacity .12s"}}/>;
+          return <circle key={p.ts} cx={xAt(i)} cy={yAt(p.w)} r={isSel?4.4:(i===lastIdx?3.2:2.3)} fill="var(--accent)" stroke="var(--card)" strokeWidth={isSel?1.8:(i===lastIdx?1.3:1)} style={{transition:"r .12s"}}/>;
         })}
       </svg>
       <div style={{...cols,marginTop:3}}>
-        {series.map((p,i)=>(
+        {pts.map((p,i)=>(
           <div key={p.ts} style={{textAlign:"center"}}>
             <div className="sub" style={{fontSize:10,lineHeight:1.35,color:i===selIdx?"var(--ink2)":"var(--ink3)"}}>{DS[(new Date(p.y,p.m,p.d).getDay()+6)%7]}</div>
             <div className="sub" style={{fontSize:10,lineHeight:1.35,fontWeight:600,color:i===selIdx?"var(--ink)":"var(--ink2)"}}>{p.d}</div>
@@ -3140,22 +3111,21 @@ function weightChangeColor(diff,goalDirection){
   return Math.abs(diff)<=FORECAST_CONFIG.maintenanceToleranceKg?"var(--good)":"var(--amber)";
 }
 
-function WeightPreviewCard({data,goals,currentDay,onOpen}){
-  const {series,hasAnyData}=useWeightPreviewSeries(data,currentDay);
+function WeightPreviewCard({data,goals,onOpen}){
+  const pts=useWeightPreviewPoints(data);
 
-  if(!hasAnyData){
+  if(pts.length===0){
     return(
       <div className="card" onClick={()=>{tapH();onOpen();}} style={{cursor:"pointer",textAlign:"center",padding:"22px 20px"}}>
         <div className="lbl">Gewicht</div>
-        <div className="sub" style={{marginBottom:12}}>Letzte 7 Tage</div>
+        <div className="sub" style={{marginBottom:12}}>Letzte 7 Messungen</div>
         <div className="sub">Noch keine Gewichtsmessungen vorhanden.</div>
       </div>
     );
   }
 
-  const withValue=series.filter(p=>p.w!=null);
-  const last=withValue[withValue.length-1];
-  const diff=withValue.length>=2?last.w-withValue[0].w:null;
+  const last=pts[pts.length-1];
+  const diff=pts.length>=2?last.w-pts[0].w:null;
   const goalDirection=inferWeightGoalDirection(goals,last.w);
 
   return(
@@ -3163,7 +3133,7 @@ function WeightPreviewCard({data,goals,currentDay,onOpen}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div>
           <div className="lbl">Gewicht</div>
-          <div className="sub">Letzte 7 Tage</div>
+          <div className="sub">Letzte 7 Messungen</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           <div style={{textAlign:"right"}}>
@@ -3177,7 +3147,7 @@ function WeightPreviewCard({data,goals,currentDay,onOpen}){
           <div style={{fontSize:18,fontWeight:600,color:"var(--ink3)"}}>›</div>
         </div>
       </div>
-      <WeightPreviewSpark key={series.map(p=>p.ts+":"+p.w).join(",")} series={series}/>
+      <WeightPreviewSpark key={pts.map(p=>p.ts).join(",")} pts={pts}/>
     </div>
   );
 }
@@ -3775,7 +3745,7 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
               Abstand zur Hauptnav oben (die hat bereits 16px eigenen Rand,
               hier +8px extra). */}
           <div style={{marginTop:8}}>
-            <WeightPreviewCard data={data} goals={goals} currentDay={currentDay} onOpen={()=>setShowWeightDetail(true)}/>
+            <WeightPreviewCard data={data} goals={goals} onOpen={()=>setShowWeightDetail(true)}/>
           </div>
           {/* Live-Prognose als Coach — gespeist aus dem oben memoisierten
               "forecast" (useMemo). Keine parallele Berechnung von
