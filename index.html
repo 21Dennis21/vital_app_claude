@@ -1630,27 +1630,26 @@ const ACT=[
 /* lastWeight, lastWeightEntry: siehe weight-engine.js (Phase 2C des Migrationsplans). */
 /* fmtGym: siehe format.js (Phase 1 des Migrationsplans). */
 
-/* ===== ZEITRAUM-SYSTEM FUER DIE GEWICHTSANALYSE =====
-   Zentrale Konfiguration + Hilfsfunktionen — bewusst an EINER Stelle, damit
-   nichts zwischen Pill-Leiste, Navigation, Diagramm und Statistikleiste
-   dupliziert wird. Interne Keys englisch (fuer den Code), sichtbare Texte
-   deutsch (siehe WEIGHT_RANGES.label). */
-const WEIGHT_RANGES=[
-  {key:"week",label:"Woche"},
-  {key:"month",label:"Monat"},
-  {key:"quarter",label:"Quartal"},
-  {key:"halfYear",label:"Halbjahr"},
-  {key:"year",label:"Jahr"},
-  {key:"all",label:"Gesamt"},
+/* ===== ZEITRAUM-SYSTEM FUER DIE GEWICHT-DETAILANSICHT =====
+   Sichtbare Kurzlabels fuer die Zeitraumfilter der Gewicht-Detailansicht
+   (Verlauf -> Gewicht -> Tap auf die 7-Tage-Karte). Rollierende Fenster,
+   siehe weightDetailRangeStart/weightDetailInRangeFn in weight-engine.js —
+   das aeltere, hier zuvor verwendete Woche/Monat/Quartal/Halbjahr/Jahr/
+   Gesamt-System (RANGE_STEP/WEIGHT_RANGES) wurde durch dieses einfachere,
+   nicht mehr navigierbare 1W/1M/3M/6M/12M/Max-System ersetzt. */
+const WEIGHT_DETAIL_RANGES=[
+  {key:"1W",label:"1W"},
+  {key:"1M",label:"1M"},
+  {key:"3M",label:"3M"},
+  {key:"6M",label:"6M"},
+  {key:"12M",label:"12M"},
+  {key:"Max",label:"Max"},
 ];
-/* Beschriftung der dritten Kennzahl in der Statistikleiste, passend zum
-   gewaehlten Zeitraum. */
-const WEIGHT_STAT_DELTA_LABEL={week:"Woche",month:"Monat",quarter:"Quartal",halfYear:"Halbjahr",year:"Jahr",all:"Gesamt"};
 /* addMonths, daysInMonthOf: siehe date-utils.js (Phase 1 des Migrationsplans). */
 /* RANGE_STEP, weightRangeBounds, weightRangeLabel, navWeightRange,
    collectWeightPointsInRange, weightAggModeFor, aggregateWeightPoints,
-   inferWeightGoalDirection: siehe weight-engine.js (Phase 2C des
-   Migrationsplans). */
+   inferWeightGoalDirection, weightDetailRangeStart, weightDetailInRangeFn:
+   siehe weight-engine.js (Phase 2C des Migrationsplans). */
 
 /* Haptik: vibriert kurz wo unterstuetzt (Android-Browser, spaeter Capacitor).
    Auf iOS-Safari passiert einfach nichts — stoert also nicht. */
@@ -2824,20 +2823,20 @@ function HeuteView({data,mSet,goals,dashRefresh,openDay,openSetup,openActivity,o
    Hilfslinie, ein hervorgehobener Punkt und Datum+Gewicht oberhalb —
    aehnlich wie bei Apple Health. Touch- UND Maus-Ereignisse werden
    unterstuetzt. */
-/* Horizontale Zeitraum-Auswahl fuer die Gewichtsanalyse — ausschliesslich
-   fuer die Ansicht "Gewicht", nirgends sonst verwendet. Kurzform (rp-short)
-   greift per CSS-Media-Query nur auf sehr schmalen Displays — Monat/Jahr/
-   Gesamt bleiben dabei bewusst ausgeschrieben, nur Quartal/Halbjahr werden
-   dort zu "3 M"/"6 M". */
-const WEIGHT_RANGE_SHORT={week:"Woche",month:"Monat",quarter:"3 M",halfYear:"6 M",year:"Jahr",all:"Gesamt"};
-function RangePillBar({value,onChange}){
+/* Horizontale Zeitraum-Auswahl — generisch (ranges-Prop), aktuell nur von
+   der Gewicht-Detailansicht genutzt (WEIGHT_DETAIL_RANGES). Die Labels der
+   neuen Zeitraeume (1W/1M/3M/6M/12M/Max) sind bereits kurz genug fuer jede
+   Displaybreite, daher kein separates Kurzform-Mapping mehr noetig — rp-full/
+   rp-short bleiben (identischer Text in beiden) fuer die bestehende
+   Responsive-CSS-Regel erhalten. */
+function RangePillBar({ranges,value,onChange}){
   return(
     <div className="range-scroll">
       <div className="range-toolbar">
-        {WEIGHT_RANGES.map(r=>(
+        {ranges.map(r=>(
           <button key={r.key} className={"range-pill"+(value===r.key?" on":"")} onClick={()=>{tapH();onChange(r.key);}}>
             <span className="rp-full">{r.label}</span>
-            <span className="rp-short">{WEIGHT_RANGE_SHORT[r.key]}</span>
+            <span className="rp-short">{r.label}</span>
           </button>
         ))}
       </div>
@@ -2845,12 +2844,19 @@ function RangePillBar({value,onChange}){
   );
 }
 
-function WeightTrendChart({w,sy,sm}){
+/* compact/noCard (optional, Default=false -> 1:1 bisheriges Verhalten):
+   fuer die kleine 7-Tage-Vorschaukarte (Verlauf -> Gewicht) verwendet.
+   compact macht das Diagramm niedriger und blendet Achsenbeschriftung/
+   Tooltip-Interaktion aus (die Karte selbst ist antippbar, um die
+   Detailansicht zu oeffnen — ein eigener Zieh-Tooltip wuerde damit
+   kollidieren). noCard laesst den umschliessenden ".card"-Rahmen weg,
+   falls der Aufrufer bereits eine eigene Karte drumherum baut. */
+function WeightTrendChart({w,sy,sm,compact,noCard}){
   const svgRef=useRef(null);
   const [selIdx,setSelIdx]=useState(null);
   const [releasing,setReleasing]=useState(false);
   const lastHapticIdx=useRef(null); // verhindert Dauer-Vibrieren waehrend des Ziehens
-  const W=320,H=262,PX=18,PT=14,PB=22;
+  const W=320,H=compact?108:262,PX=compact?4:18,PT=compact?6:14,PB=compact?8:22;
   const cw=W-PX*2, ch=H-PT-PB;
   const mn=Math.min(...w.map(x=>x.w))-0.5, mx=Math.max(...w.map(x=>x.w))+0.5;
   /* Zeitstempel-basierte X-Achse statt "Tag im Monat" — funktioniert dadurch
@@ -2904,25 +2910,28 @@ function WeightTrendChart({w,sy,sm}){
      so zu tun, als sei es eine einzelne Messung. */
   const selLabel=sel?(sel.isAgg?sel.label:(selIsToday?"Heute":sel.d+". "+MN[sel.m]+(sel.y!==NOW.getFullYear()?" "+sel.y:""))):"";
 
-  return(
-    <div className="card" style={{padding:"14px 6px 10px",animation:"fadeUp .18s cubic-bezier(.32,.72,.28,1)"}}>
+  const chartBody=(
+    <React.Fragment>
       {/* Fest reservierte Hoehe, damit das Diagramm beim Ein-/Ausblenden
           des Tooltips nicht springt. key=selIdx laesst Datum+Gewicht bei
           jedem Punktwechsel weich ein- statt abrupt umspringen. Gewicht
-          staerker betont (700), Datum dezenter (ink2, 500). */}
-      <div style={{height:22,textAlign:"center",fontSize:13,opacity:releasing?0:1,transition:"opacity .16s ease-out"}}>
-        {sel&&(
-          <span key={selIdx} className="tooltip-fade">
-            <span style={{color:"var(--ink2)",fontWeight:500}}>{selLabel}</span>
-            <span style={{color:"var(--ink2)"}}>{"  ·  "}</span>
-            <span style={{fontWeight:700}}>{fmtNum(sel.w,1)} kg</span>
-          </span>
-        )}
-      </div>
-      <svg ref={svgRef} viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",touchAction:"none"}}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={endSelection}
-        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={endSelection} onMouseLeave={endSelection}>
-        {[0,.5,1].map(t=>{
+          staerker betont (700), Datum dezenter (ink2, 500). In compact
+          bewusst ganz ohne Tooltip-Zeile (kein Platz, keine eigene
+          Zieh-Interaktion — siehe Kommentar oben an der Funktion). */}
+      {!compact&&(
+        <div style={{height:22,textAlign:"center",fontSize:13,opacity:releasing?0:1,transition:"opacity .16s ease-out"}}>
+          {sel&&(
+            <span key={selIdx} className="tooltip-fade">
+              <span style={{color:"var(--ink2)",fontWeight:500}}>{selLabel}</span>
+              <span style={{color:"var(--ink2)"}}>{"  ·  "}</span>
+              <span style={{fontWeight:700}}>{fmtNum(sel.w,1)} kg</span>
+            </span>
+          )}
+        </div>
+      )}
+      <svg ref={svgRef} viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",touchAction:compact?"auto":"none"}}
+        {...(compact?{}:{onTouchStart,onTouchMove,onTouchEnd:endSelection,onMouseDown,onMouseMove,onMouseUp:endSelection,onMouseLeave:endSelection})}>
+        {!compact&&[0,.5,1].map(t=>{
           const yy=PT+ch*(1-t);
           return <g key={t}><line x1={PX} y1={yy} x2={PX+cw} y2={yy} stroke="var(--line)"/><text x={PX} y={yy-3} fill="var(--ink3)" fontSize="9" opacity=".65">{(mn+(mx-mn)*t).toFixed(1)}</text></g>;
         })}
@@ -2931,18 +2940,134 @@ function WeightTrendChart({w,sy,sm}){
             sich beim Erscheinen (Zeitraumwechsel) sanft nach, statt abrupt
             zu springen. */}
         <path className="chart-draw" d={path} fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round"/>
-        {w.map((p,i)=><circle key={p.ts} cx={X(p.ts)} cy={Y(p.w)} r={i===lastIdx?rLast:rNormal} fill="var(--accent)" stroke="var(--card)" strokeWidth={i===lastIdx?1.5:1}/>)}
+        {!compact&&w.map((p,i)=><circle key={p.ts} cx={X(p.ts)} cy={Y(p.w)} r={i===lastIdx?rLast:rNormal} fill="var(--accent)" stroke="var(--card)" strokeWidth={i===lastIdx?1.5:1}/>)}
         {/* Vertikale Hilfslinie + hervorgehobener Punkt waehrend der Auswahl.
             key=selIdx sorgt dafuer, dass der Marker bei jedem Punktwechsel
             frisch gemountet wird und die Pop-Animation erneut abspielt. */}
-        {sel&&(
+        {!compact&&sel&&(
           <g key={selIdx} style={{opacity:releasing?0:1,transition:"opacity .16s ease-out"}}>
             <line x1={X(sel.ts)} y1={PT} x2={X(sel.ts)} y2={PT+ch} stroke="var(--ink2)" strokeWidth="1" strokeDasharray="3,3"/>
             <circle className="marker-pop" cx={X(sel.ts)} cy={Y(sel.w)} r="6" fill="var(--accent)" stroke="var(--card)" strokeWidth="2"/>
           </g>
         )}
       </svg>
+    </React.Fragment>
+  );
+
+  if(noCard)return chartBody;
+  return(
+    <div className="card" style={{padding:"14px 6px 10px",animation:"fadeUp .18s cubic-bezier(.32,.72,.28,1)"}}>
+      {chartBody}
     </div>
+  );
+}
+
+/* ===== Kompakte 7-Tage-Gewichtsvorschau (Verlauf -> Gewicht) =====
+   Ersetzt dort die frueher direkt angezeigte grosse Gewichtsanalyse (Pill-
+   Leiste Woche/Monat/Quartal/Halbjahr/Jahr/Gesamt + grosses Diagramm +
+   Statistikleiste). Zeigt ausschliesslich tatsaechlich vorhandene
+   Gewichtseintraege der letzten 7 Kalendertage (collectWeightPointsInRange,
+   dieselbe bereits bestehende Funktion wie zuvor — keine erfundenen
+   Zwischenwerte, keine Auffuellung fehlender Tage). Die ganze Karte ist
+   antippbar und oeffnet die vollstaendige Gewicht-Detailansicht
+   (WeightDetailPage) mit den Zeitraumfiltern 1W/1M/3M/6M/12M/Max. */
+function WeightPreviewCard({data,currentDay,onOpen}){
+  const pts=useMemo(()=>{
+    const inRangeFn=weightDetailInRangeFn("1W",currentDay);
+    return collectWeightPointsInRange(data,inRangeFn);
+  },[data,currentDay]);
+
+  if(pts.length===0){
+    return(
+      <div className="card" onClick={()=>{tapH();onOpen();}} style={{cursor:"pointer",textAlign:"center",padding:"22px 20px"}}>
+        <div className="lbl">Gewicht</div>
+        <div className="sub" style={{marginBottom:12}}>Letzte 7 Tage</div>
+        <div className="sub">Noch keine Gewichtsmessungen in den letzten 7 Tagen.</div>
+      </div>
+    );
+  }
+
+  const last=pts[pts.length-1];
+  const diff=pts.length>=2?last.w-pts[0].w:null;
+
+  return(
+    <div className="card" onClick={()=>{tapH();onOpen();}} style={{cursor:"pointer",padding:"16px 16px 14px",animation:"fadeUp .18s cubic-bezier(.32,.72,.28,1)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:pts.length>=2?10:2}}>
+        <div>
+          <div className="lbl">Gewicht</div>
+          <div className="sub">Letzte 7 Tage</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div className="num" style={{fontSize:20,fontWeight:700}}>{fmtNum(last.w,1)} kg</div>
+          {diff!=null?(
+            <div className="num" style={{fontSize:13,fontWeight:600,color:diff<=0?"var(--good)":"var(--amber)"}}>{diff>0?"+":""}{fmtNum(diff,1)} kg</div>
+          ):(
+            <div className="sub" style={{fontSize:12}}>–</div>
+          )}
+        </div>
+      </div>
+      {pts.length>=2&&<WeightTrendChart key={pts.length+"-"+last.ts} w={pts} sy={currentDay.getFullYear()} sm={currentDay.getMonth()} compact noCard/>}
+    </div>
+  );
+}
+
+/* ===== Gewicht-Detailansicht (echte Vollbild-Seite, kein Bottom-Sheet) =====
+   Wird ausschliesslich ueber Tap auf WeightPreviewCard geoeffnet. Nutzt
+   dieselben bereits bestehenden Bausteine wie zuvor die grosse Gewichts-
+   ansicht (WeightTrendChart, RangePillBar, collectWeightPointsInRange,
+   die dreispaltige Statistikleiste) — neu ist ausschliesslich das
+   Zeitraum-Mapping auf 1W/1M/3M/6M/12M/Max (rollierende Fenster ohne
+   Navigation zu vergangenen Perioden, siehe weightDetailInRangeFn in
+   weight-engine.js) statt der frueheren, per Pfeil navigierbaren Woche/
+   Monat/Quartal/Halbjahr/Jahr/Gesamt-Perioden. */
+function WeightDetailPage({data,currentDay,onClose}){
+  const [range,setRange]=useState("1W"); // Fortsetzung der 7-Tage-Vorschau, von der aus geoeffnet wurde
+  const pts=useMemo(()=>{
+    const inRangeFn=weightDetailInRangeFn(range,currentDay);
+    return collectWeightPointsInRange(data,inRangeFn);
+  },[data,range,currentDay]);
+
+  return(
+    <Page onClose={onClose} title="Gewicht">
+      <div style={{margin:"-4px 0 18px"}}>
+        <RangePillBar ranges={WEIGHT_DETAIL_RANGES} value={range} onChange={setRange}/>
+      </div>
+
+      {pts.length===0?(
+        <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
+          <div className="sub">In diesem Zeitraum gibt es noch keine Gewichtsmessungen.</div>
+        </div>
+      ):pts.length===1?(
+        <div className="card" style={{textAlign:"center",padding:"24px 20px"}}>
+          <div className="num" style={{fontSize:32,fontWeight:700}}>{fmtNum(pts[0].w,1)} kg</div>
+          <div className="sub" style={{marginTop:6}}>Einzelne Messung — noch kein Verlauf darstellbar.</div>
+        </div>
+      ):(
+        <div>
+          <WeightTrendChart key={range} w={pts} sy={currentDay.getFullYear()} sm={currentDay.getMonth()}/>
+          {/* Dieselbe Statistikleiste wie zuvor — Beschriftung passt sich
+              dem gewaehlten Zeitraum an ("Max": Erstes Gewicht/Aktuell/
+              Gesamt, sonst Start/Aktuell/Veraenderung). */}
+          <div className="card" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"22px 0"}}>
+            {(()=>{
+              const diff=pts[pts.length-1].w-pts[0].w;
+              const isMax=range==="Max";
+              return [
+                [isMax?"Erstes Gewicht":"Start",fmtNum(pts[0].w,1)+" kg","var(--ink)"],
+                ["Aktuell",fmtNum(pts[pts.length-1].w,1)+" kg","var(--ink)"],
+                [isMax?"Gesamt":"Veränderung",(diff>0?"+":"")+fmtNum(diff,1)+" kg",diff<=0?"var(--good)":"var(--amber)"],
+              ];
+            })().map(([l,v,c],i)=>(
+              <div key={l} style={{textAlign:"center",position:"relative"}}>
+                {i>0&&<div style={{position:"absolute",left:0,top:"50%",transform:"translate(-50%,-50%)",width:1,height:22,background:"var(--line)",opacity:.5}}/>}
+                <div className="num" style={{fontSize:17,fontWeight:700,color:c}}>{v}</div>
+                <div className="sub" style={{fontSize:11,marginTop:5}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Page>
   );
 }
 
@@ -3108,16 +3233,11 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
      Prognose"-Ueberschrift antippbar, oeffnet ein Diagnose-Sheet. Nach
      Abschluss der Fehlersuche wieder entfernen (siehe ForecastDiagnosticSheet). */
   const [showForecastDiag,setShowForecastDiag]=useState(false);
-  /* Zeitraum-Auswahl der Gewichtsanalyse — eigener, von der Monats-Navigation
-     (sy/sm, von Kalender/Sport/Jahr mitgenutzt) UNABHAENGIGER Anker, damit
-     das Umschalten auf Quartal/Halbjahr/Jahr die anderen Verlauf-Reiter
-     nicht durcheinanderbringt. Ungueltige/alte gespeicherte Werte fallen
-     automatisch auf "month" zurueck. */
-  const [wRange,setWRange]=useState(()=>{
-    const saved=load("tracker_weight_range",null);
-    return WEIGHT_RANGES.some(r=>r.key===saved)?saved:"month";
-  });
-  const [wAnchor,setWAnchor]=useState({y:NOW.getFullYear(),m:NOW.getMonth(),d:NOW.getDate()});
+  /* Gewicht-Detailansicht (echte Vollbild-Seite, siehe WeightDetailPage) —
+     wird ausschliesslich ueber Tap auf die kompakte 7-Tage-Vorschaukarte
+     geoeffnet, unabhaengig von "seg" (bleibt beim Schliessen automatisch
+     wieder auf Verlauf -> Gewicht, da seg selbst unveraendert bleibt). */
+  const [showWeightDetail,setShowWeightDetail]=useState(false);
   const nav=dir=>{let m=sm+dir,y=sy;if(m>11){m=0;y++;}if(m<0){m=11;y--;}setSm(m);setSy(y);};
   const tdee=tdeeOf(mSet,sy,sm);
   const dim=daysIn(sy,sm),fd=firstDay(sy,sm);
@@ -3477,99 +3597,15 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
       {/* --- GEWICHT --- */}
       {seg==="Gewicht"&&(
         <div>
-          {/* Zeitraum-Pills — bewusst OHNE eigene Ueberschrift mehr, die Chips
-              erklaeren sich selbst. ~24px Abstand zur Hauptnav oben (die hat
-              bereits 16px eigenen Rand, hier +8px extra). */}
+          {/* Kompakte 7-Tage-Vorschau statt der frueheren grossen
+              Gewichtsanalyse (Woche/Monat/Quartal/Halbjahr/Jahr/Gesamt).
+              Tap oeffnet die vollstaendige Detailansicht (siehe
+              showWeightDetail weiter unten in dieser Komponente). ~24px
+              Abstand zur Hauptnav oben (die hat bereits 16px eigenen Rand,
+              hier +8px extra). */}
           <div style={{marginTop:8}}>
-            <RangePillBar value={wRange} onChange={r=>{
-              setWRange(r);save("tracker_weight_range",r);
-              setWAnchor({y:sy,m:sm,d:NOW.getDate()}); // beim Wechseln nahtlos beim aktuell betrachteten Monat anknuepfen
-            }}/>
+            <WeightPreviewCard data={data} currentDay={currentDay} onOpen={()=>setShowWeightDetail(true)}/>
           </div>
-          {(()=>{
-            const bounds=wRange==="all"?null:weightRangeBounds(wRange,wAnchor.y,wAnchor.m,wAnchor.d);
-            const inRangeFn=bounds
-              ? (y,m2,d)=>{
-                  const ts=new Date(y,m2,d).getTime();
-                  const startTs=new Date(bounds.sy,bounds.sm,bounds.sd).getTime();
-                  const endTs=new Date(bounds.ey,bounds.em,bounds.ed).getTime();
-                  return ts>=startTs&&ts<=endTs;
-                }
-              : ()=>true;
-            const rawPts=collectWeightPointsInRange(data,inRangeFn);
-            /* Es wird nicht mehr aggregiert — jede vorhandene Messung wird
-               gezeigt, in jedem Zeitraum. */
-            const pts=rawPts;
-            const rangeLabel=weightRangeLabel(wRange,bounds);
-            /* Zukuenftige Zeitraeume ohne sinnvolle Daten duerfen nicht
-               geoeffnet werden koennen — Pfeil dann dezent deaktiviert. */
-            const canGoNext=wRange!=="all"&&(()=>{
-              const na=navWeightRange(wRange,wAnchor.y,wAnchor.m,wAnchor.d,1);
-              const nb=weightRangeBounds(wRange,na.y,na.m,na.d);
-              return new Date(nb.sy,nb.sm,nb.sd)<=NOW;
-            })();
-
-            return(
-              <div>
-                {/* ~24px Abstand von den Pills bis hierher. */}
-                <div style={{marginTop:24,marginBottom:14}}>
-                  {wRange!=="all"?(
-                    <div style={{display:"grid",gridTemplateColumns:"36px 1fr 36px",alignItems:"center"}}>
-                      <button className="nav" onClick={()=>{tapH();setWAnchor(navWeightRange(wRange,wAnchor.y,wAnchor.m,wAnchor.d,-1));}} style={{justifySelf:"end",fontSize:17,color:"var(--ink3)"}}>‹</button>
-                      <div style={{fontSize:22,fontWeight:700,textAlign:"center",letterSpacing:-.3}}>{rangeLabel}</div>
-                      <button className="nav" disabled={!canGoNext} onClick={()=>{if(canGoNext){tapH();setWAnchor(navWeightRange(wRange,wAnchor.y,wAnchor.m,wAnchor.d,1));}}}
-                        style={{justifySelf:"start",fontSize:17,color:"var(--ink3)",opacity:canGoNext?1:.3}}>›</button>
-                    </div>
-                  ):(
-                    <div style={{textAlign:"center",fontSize:22,fontWeight:700,letterSpacing:-.3}}>{rangeLabel}</div>
-                  )}
-                </div>
-
-                {pts.length===0?(
-                  <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
-                    <div className="sub" style={{marginBottom:14}}>In diesem Zeitraum gibt es noch keine Gewichtsmessungen.</div>
-                    <button className="btn btn2" onClick={()=>{
-                      /* Sinnvolles Datum statt immer "heute": Start des
-                         betrachteten Zeitraums, bei "Gesamt" tatsaechlich heute. */
-                      const d2=bounds?{y:bounds.sy,m:bounds.sm,d:bounds.sd}:{y:NOW.getFullYear(),m:NOW.getMonth(),d:NOW.getDate()};
-                      openDay(d2.y,d2.m,d2.d);
-                    }}>Gewicht eintragen</button>
-                  </div>
-                ):pts.length===1?(
-                  <div className="card" style={{textAlign:"center",padding:"24px 20px"}}>
-                    <div className="num" style={{fontSize:32,fontWeight:700}}>{fmtNum(pts[0].w,1)} kg</div>
-                    <div className="sub" style={{marginTop:6}}>Einzelne Messung — noch kein Verlauf darstellbar.</div>
-                  </div>
-                ):(
-                  <div>
-                    {/* Grosses, interaktives Diagramm — das eigentliche Zentrum
-                        der Seite. Keine Legende mehr, erklaert sich selbst.
-                        key erzwingt Neustart der Eintritts-/Zeichenanimation
-                        bei jedem Zeitraum-/Periodenwechsel. */}
-                    <WeightTrendChart key={wRange+"-"+wAnchor.y+"-"+wAnchor.m+"-"+wAnchor.d} w={pts} sy={wAnchor.y} sm={wAnchor.m}/>
-                    {/* Eine gemeinsame Statistikleiste statt drei einzelner
-                        Karten — Beschriftung passt sich dem Zeitraum an. */}
-                    <div className="card" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"22px 0"}}>
-                      {(()=>{
-                        const diff=pts[pts.length-1].w-pts[0].w;
-                        return [
-                          [wRange==="all"?"Erstes Gewicht":"Start",pts[0].w.toFixed(1)+" kg","var(--ink)"],
-                          ["Aktuell",pts[pts.length-1].w.toFixed(1)+" kg","var(--ink)"],
-                          [WEIGHT_STAT_DELTA_LABEL[wRange],(diff>0?"+":"")+diff.toFixed(1)+" kg",diff<=0?"var(--good)":"var(--amber)"],
-                        ];
-                      })().map(([l,v,c],i)=>(
-                        <div key={l} style={{textAlign:"center",position:"relative"}}>
-                          {i>0&&<div style={{position:"absolute",left:0,top:"50%",transform:"translate(-50%,-50%)",width:1,height:22,background:"var(--line)",opacity:.5}}/>}
-                          <div className="num" style={{fontSize:17,fontWeight:700,color:c}}>{v}</div>
-                          <div className="sub" style={{fontSize:11,marginTop:5}}>{l}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
           {/* Live-Prognose als Coach — gespeist aus dem oben memoisierten
               "forecast" (useMemo). Keine parallele Berechnung von
               Durchschnittsbilanz, Ankergewicht, Prognosewert ODER
@@ -3655,6 +3691,10 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
             );
           })()}
         </div>
+      )}
+
+      {showWeightDetail&&(
+        <WeightDetailPage data={data} currentDay={currentDay} onClose={()=>setShowWeightDetail(false)}/>
       )}
 
       {/* --- SPORT --- */}

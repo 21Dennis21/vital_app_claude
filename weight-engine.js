@@ -19,6 +19,8 @@
      weightAggModeFor(rangeKey,pointCount)
      aggregateWeightPoints(points,mode)
      inferWeightGoalDirection(goals,curW)
+     weightDetailRangeStart(rangeKey,now)
+     weightDetailInRangeFn(rangeKey,now)
 
    Keine JSX-Komponenten, keine React-Hooks, keine DOM-Zugriffe.
    Nutzt zur Laufzeit die globalen Funktionen dayData() (calendar-engine.js)
@@ -154,4 +156,29 @@ function inferWeightGoalDirection(goals,curW){
   if(goals.some(g=>g.type==="deficit"&&g.active!==false))return "abnehmen";
   if(goals.some(g=>g.type==="surplus"&&g.active!==false))return "zunehmen";
   return "halten";
+}
+
+/* ===== ZEITRAUM-SYSTEM FUER DIE GEWICHT-DETAILANSICHT (Verlauf -> Gewicht) =====
+   Eigenstaendig vom aelteren RANGE_STEP-System oben (Woche/Monat/Quartal/
+   Halbjahr/Jahr/Gesamt, dort per Pfeil zu vergangenen Perioden navigierbar).
+   1W/1M/3M/6M/12M sind stattdessen IMMER rollierende Fenster der letzten N
+   Kalendertage bis EINSCHLIESSLICH heute (kein Navigieren zu vergangenen
+   Perioden) — "Max" hat keine Untergrenze (kompletter Verlauf). */
+const WEIGHT_DETAIL_RANGE_DAYS={"1W":7,"1M":30,"3M":90,"6M":180,"12M":365,"Max":null};
+function weightDetailRangeStart(rangeKey,now){
+  const days=WEIGHT_DETAIL_RANGE_DAYS[rangeKey];
+  if(days==null)return null;
+  const start=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  start.setDate(start.getDate()-(days-1));
+  return start;
+}
+function weightDetailInRangeFn(rangeKey,now){
+  const start=weightDetailRangeStart(rangeKey,now);
+  if(!start)return ()=>true;
+  const startTs=start.getTime();
+  const endTs=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  return (y,m,d)=>{
+    const ts=new Date(y,m,d).getTime();
+    return ts>=startTs&&ts<=endTs;
+  };
 }
