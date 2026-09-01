@@ -3566,8 +3566,12 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
   },[data,mSet,calibProfile,weightConfirmations,currentDayKey]);
 
   return(
-    <div className="vl-screen">
-      <div className="h1 vl-title">Verlauf</div>
+    /* Kein eigener "Verlauf"-Titel/vl-screen-Hintergrund mehr hier — beides
+       liegt jetzt eine Ebene hoeher in StatistikenView (Ueberschrift
+       "Statistiken" + Unternavigation Uebersicht/Training/Ernaehrung),
+       innerhalb derer diese Komponente ausschliesslich als Inhalt des
+       "Uebersicht"-Untertabs eingehaengt wird. Ansonsten unveraendert. */
+    <div>
       <Seg items={["Kalender","Rückblick","Gewicht","Sport","Jahr"]} val={seg} onChange={setSeg} variant="hero"/>
 
       {/* --- KALENDER ---
@@ -4157,6 +4161,65 @@ function VerlaufView({data,mSet,goals,calibProfile,weightConfirmations,currentDa
       {/* TEMPORAER: Diagnose-Sheet fuer die kalenderuebergreifende
           Live-Prognose, siehe ForecastDiagnosticSheet weiter unten. */}
       {showForecastDiag&&<ForecastDiagnosticSheet forecast={forecast} currentDay={currentDay} onClose={()=>setShowForecastDiag(false)}/>}
+    </div>
+  );
+}
+
+/* ===== Statistik-Unternavigation: Übersicht/Training/Ernährung =====
+   Bewusst eine eigenstaendige, kompakte Unterlinien-Tableiste statt des
+   bestehenden <Seg>-Pill-Reglers (der bleibt unveraendert fuer Kalender/
+   Rückblick/Gewicht/Sport/Jahr INNERHALB von "Übersicht") — passend zum
+   vorgegebenen Referenzdesign mit schlanken Textlabels und einer duennen
+   Markierungslinie unter dem aktiven Tab. Verwendet ausschliesslich
+   bereits vorhandene Farb-/Abstands-Tokens, keine neue Design-Sprache. */
+function StatSubTabs({val,onChange}){
+  const items=["Übersicht","Training","Ernährung"];
+  return(
+    <div style={{display:"flex",gap:"var(--sp-4)",borderBottom:"1px solid var(--line)",marginBottom:"var(--sp-3)"}}>
+      {items.map(i=>(
+        <button key={i} onClick={()=>{tapH();onChange(i);}}
+          style={{background:"none",border:"none",padding:"0 0 10px",marginBottom:-1,
+            fontSize:14,fontWeight:700,cursor:"pointer",
+            color:val===i?"var(--ink)":"var(--ink3)",
+            borderBottom:val===i?"2px solid var(--accent)":"2px solid transparent"}}>
+          {i}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ===== TAB 4 (Bottom Nav): STATISTIKEN =====
+   Neue Struktur: Ueberschrift "Statistiken" + Unternavigation Uebersicht/
+   Training/Ernaehrung. "Uebersicht" bettet die komplette, unveraenderte
+   bisherige Verlauf-Seite (VerlaufView: Kalender/Rueckblick/Gewicht/Sport/
+   Jahr, Tagesdetails, alle Berechnungen) unangetastet ein — keine parallele
+   Statistik-Implementierung. Training/Ernaehrung sind bewusst vorerst
+   leere Platzhalter (siehe Aufgabenstellung: keine erfundenen Charts/
+   Mock-Daten, Cardio zaehlt spaeter zu Training statt eigener Tab).
+   "Uebersicht" ist Standard; ein remount ueber den key an der Aufrufstelle
+   (verlaufSeg als initialSeg fuer Dashboard-Navigation wie
+   onNavigate("verlauf","Gewicht")) setzt auch statTab wieder auf
+   "Uebersicht" zurueck, damit ein Dashboard-Sprung zu z.B. "Gewicht"
+   sichtbar landet, selbst wenn zuvor "Training" oder "Ernaehrung" aktiv war. */
+function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup}){
+  const [statTab,setStatTab]=useState("Übersicht");
+  return(
+    <div className="vl-screen">
+      <div className="h1 vl-title">Statistiken</div>
+      <StatSubTabs val={statTab} onChange={setStatTab}/>
+      {statTab==="Übersicht"&&
+        <VerlaufView data={data} mSet={mSet} goals={goals} calibProfile={calibProfile}
+          weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={initialSeg}
+          openDay={openDay} openSetup={openSetup}/>}
+      {statTab==="Training"&&
+        <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
+          <div className="sub">Trainingsstatistiken befinden sich im Aufbau.</div>
+        </div>}
+      {statTab==="Ernährung"&&
+        <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
+          <div className="sub">Ernährungsstatistiken befinden sich im Aufbau.</div>
+        </div>}
     </div>
   );
 }
@@ -6127,7 +6190,7 @@ function App(){
       {tab==="heute"&&<HomeView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)} onOpenSettings={()=>setTab("profil")}/>}
       {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
       {tab==="training"&&<TrainingView data={data} openActivity={openActivity}/>}
-      {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
+      {tab==="verlauf"&&<StatistikenView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
       {tab==="ziele"&&<Page onClose={()=>setTab("heute")} title="Ziele"><ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/></Page>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals} onClose={()=>setTab("heute")}/>}
       {["heute","ernaehrung","training","verlauf"].includes(tab)&&<TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>}
