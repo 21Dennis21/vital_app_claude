@@ -4275,7 +4275,7 @@ const STAT_LOCK_BARS=[ // rein dekorativ, keine echten Werte — je Balken eigen
    verwechselt werden sollen. Einzige bewusste Ausnahme: "training" nutzt
    explizit die bestehende Accent-Farbe (siehe Vorgabe "dezente Accent-
    Farbe" fuer den Trainings-Locked-State) — hier keine neue Farbe. */
-const STAT_LOCK_COLORS={weight:"#6B9AB8",kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E",training:"var(--accent)"};
+const STAT_LOCK_COLORS={kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E",training:"var(--accent)"};
 /* title (optional): fette Ueberschrift ueber dem Erklaertext, z.B. fuer
    den Trainings-Locked-State ("Noch keine Trainings gefunden" + Zusatz-
    text). Bestehende Ernaehrungs-Aufrufstellen nutzen weiterhin nur "text"
@@ -4450,9 +4450,21 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
             )}
           </div>
         )}>
+        {/* Koerpergewicht wird bewusst NIE gesperrt (kein LockedStatisticState
+            hier) — anders als Kalorien/Makros ist ein einzelner oder auch gar
+            kein Gewichtseintrag fachlich kein "noch keine Daten"-Zustand, der
+            eine ganze Karte rechtfertigt zu sperren; die Karte bleibt immer
+            sichtbar, nur der Kartenkoerper unterscheidet sich. */}
         {weightPoints.length===0
-          ?<LockedStatisticState text="Trage dein Gewicht ein, um deine Entwicklung zu sehen." colorKey="weight"
-              ctaLabel={onOpenWeightModal?"Gewicht eintragen":null} onCta={onOpenWeightModal}/>
+          ?<div style={{textAlign:"center",padding:"24px 0 8px"}}>
+              <div className="sub" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>Noch kein Gewicht eingetragen</div>
+              {onOpenWeightModal&&(
+                <div className="pill on" onClick={()=>{tapH();onOpenWeightModal();}}
+                  style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,padding:"var(--sp-1) var(--sp-2)",cursor:"pointer"}}>
+                  Gewicht eintragen <span style={{fontSize:15}}>→</span>
+                </div>
+              )}
+            </div>
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
