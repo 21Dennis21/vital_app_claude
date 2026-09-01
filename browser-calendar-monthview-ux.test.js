@@ -41,7 +41,7 @@ async function main(){
   await flush(dom);
   const d = dom.window.document;
 
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
 
   console.log("\n--- 1. Überschrift 'Wochenübersicht' zwischen Kalender und Wochenkarten ---");
@@ -153,7 +153,7 @@ async function testGoalAwareThirdTile(){
     }, {now:new Date(2026,7,15,12,0,0)});
     await flush(dom);
     const d = dom.window.document;
-    clickByText(d, "Verlauf");
+    clickByText(d, "Statistiken");
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Ueberschuss)");
@@ -183,7 +183,7 @@ async function testGoalAwareThirdTile(){
     }, {now:new Date(2026,7,15,12,0,0)});
     await flush(dom);
     const d = dom.window.document;
-    clickByText(d, "Verlauf");
+    clickByText(d, "Statistiken");
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: zunehmen, Defizit)");
@@ -208,7 +208,7 @@ async function testGoalAwareThirdTile(){
     }, {now:new Date(2026,7,15,12,0,0)});
     await flush(dom);
     const d = dom.window.document;
-    clickByText(d, "Verlauf");
+    clickByText(d, "Statistiken");
     await flush(dom);
     const tile = findThirdTileCard(d);
     check(!!tile, "dritte KPI-Kachel gefunden (Ziel: halten / kein Ziel gesetzt)");

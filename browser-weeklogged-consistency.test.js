@@ -47,7 +47,7 @@ function check(cond, label){
   });
   await flush(dom);
   const d = dom.window.document;
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   // Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment
   // (dem Standardsegment) — kein separater "Rückblick"-Klick mehr noetig.

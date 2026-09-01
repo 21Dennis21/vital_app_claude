@@ -43,7 +43,7 @@ async function main(){
   const d = dom.window.document;
 
   console.log("\n--- 1. Diagnose-Sheet öffnet sich über die 'Live-Prognose'-Überschrift ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);

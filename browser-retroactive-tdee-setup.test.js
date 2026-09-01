@@ -21,7 +21,7 @@ function check(cond, label){
   });
   await flush(dom);
   const d = dom.window.document;
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Kalender");
   await flush(dom);

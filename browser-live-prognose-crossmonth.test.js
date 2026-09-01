@@ -56,7 +56,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 1. Prognosekarte zaehlt kalenderuebergreifend korrekt (6 gueltige Tage, 3x Juli + 3x August) ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
@@ -107,7 +107,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 3. OHNE Reload/Remount: Tageszahl in der Prognosekarte waechst sofort mit ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
