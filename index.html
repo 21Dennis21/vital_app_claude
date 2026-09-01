@@ -1668,6 +1668,8 @@ const DASHBOARD_WIDGETS={
   calories:{label:"Kalorien",icon:"🔥"},
   activity:{label:"Aktivitäten",icon:"🏃"},
   steps:{label:"Schritte",icon:"👣"},
+  weighin:{label:"Weigh-In",icon:"🗓️"},
+  trainings:{label:"Trainings",icon:"💪"},
 };
 const DASHBOARD_DEFAULT=[
   {type:"weight",enabled:true,size:"large"},
@@ -1675,6 +1677,12 @@ const DASHBOARD_DEFAULT=[
   {type:"steps",enabled:true,size:"large"},
   {type:"activity",enabled:true,size:"large"},
   {type:"calories",enabled:true,size:"large"},
+  /* "Weigh-In"/"Trainings" sind bewusst NICHT dauerhaft im Dashboard —
+     erscheinen ueber loadDashboardConfig()'s bestehende "extra"-Logik
+     automatisch (auch fuer Bestandsnutzer) in "Personalisieren", muessen
+     dort aber erst ausdruecklich aktiviert werden (enabled:false). */
+  {type:"weighin",enabled:false,size:"large"},
+  {type:"trainings",enabled:false,size:"large"},
 ];
 function loadDashboardConfig(){
   const saved=load("tracker_dashboard",null);
@@ -2531,6 +2539,75 @@ function StepsWidget({data,mSet,goals,onNavigate,size="large"}){
   );
 }
 
+/* ===== "Weigh-In"/"Trainings"-Kacheln: kompakte 30-Tage-Logging-Uebersicht =====
+   Beide Kacheln beantworten dieselbe Frage ("an wie vielen der letzten 30
+   Tage wurde X geloggt?"), nur mit unterschiedlicher Datenquelle — deshalb
+   EIN gemeinsamer LogStreakWidget statt zweimal fast identischem Code.
+   Nutzt ausschliesslich bereits vorhandene Felder (x.weight/x.sports ueber
+   dayData(), dieselbe Funktion, die auch WeightWidget/ActivityWidget schon
+   verwenden) — keine neuen Datenquellen, keine Mock-Daten. Bewusst KEIN
+   eigener EmptyWidgetCard-Leerzustand noetig: ein Gitter aus ausschliesslich
+   leeren Kaestchen + "0/7 diese Woche" IST bereits der ehrliche, korrekte
+   Leerzustand (keine Sonderbehandlung, kein Absturz bei 0 Eintraegen). */
+function LogStreakGrid({hits}){
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(10,1fr)",gap:5,marginTop:"var(--sp-2)"}}>
+      {hits.map((h,i)=>(
+        <div key={i} style={{aspectRatio:"1",borderRadius:5,background:h?"var(--accent)":"var(--card2)"}}/>
+      ))}
+    </div>
+  );
+}
+function LogStreakWidget({title,icon,hasEntry,data,onOpen,size="large",infoText}){
+  /* Gleiches Muster wie WeightWidget: feste 30-Kalendertage-Achse, aelteste
+     zuerst (unshift beim Rueckwaertslaufen dreht die Reihenfolge wieder um). */
+  const hits=useMemo(()=>{
+    const arr=[];
+    const it=new Date(NOW);
+    for(let i=0;i<30;i++){
+      arr.unshift(hasEntry(dayData(data,it.getFullYear(),it.getMonth(),it.getDate())));
+      it.setDate(it.getDate()-1);
+    }
+    return arr;
+  },[data]);
+  /* "Diese Woche" = dieselbe Montag-Sonntag-Woche wie ActivityWidget
+     (periodRange("week")), damit alle Wochen-Kennzahlen im Dashboard
+     konsistent denselben Wochenbegriff verwenden. */
+  const weekCount=useMemo(()=>{
+    const {ps,pe}=periodRange("week");
+    let n=0;
+    const it=new Date(ps);
+    while(it<=pe&&it<=NOW){
+      if(hasEntry(dayData(data,it.getFullYear(),it.getMonth(),it.getDate())))n++;
+      it.setDate(it.getDate()+1);
+    }
+    return n;
+  },[data]);
+  const [showInfo,setShowInfo]=useState(false);
+  return(
+    <div className="card card-compact dc" onClick={()=>{tapH();onOpen();}}>
+      <div className="row" style={{marginBottom:"var(--sp-1)",alignItems:"flex-start"}}>
+        <div className="lbl">{icon} {title}</div>
+        <InfoDot onOpen={()=>setShowInfo(true)}/>
+      </div>
+      <div className="sub">Letzte 30 Tage</div>
+      {size==="large"&&<LogStreakGrid hits={hits}/>}
+      <div style={{borderTop:"1px solid var(--line)",marginTop:"var(--sp-2)",paddingTop:"var(--sp-1)"}}>
+        <div className="sub" style={{fontWeight:600,color:"var(--ink)"}}>{weekCount}/7 <span style={{fontWeight:400,color:"var(--ink3)"}}>diese Woche</span></div>
+      </div>
+      {showInfo&&<WidgetInfoSheet title={title} text={infoText} onClose={()=>setShowInfo(false)}/>}
+    </div>
+  );
+}
+function WeighInWidget({data,onNavigate,size="large"}){
+  const infoText="Diese Kachel zeigt, an wie vielen der letzten 30 Kalendertage du ein Gewicht eingetragen hast — unabhängig vom Wert selbst. Jedes Kästchen steht für einen Tag, ausgefüllt bedeutet: an diesem Tag wurde ein Gewicht gespeichert.\n\nUnten siehst du zusätzlich, an wie vielen Tagen der aktuellen Woche (Montag bis Sonntag) du bereits gewogen hast.";
+  return <LogStreakWidget title="Weigh-In" icon="🗓️" hasEntry={x=>x.weight>0} data={data} onOpen={()=>onNavigate("verlauf","Gewicht")} size={size} infoText={infoText}/>;
+}
+function TrainingsWidget({data,onNavigate,size="large"}){
+  const infoText="Diese Kachel zeigt, an wie vielen der letzten 30 Kalendertage du eine Trainingseinheit eingetragen hast. Jedes Kästchen steht für einen Tag, ausgefüllt bedeutet: an diesem Tag wurde mindestens eine Aktivität gespeichert.\n\nUnten siehst du zusätzlich, an wie vielen Tagen der aktuellen Woche (Montag bis Sonntag) du bereits trainiert hast.";
+  return <LogStreakWidget title="Trainings" icon="💪" hasEntry={x=>!!(x.sports&&x.sports.length)} data={data} onOpen={()=>onNavigate("verlauf","Sport")} size={size} infoText={infoText}/>;
+}
+
 /* Container: rendert alle aktivierten Widgets in der gespeicherten
    Reihenfolge. Neues Widget hinzufuegen = neuer Eintrag im WIDGET_MAP unten
    + Registry-Eintrag oben, hier muss sonst nichts geaendert werden.
@@ -2552,6 +2629,8 @@ function DashboardSection({data,mSet,goals,refreshKey,onPersonalize,onNavigate,o
       case "calories":return <CaloriesWidget data={data} mSet={mSet} onNavigate={onNavigate} size={size}/>;
       case "activity":return <ActivityWidget data={data} onNavigate={onNavigate} size={size}/>;
       case "steps":return <StepsWidget data={data} mSet={mSet} goals={goals} onNavigate={onNavigate} size={size}/>;
+      case "weighin":return <WeighInWidget data={data} onNavigate={onNavigate} size={size}/>;
+      case "trainings":return <TrainingsWidget data={data} onNavigate={onNavigate} size={size}/>;
       default:return null;
     }
   };
