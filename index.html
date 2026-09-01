@@ -180,14 +180,21 @@ input::placeholder{color:var(--ink3);}
 .marker-pop{transform-box:fill-box;transform-origin:50% 50%;animation:markerpop .13s ease-out;}
 @keyframes tooltipfade{from{opacity:0;}to{opacity:1;}}
 .tooltip-fade{display:inline-block;animation:tooltipfade .13s ease-out;}
-/* Dezente "atmende" Platzhalter-Balken fuer LockedStatisticState (Statistik-
-   Karten ohne Daten) — reines CSS, kein JS-Animationsloop. Skaliert nur
-   vertikal (scaleY, GPU-beschleunigt) um die eigene Basis-Hoehe herum,
-   Ankerpunkt unten (transformOrigin:"bottom" inline gesetzt). Die bereits
-   bestehende globale @media(prefers-reduced-motion:reduce)-Regel weiter
-   unten deaktiviert diese Animation automatisch — die Balken fallen dann
-   auf ihre statische, per Inline-Style gesetzte Basis-Hoehe zurueck. */
-@keyframes statBarBreathe{0%,100%{transform:scaleY(.82)}50%{transform:scaleY(1.12)}}
+/* Deutlich sichtbare "atmende" Platzhalter-Balken fuer LockedStatisticState
+   (Statistik-Karten ohne Daten) — reines CSS, kein JS-Animationsloop.
+   Animiert eine ECHTE, deutlich wahrnehmbare Hoehenveraenderung per scaleY
+   (GPU-beschleunigt, performanter als eine echte height-Animation)
+   zwischen einer je Balken INDIVIDUELLEN Minimal-/Maximal-Skalierung
+   (--bar-min/--bar-max, inline pro Balken gesetzt), Ankerpunkt unten
+   (transformOrigin:"bottom" inline gesetzt). animation-direction:alternate
+   (inline gesetzt) sorgt fuer das automatische Zurueckfedern, jede Balken-
+   Dauer/-Verzoegerung ist bewusst unterschiedlich (siehe STAT_LOCK_BARS) —
+   dadurch nie synchron, wirkt wie ein ruhiger Audio-Visualizer statt einem
+   einzelnen flachen Puls. Die bereits bestehende globale
+   @media(prefers-reduced-motion:reduce)-Regel weiter unten deaktiviert
+   diese Animation automatisch — die Balken fallen dann auf ihre statische,
+   per Inline-Style gesetzte Basis-Hoehe zurueck. */
+@keyframes statBarLevel{from{transform:scaleY(var(--bar-min,.4))}to{transform:scaleY(var(--bar-max,1.3))}}
 /* Horizontale Zeitraum-Pill-Leiste (Gewichtsanalyse) — bewusst deutlich
    dezenter als die Hauptnavigation (.seg/.segb): kleiner, weniger Padding,
    kleinere Rundung, KEINE Akzentfarbe (die bleibt der Hauptnavigation, dem
@@ -4235,41 +4242,70 @@ function StatCard({title,headerRight,onOpen,children}){
 }
 
 /* "Gesperrter" Zustand fuer Statistik-Karten ohne ausreichende echte
-   Daten — bewusst kein statischer "Keine Daten"-Text mehr, sondern ein
-   hochwertigerer, motivierender Zustand: dezente animierte Platzhalter-
-   Balken im Hintergrund (rein dekorativ, NIE echte Werte/Zahlen) hinter
-   einem abgedunkelten Overlay mit Schloss-Icon, kurzer Erklaerung und
-   bereits bestehendem CTA (Navigation/Funktion, keine neue Logging-
+   Daten — bewusst kein statischer "Keine Daten"-Text mehr, sondern eine
+   "Locked Preview": deutlich sichtbare, farbige, animierte Platzhalter-
+   Balken im Hintergrund (rein dekorativ, NIE echte Werte/Zahlen — Farbe
+   variiert nur je STATISTIK-TYP, nicht je Datenwert) hinter einem
+   abgedunkelten Overlay mit Schloss-Icon in einer runden Flaeche, kurzer
+   Erklaerung auf einem eigenen Kontrast-Panel und bereits bestehendem CTA
+   als praesenterer Pill-Button (Navigation/Funktion, keine neue Logging-
    Logik). EINE gemeinsame Komponente fuer alle 5 Statistik-Karten statt
    fuenf fast identischer Implementierungen. Die "Sperre" selbst ist rein
    datengetrieben (der Aufrufer entscheidet anhand echter Daten, ob diese
    Komponente ueberhaupt gerendert wird) — kein eigener locked/unlocked-
    Status wird gespeichert. Balken-Animation ist reines CSS (siehe
-   @keyframes statBarBreathe oben im <style>-Block) — kein JS-
+   @keyframes statBarLevel oben im <style>-Block) — kein JS-
    Animationsloop, kein zusaetzlicher React-State, respektiert dadurch
    automatisch die bereits bestehende globale
    prefers-reduced-motion-Regel (Balken zeigen dann nur ihre statische
    Basis-Hoehe, keine Bewegung mehr). */
-const STAT_LOCK_BAR_HEIGHTS=[36,60,44,72,50,66,40]; // rein dekorativ, keine echten Werte
-function LockedStatisticState({text,ctaLabel,onCta}){
+const STAT_LOCK_BARS=[ // rein dekorativ, keine echten Werte — je Balken eigene Basis-Hoehe/Skalierungsspanne/Dauer/Verzoegerung, damit nie alle synchron schwingen
+  {h:34,min:.45,max:1.35,dur:2.6,delay:0},
+  {h:58,min:.5,max:1.25,dur:3.4,delay:.35},
+  {h:42,min:.4,max:1.4,dur:2.9,delay:.75},
+  {h:70,min:.55,max:1.2,dur:3.8,delay:.15},
+  {h:48,min:.45,max:1.3,dur:3.1,delay:.6},
+  {h:64,min:.5,max:1.35,dur:2.7,delay:.9},
+  {h:38,min:.4,max:1.3,dur:3.5,delay:.45},
+];
+/* Gedeckte, hochwertige Farbtoene je Statistik-Typ (an die Referenz-
+   Screenshots angelehnt, nicht 1:1 kopiert) — bewusst NICHT das globale
+   Farbsystem (--accent/--good/--amber), da diese Balken ausdruecklich rein
+   dekorativ sind und nicht mit echten Bilanz-/Fortschrittsfarben
+   verwechselt werden sollen. */
+const STAT_LOCK_COLORS={weight:"#6B9AB8",kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E"};
+function LockedStatisticState({text,ctaLabel,onCta,colorKey="kcal"}){
+  const color=STAT_LOCK_COLORS[colorKey]||STAT_LOCK_COLORS.kcal;
   return(
-    <div style={{position:"relative",height:96,overflow:"hidden",borderRadius:14}}>
-      <div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:5,padding:"0 4px 4px"}}>
-        {STAT_LOCK_BAR_HEIGHTS.map((h,i)=>(
-          <div key={i} style={{flex:1,height:h+"%",background:"var(--card2)",borderRadius:"4px 4px 2px 2px",
-            transformOrigin:"bottom",animation:"statBarBreathe 3.6s ease-in-out infinite",animationDelay:(i*0.22)+"s"}}/>
+    <div style={{position:"relative",height:148,overflow:"hidden",borderRadius:14}}>
+      <div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,padding:"0 6px 6px"}}>
+        {STAT_LOCK_BARS.map((b,i)=>(
+          <div key={i} style={{flex:1,height:b.h+"%",background:color,borderRadius:"9px 9px 3px 3px",
+            transformOrigin:"bottom","--bar-min":b.min,"--bar-max":b.max,
+            animation:"statBarLevel "+b.dur+"s ease-in-out infinite alternate",animationDelay:b.delay+"s"}}/>
         ))}
       </div>
-      <div style={{position:"absolute",inset:0,background:"var(--card)",opacity:.84}}/>
-      <div style={{position:"relative",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 16px",textAlign:"center"}}>
-        <div style={{fontSize:19,opacity:.8,marginBottom:6}}>🔒</div>
-        <div className="sub" style={{fontSize:12,lineHeight:1.4}}>{text}</div>
-        {ctaLabel&&onCta&&(
-          <div onClick={e=>{e.stopPropagation();tapH();onCta();}}
-            style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600,color:"var(--accent)",cursor:"pointer"}}>
-            {ctaLabel} <span style={{fontSize:15}}>→</span>
+      {/* Nur noch ein sehr leichter Abdunkler — die farbigen Balken sollen
+          klar als eigenstaendiges, hochwertiges Gestaltungselement
+          erkennbar bleiben (Vorgabe: "staerkerer Kontrast zum Card-
+          Hintergrund", "duerfen einen groesseren Teil des Chart-Bereichs
+          einnehmen"). Die Lesbarkeit von Text/CTA uebernimmt stattdessen
+          ausschliesslich das eigene, deutlich staerkere Panel weiter unten. */}
+      <div style={{position:"absolute",inset:0,background:"var(--card)",opacity:.15}}/>
+      <div style={{position:"relative",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"14px 16px",textAlign:"center"}}>
+        <div style={{width:44,height:44,minWidth:44,minHeight:44,flexShrink:0,borderRadius:99,background:"var(--card2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,marginBottom:10,boxShadow:"0 3px 12px rgba(0,0,0,.28)"}}>🔒</div>
+        <div style={{position:"relative",borderRadius:12}}>
+          <div style={{position:"absolute",inset:"-8px -12px",background:"var(--card)",opacity:.9,borderRadius:12}}/>
+          <div style={{position:"relative",padding:"0 2px"}}>
+            <div className="sub" style={{fontSize:12,lineHeight:1.4,fontWeight:600,color:"var(--ink)"}}>{text}</div>
+            {ctaLabel&&onCta&&(
+              <div className="pill on" onClick={e=>{e.stopPropagation();tapH();onCta();}}
+                style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,padding:"var(--sp-1) var(--sp-2)",cursor:"pointer"}}>
+                {ctaLabel} <span style={{fontSize:15}}>→</span>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -4408,32 +4444,32 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           </div>
         )}>
         {weightPoints.length===0
-          ?<LockedStatisticState text="Trage dein Gewicht ein, um deine Entwicklung zu sehen."
+          ?<LockedStatisticState text="Trage dein Gewicht ein, um deine Entwicklung zu sehen." colorKey="weight"
               ctaLabel={onOpenWeightModal?"Gewicht eintragen":null} onCta={onOpenWeightModal}/>
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
       <StatCard title="Kalorien">
         {!anyMealLogged
-          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Proteine">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Kohlenhydrate">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color="#4E93AE"/>}
       </StatCard>
 
       <StatCard title="Fette">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color="var(--amber)"/>}
       </StatCard>
     </div>
