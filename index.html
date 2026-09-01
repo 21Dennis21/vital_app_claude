@@ -4189,20 +4189,230 @@ function StatSubTabs({val,onChange}){
   );
 }
 
+/* ===== STATISTIKEN → ERNÄHRUNG: 7-Tage-Schnellübersicht =====
+   Fuenf Karten (Koerpergewicht/Kalorien/Proteine/Kohlenhydrate/Fette) auf
+   denselben letzten 7 Kalendertagen (inkl. heute). Nutzt ausschliesslich
+   bereits vorhandene Daten/Berechnungen: dayData()/isDayLogged()
+   (calendar-engine.js/week-engine.js), Monatsbedarf via settingsOf()/
+   calcBMR() (wie ErnaehrungView) und macroTargets() (nutrition-engine.js)
+   fuer die Ziel-/Referenzlinien — dieselben Funktionen, die auch die
+   taegliche Ernaehrungs-Ansicht nutzt. Keine parallele Datenhaltung,
+   keine erfundenen/hardcodierten Ziele. */
+function last7CalendarDays(now){
+  const arr=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(now);d.setDate(now.getDate()-i);
+    arr.push({y:d.getFullYear(),m:d.getMonth(),d:d.getDate()});
+  }
+  return arr;
+}
+
+/* Gemeinsame Kartenhuelle fuer alle fuenf Statistik-Karten: Titel oben
+   links, "Letzte 7 Tage" darunter, optionaler Kopfbereich rechts (Wert/
+   Veraenderung), Diagramm darunter. onOpen (optional) macht die ganze
+   Karte antippbar fuer eine bereits bestehende Detailansicht. */
+function StatCard({title,headerRight,onOpen,children}){
+  return(
+    <div className={"card card-compact"+(onOpen?" dc":"")} onClick={onOpen?()=>{tapH();onOpen();}:undefined}>
+      <div className="row" style={{alignItems:"flex-start",marginBottom:"var(--sp-2)"}}>
+        <div>
+          <div className="lbl" style={{fontWeight:700,color:"var(--ink)",fontSize:"var(--fs-desc)"}}>{title}</div>
+          <div className="sub" style={{marginTop:2}}>Letzte 7 Tage</div>
+        </div>
+        {headerRight}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* Dezenter Leerzustand — erzeugt bewusst KEINE Fuellbalken, nur Text +
+   optionaler bereits bestehender CTA (Navigation/Funktion, keine neue
+   Logging-Logik). */
+function StatEmpty({ctaLabel,onCta}){
+  return(
+    <div style={{textAlign:"center",padding:"14px 0 4px"}}>
+      <div className="sub">Noch keine Daten für diesen Zeitraum.</div>
+      {ctaLabel&&onCta&&(
+        <div onClick={e=>{e.stopPropagation();tapH();onCta();}}
+          style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600,color:"var(--accent)",cursor:"pointer"}}>
+          {ctaLabel} <span style={{fontSize:15}}>→</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Balkendiagramm fuer Kalorien/Proteine/Kohlenhydrate/Fette — eine
+   gemeinsame Komponente statt vier fast identischer Implementierungen.
+   "target" (optional, >0) zeichnet eine dezente gestrichelte Referenz-
+   linie auf Hoehe des bestehenden taeglichen Ziels; ueberdeckt die Balken
+   nicht (eigene duenne Linie + kleine Beschriftung am rechten Rand). */
+function NutritionBarChart({days,values,target,unit,color}){
+  const W=300,H=84,colW=W/7;
+  const maxVal=Math.max(...values,target||0,1)*1.15;
+  const yFor=v=>H-(v/maxVal)*H;
+  return(
+    <div>
+      <svg viewBox={"0 0 "+W+" "+(H+12)} style={{width:"100%",display:"block"}}>
+        {target>0&&(
+          <React.Fragment>
+            <line x1="0" y1={yFor(target)} x2={W} y2={yFor(target)} stroke="var(--ink3)" strokeWidth="1" strokeDasharray="3,3" opacity=".55"/>
+            <text x={W} y={yFor(target)-4} textAnchor="end" fontSize="9" fontWeight="600" fill="var(--ink3)">
+              {fmtNum(target,0)+(unit?" "+unit:"")+" Ziel"}
+            </text>
+          </React.Fragment>
+        )}
+        {values.map((v,i)=>{
+          const bw=colW*0.46;
+          const x=colW*i+colW/2-bw/2;
+          const h=v>0?Math.max(3,(v/maxVal)*H):0;
+          return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="3" fill={color}/>;
+        })}
+      </svg>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
+        {days.map((d,i)=>(
+          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Punkte-/Liniendiagramm fuer Koerpergewicht — bewusst eigenstaendig statt
+   NutritionBarChart (Linie statt Balken) UND bewusst NICHT bei fehlenden
+   Tagen aufgefuellt (siehe Vorgabe: nur tatsaechlich vorhandene Messungen,
+   keine erfundenen Zwischenwerte) — "points" enthaelt nur Tage mit
+   echtem Eintrag, "i" ist deren Position (0-6) unter den 7 Kalendertagen,
+   damit jeder Punkt exakt ueber seinem Datum liegt, auch bei Luecken. */
+function WeightStatChart({days,points,targetWeight}){
+  const W=300,H=84,colW=W/7;
+  const xFor=i=>colW*i+colW/2;
+  const vals=points.map(p=>p.w).concat(targetWeight>0?[targetWeight]:[]);
+  const min=Math.min(...vals),max=Math.max(...vals);
+  const span=Math.max(max-min,0.6);
+  const lo=min-span*0.3,hi=max+span*0.3;
+  const yFor=w=>H-((w-lo)/(hi-lo))*H;
+  const path=points.map((p,i)=>(i===0?"M":"L")+xFor(p.i)+" "+yFor(p.w)).join(" ");
+  const lastI=points.length?points[points.length-1].i:null;
+  return(
+    <div>
+      <svg viewBox={"0 0 "+W+" "+(H+12)} style={{width:"100%",display:"block"}}>
+        {targetWeight>0&&(
+          <React.Fragment>
+            <line x1="0" y1={yFor(targetWeight)} x2={W} y2={yFor(targetWeight)} stroke="var(--ink3)" strokeWidth="1" strokeDasharray="3,3" opacity=".55"/>
+            <text x={W} y={yFor(targetWeight)-4} textAnchor="end" fontSize="9" fontWeight="600" fill="var(--ink3)">{fmtNum(targetWeight,1)+" kg Ziel"}</text>
+          </React.Fragment>
+        )}
+        {points.length>1&&<path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        {points.map(p=>(
+          <circle key={p.i} cx={xFor(p.i)} cy={yFor(p.w)} r={p.i===lastI?3.6:2.4} fill="var(--accent)" stroke="var(--card)" strokeWidth="1"/>
+        ))}
+      </svg>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
+        {days.map((d,i)=>(
+          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
+  const days=useMemo(()=>last7CalendarDays(NOW),[]);
+  const dayRecords=useMemo(()=>days.map(d=>dayData(data,d.y,d.m,d.d)),[days,data]);
+
+  /* Ziel-/Referenzwerte: dieselbe Berechnung wie die taegliche Ernaehrungs-
+     Ansicht (ErnaehrungView) fuer den aktuellen Monat — eine feste
+     horizontale Linie statt taeglich schwankender Werte (Sport aendert
+     das Tagesbudget dort zusaetzlich; hier bewusst nur der reine
+     Grundbedarf als "das" Ziel, siehe Aufgabenstellung: "bestehendes
+     taegliches Ziel", nicht "heutiges Budget inkl. Sport"). */
+  const y=NOW.getFullYear(),m=NOW.getMonth();
+  const st=settingsOf(mSet,y,m);
+  const tdee=st?Math.round(calcBMR(st.weight,st.fat)*ACT[st.activityIdx].f):null;
+  const macros=st&&tdee?macroTargets(st.weight,st.fat,tdee):{carbs:0,protein:0,fat:0};
+
+  /* Koerpergewicht: ausschliesslich echte Eintraege innerhalb der letzten
+     7 Kalendertage, "i" = Position unter den 7 Tagen fuer die exakte
+     Ausrichtung im Diagramm. */
+  const weightPoints=useMemo(()=>{
+    const out=[];
+    days.forEach((d,i)=>{
+      const x=dayData(data,d.y,d.m,d.d);
+      if(x.weight>0)out.push({i,w:x.weight});
+    });
+    return out;
+  },[days,data]);
+  const weightGoal=goals.find(g=>g.type==="weight"&&g.active!==false);
+  const targetWeight=weightGoal?parseFloat(weightGoal.target)||0:0;
+  const curW=weightPoints.length?weightPoints[weightPoints.length-1].w:0;
+  const diffW=weightPoints.length>=2?curW-weightPoints[0].w:null;
+  const wDirection=inferWeightGoalDirection(goals,curW);
+
+  const anyLogged=dayRecords.some(isDayLogged);
+  const mealCta={ctaLabel:onNavigate?"Mahlzeit eintragen":null,onCta:onNavigate?()=>onNavigate("ernaehrung"):null};
+
+  return(
+    <div>
+      <StatCard title="Körpergewicht"
+        headerRight={weightPoints.length>0&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+            <div className="num" style={{fontSize:18,fontWeight:700}}>{fmtNum(curW,1)} kg</div>
+            {diffW!=null?(
+              <div className="num" style={{fontSize:13,fontWeight:600,color:weightChangeColor(diffW,wDirection)}}>{diffW>0?"+":""}{fmtNum(diffW,1)} kg</div>
+            ):(
+              <div className="sub" style={{fontSize:12}}>–</div>
+            )}
+          </div>
+        )}>
+        {weightPoints.length===0
+          ?<StatEmpty ctaLabel={onOpenWeightModal?"Gewicht eintragen":null} onCta={onOpenWeightModal}/>
+          :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
+      </StatCard>
+
+      <StatCard title="Kalorien">
+        {!anyLogged
+          ?<StatEmpty {...mealCta}/>
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color="var(--accent)"/>}
+      </StatCard>
+
+      <StatCard title="Proteine">
+        {!anyLogged
+          ?<StatEmpty {...mealCta}/>
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color="var(--accent)"/>}
+      </StatCard>
+
+      <StatCard title="Kohlenhydrate">
+        {!anyLogged
+          ?<StatEmpty {...mealCta}/>
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color="#4E93AE"/>}
+      </StatCard>
+
+      <StatCard title="Fette">
+        {!anyLogged
+          ?<StatEmpty {...mealCta}/>
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color="var(--amber)"/>}
+      </StatCard>
+    </div>
+  );
+}
+
 /* ===== TAB 4 (Bottom Nav): STATISTIKEN =====
    Neue Struktur: Ueberschrift "Statistiken" + Unternavigation Uebersicht/
    Training/Ernaehrung. "Uebersicht" bettet die komplette, unveraenderte
    bisherige Verlauf-Seite (VerlaufView: Kalender/Rueckblick/Gewicht/Sport/
    Jahr, Tagesdetails, alle Berechnungen) unangetastet ein — keine parallele
-   Statistik-Implementierung. Training/Ernaehrung sind bewusst vorerst
-   leere Platzhalter (siehe Aufgabenstellung: keine erfundenen Charts/
-   Mock-Daten, Cardio zaehlt spaeter zu Training statt eigener Tab).
+   Statistik-Implementierung. "Training" bleibt vorerst ein leerer
+   Platzhalter. "Ernaehrung" zeigt die neue 7-Tage-Schnelluebersicht (siehe
+   ErnaehrungStatsView oben) — ausschliesslich echte Daten, keine Mock-
+   Werte, Cardio zaehlt spaeter zu Training statt eigener Tab.
    "Uebersicht" ist Standard; ein remount ueber den key an der Aufrufstelle
    (verlaufSeg als initialSeg fuer Dashboard-Navigation wie
    onNavigate("verlauf","Gewicht")) setzt auch statTab wieder auf
    "Uebersicht" zurueck, damit ein Dashboard-Sprung zu z.B. "Gewicht"
    sichtbar landet, selbst wenn zuvor "Training" oder "Ernaehrung" aktiv war. */
-function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup}){
+function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup,onOpenWeightModal,onNavigate}){
   const [statTab,setStatTab]=useState("Übersicht");
   return(
     <div className="vl-screen">
@@ -4217,9 +4427,7 @@ function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,curre
           <div className="sub">Trainingsstatistiken befinden sich im Aufbau.</div>
         </div>}
       {statTab==="Ernährung"&&
-        <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
-          <div className="sub">Ernährungsstatistiken befinden sich im Aufbau.</div>
-        </div>}
+        <ErnaehrungStatsView data={data} mSet={mSet} goals={goals} onOpenWeightModal={onOpenWeightModal} onNavigate={onNavigate}/>}
     </div>
   );
 }
@@ -6190,7 +6398,7 @@ function App(){
       {tab==="heute"&&<HomeView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)} onOpenSettings={()=>setTab("profil")}/>}
       {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
       {tab==="training"&&<TrainingView data={data} openActivity={openActivity}/>}
-      {tab==="verlauf"&&<StatistikenView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
+      {tab==="verlauf"&&<StatistikenView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup} onOpenWeightModal={()=>setShowWeightModal(true)} onNavigate={navigateTo}/>}
       {tab==="ziele"&&<Page onClose={()=>setTab("heute")} title="Ziele"><ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/></Page>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals} onClose={()=>setTab("heute")}/>}
       {["heute","ernaehrung","training","verlauf"].includes(tab)&&<TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>}
