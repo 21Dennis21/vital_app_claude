@@ -2237,11 +2237,19 @@ function AnimatedNumber({value,decimals=0,suffix=""}){
 
 /* Dezenter Info-Punkt oben rechts in jeder Widget-Karte. stopPropagation,
    damit ein Tipp aufs Info-Icon nicht gleichzeitig die Karte navigiert. */
+/* Dezenter, aber weiterhin gut treffbarer Info-Punkt: die sichtbare
+   Kreisflaeche (innerer span) ist bewusst kleiner und leicht transparent
+   gehalten, waehrend der eigentliche <button> als Hitbox unveraendert
+   32x32 gross bleibt (gleiche Touch-Flaeche wie zuvor) und per negativem
+   Rand naeher an die obere rechte Ecke der jeweiligen Karte rueckt. */
 function InfoDot({onOpen}){
   return(
-    <button onClick={e=>{e.stopPropagation();tapH();onOpen();}}
-      style={{width:32,height:32,borderRadius:99,border:"none",background:"var(--card2)",color:"var(--ink3)",
-        fontSize:13,fontWeight:700,fontStyle:"italic",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>i</button>
+    <button onClick={e=>{e.stopPropagation();tapH();onOpen();}} aria-label="Info"
+      style={{width:32,height:32,marginTop:-6,marginRight:-6,border:"none",background:"none",padding:0,
+        flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <span style={{width:20,height:20,borderRadius:99,background:"var(--card2)",opacity:.75,color:"var(--ink3)",
+        fontSize:10,fontWeight:700,fontStyle:"italic",display:"flex",alignItems:"center",justifyContent:"center"}}>i</span>
+    </button>
   );
 }
 /* Erklaer-Sheet: was zeigt dieses Widget, wie wird's berechnet, warum
@@ -2769,7 +2777,7 @@ function HomeView({data,mSet,goals,dashRefresh,openPersonalize,onNavigate,onOpen
    Mahlzeiten, Aktivitaeten. Entspricht 1:1 dem bisherigen Inhalt von
    HeuteView, nur ohne die DashboardSection am Ende (die jetzt in HomeView
    liegt). ===== */
-function ErnaehrungView({data,mSet,goals,openDay,openSetup,openActivity,openMeal,openMealDetail,onOpenWeightModal}){
+function ErnaehrungView({data,mSet,goals,openDay,openSetup,openMeal,openMealDetail,onOpenWeightModal}){
   const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
   const today=dayData(data,y,m,d);
   const st=settingsOf(mSet,y,m);
@@ -2777,7 +2785,6 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openActivity,openMeal
   const eaten=today.kcalIn||0, burned=today.kcalBurned||0;
   const budget=tdee!=null?tdee+burned:null;      // Sport erhoeht das Tagesbudget
   const dateStr=NOW.toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});
-  const todaySports=today.sports||[];
   const todayMeals=today.meals||{};
   /* Zeitabhaengige Begruessung */
   const hour=NOW.getHours();
@@ -2899,8 +2906,25 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openActivity,openMeal
         </div>
       )}
 
+    </div>
+  );
+}
+
+/* ===== TAB 3: TRAINING — enthaelt bisher ausschliesslich den aus dem
+   Ernaehrungs-Tab hierher verschobenen "Aktivitäten"-Bereich (unveraendert
+   uebernommen: gleiche Komponente/Datenlogik/Navigation wie zuvor, nur der
+   Ort innerhalb der App-Struktur hat sich geaendert). Noch keine weiteren
+   Trainingsplan-/Workout-Funktionen — die werden spaeter separat ergaenzt. ===== */
+function TrainingView({data,openActivity}){
+  const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
+  const today=dayData(data,y,m,d);
+  const todaySports=today.sports||[];
+  return(
+    <div>
+      <div className="h1" style={{marginBottom:18}}>Training</div>
+
       <div>
-        <div className="row" style={{margin:"var(--sp-3) 0 var(--sp-2)"}}>
+        <div className="row" style={{marginBottom:"var(--sp-2)"}}>
           <div className="h1" style={{fontSize:"var(--fs-md)"}}>Aktivitäten</div>
         </div>
         <div className="card card-compact">
@@ -2927,21 +2951,6 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openActivity,openMeal
             <span style={{fontSize:16}}>+</span> HINZUFÜGEN
           </div>
         </div>
-      </div>
-
-    </div>
-  );
-}
-
-/* ===== TAB 3: TRAINING — noch keine fertige Funktionalitaet vorhanden,
-   daher bewusst nur ein leerer Platzhalter-Screen ohne erfundene Features.
-   Wird spaeter separat ausgebaut. ===== */
-function TrainingView(){
-  return(
-    <div>
-      <div className="h1" style={{marginBottom:18}}>Training</div>
-      <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
-        <div className="sub">Der Trainingsbereich befindet sich im Aufbau.</div>
       </div>
     </div>
   );
@@ -6105,8 +6114,8 @@ function App(){
   return(
     <div className="app">
       {tab==="heute"&&<HomeView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)} onOpenSettings={()=>setTab("profil")}/>}
-      {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openActivity={openActivity} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
-      {tab==="training"&&<TrainingView/>}
+      {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
+      {tab==="training"&&<TrainingView data={data} openActivity={openActivity}/>}
       {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
       {tab==="ziele"&&<Page onClose={()=>setTab("heute")} title="Ziele"><ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/></Page>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals} onClose={()=>setTab("heute")}/>}
