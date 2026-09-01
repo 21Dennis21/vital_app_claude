@@ -4470,19 +4470,33 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
   const mealCtaLabel=onNavigate?"Mahlzeit eintragen":null;
   const onMealCta=onNavigate?()=>onNavigate("ernaehrung"):null;
 
+  /* Jede der 5 Karten ist als GANZES antippbar (StatCard.onOpen) und
+     oeffnet dieselbe wiederverwendbare Detailstatistik-Seite
+     (StatDetailPage) fuer die jeweilige Metrik — siehe dort fuer die
+     Zeitraum-Engine (1W/1M/3M/6M/12M/Max). Zurueck schliesst die
+     Detailseite einfach wieder (reines Overlay, die Uebersicht bleibt
+     darunter unveraendert gemountet, Scroll-/UI-Zustand bleibt dadurch
+     automatisch erhalten). */
+  const [detailStat,setDetailStat]=useState(null);
+
   return(
     <div>
-      <StatCard title="Körpergewicht"
-        headerRight={weightPoints.length>0&&(
+      <StatCard title="Körpergewicht" onOpen={()=>setDetailStat("weight")}
+        headerRight={
           <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-            <div className="num" style={{fontSize:18,fontWeight:700}}>{fmtNum(curW,1)} kg</div>
-            {diffW!=null?(
-              <div className="num" style={{fontSize:13,fontWeight:600,color:weightChangeColor(diffW,wDirection)}}>{diffW>0?"+":""}{fmtNum(diffW,1)} kg</div>
-            ):(
-              <div className="sub" style={{fontSize:12}}>–</div>
+            {weightPoints.length>0&&(
+              <React.Fragment>
+                <div className="num" style={{fontSize:18,fontWeight:700}}>{fmtNum(curW,1)} kg</div>
+                {diffW!=null?(
+                  <div className="num" style={{fontSize:13,fontWeight:600,color:weightChangeColor(diffW,wDirection)}}>{diffW>0?"+":""}{fmtNum(diffW,1)} kg</div>
+                ):(
+                  <div className="sub" style={{fontSize:12}}>–</div>
+                )}
+              </React.Fragment>
             )}
+            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
           </div>
-        )}>
+        }>
         {/* Koerpergewicht wird bewusst NIE gesperrt (kein LockedStatisticState
             hier) — anders als Kalorien/Makros ist ein einzelner oder auch gar
             kein Gewichtseintrag fachlich kein "noch keine Daten"-Zustand, der
@@ -4492,7 +4506,7 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           ?<div style={{textAlign:"center",padding:"24px 0 8px"}}>
               <div className="sub" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>Noch kein Gewicht eingetragen</div>
               {onOpenWeightModal&&(
-                <div className="pill on" onClick={()=>{tapH();onOpenWeightModal();}}
+                <div className="pill on" onClick={e=>{e.stopPropagation();tapH();onOpenWeightModal();}}
                   style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,padding:"var(--sp-1) var(--sp-2)",cursor:"pointer"}}>
                   Gewicht eintragen <span style={{fontSize:15}}>→</span>
                 </div>
@@ -4501,7 +4515,7 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
-      <StatCard title="Kalorien"
+      <StatCard title="Kalorien" onOpen={()=>setDetailStat("kcal")}
         headerRight={anyMealLogged&&(
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
             <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
@@ -4515,7 +4529,7 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color={STAT_LOCK_COLORS.kcal}/>}
       </StatCard>
 
-      <StatCard title="Proteine"
+      <StatCard title="Proteine" onOpen={()=>setDetailStat("protein")}
         headerRight={anyMealLogged&&(
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
             <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
@@ -4529,7 +4543,7 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color={STAT_LOCK_COLORS.protein}/>}
       </StatCard>
 
-      <StatCard title="Kohlenhydrate"
+      <StatCard title="Kohlenhydrate" onOpen={()=>setDetailStat("carbs")}
         headerRight={anyMealLogged&&(
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
             <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
@@ -4543,7 +4557,7 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color={STAT_LOCK_COLORS.carbs}/>}
       </StatCard>
 
-      <StatCard title="Fette"
+      <StatCard title="Fette" onOpen={()=>setDetailStat("fat")}
         headerRight={anyMealLogged&&(
           <div style={{display:"flex",alignItems:"baseline",gap:6}}>
             <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
@@ -4556,6 +4570,434 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color={STAT_LOCK_COLORS.fat}/>}
       </StatCard>
+
+      {detailStat&&<StatDetailPage type={detailStat} data={data} mSet={mSet} goals={goals} onBack={()=>setDetailStat(null)}/>}
+    </div>
+  );
+}
+
+/* ===== STATISTIKEN → ERNÄHRUNG: Detailansichten (Tap auf eine Karte) =====
+   EINE wiederverwendbare Detailstatistik-Seite (StatDetailPage) fuer alle
+   5 Kacheln, konfiguriert ueber STAT_DETAIL_CONFIG (type/title/unit/
+   color/chartType) statt fuenf getrennter Implementierungen. Nutzt
+   dieselbe Zeitraum-Engine (1W/1M/3M/6M/12M/Max) wie die bestehende
+   Gewicht-Detailansicht (Verlauf -> Gewicht): WEIGHT_DETAIL_RANGES,
+   WEIGHT_DETAIL_RANGE_DAYS, weightDetailRangeStart, weightDetailInRangeFn,
+   RangePillBar (alle bereits in weight-engine.js/index.html vorhanden,
+   hier unveraendert wiederverwendet — trotz des Namens "weight..." ist
+   die Zeitraum-Filterung selbst generisch datumsbasiert). Koerpergewicht
+   nutzt chartType="line" mit AUSSCHLIESSLICH echten Messpunkten (siehe
+   collectWeightPointsInRange, bereits vorhanden) — bewusst KEIN Carry-
+   Forward wie auf der kleinen 7-Tage-Card, hier soll die tatsaechliche
+   Messhistorie erkennbar bleiben. Die vier Ernaehrungswerte nutzen
+   chartType="bar" mit echten, taeglich geloggten Werten. */
+
+/* Sammelt ausschliesslich Tage mit tatsaechlich geloggter Mahlzeit
+   innerhalb eines Datumsfilters (analog collectWeightPointsInRange, hier
+   fuer die vier Ernaehrungswerte). Ein Tag ohne Mahlzeit erzeugt bewusst
+   KEINEN Punkt. */
+function collectNutritionPointsInRange(data,inRangeFn){
+  const out=[];
+  Object.keys(data).forEach(k=>{
+    const x=data[k];
+    if(x&&Object.values(x.meals||{}).some(items=>(items||[]).length>0)){
+      const parts=k.split("-").map(Number);
+      const y=parts[0],m=parts[1],d=parts[2];
+      if(inRangeFn(y,m,d)){
+        out.push({y,m,d,ts:new Date(y,m,d).getTime(),kcal:x.kcalIn||0,protein:x.proteinIn||0,carbs:x.carbsIn||0,fat:x.fatIn||0});
+      }
+    }
+  });
+  out.sort((a,b)=>a.ts-b.ts);
+  return out;
+}
+/* Waehlt die Aggregations-/Achsen-Granularitaet passend zum Zeitraum
+   (Vorgabe: 1W/1M taeglich, 3M wochenweise, 6M/12M monatsweise, Max
+   abhaengig von der tatsaechlichen Datenspanne) — nie ein Balken/Label
+   pro Tag ueber Monate hinweg, das waere unlesbar. */
+function pickNutritionBucketUnit(rangeKey,spanDays){
+  if(rangeKey==="1W"||rangeKey==="1M")return "day";
+  if(rangeKey==="3M")return "week";
+  if(rangeKey==="6M"||rangeKey==="12M")return "month";
+  if(spanDays<=35)return "day";
+  if(spanDays<=190)return "week";
+  if(spanDays<=730)return "month";
+  if(spanDays<=365*8)return "quarter";
+  return "year";
+}
+function bucketKeyOf(y,m,d,unit){
+  if(unit==="day")return y+"-"+m+"-"+d;
+  if(unit==="week")return "w"+weekStartDate(y,m,d).getTime();
+  if(unit==="month")return "m"+y+"-"+m;
+  if(unit==="quarter")return "q"+y+"-"+Math.floor(m/3);
+  return "y"+y;
+}
+/* Feste Bucket-Slots ueber den gesamten Anzeigezeitraum (taeglich/
+   woechentlich/monatlich/quartalsweise/jaehrlich je nach "unit") — dadurch
+   bleibt jeder Zeitabschnitt an seiner festen Position, auch wenn dort
+   keine Daten vorhanden sind (kein Balken statt verschobener Balken). */
+function fixedBucketSlots(startDate,endDate,unit){
+  const out=[];
+  const seen=new Set();
+  const it=new Date(startDate.getFullYear(),startDate.getMonth(),startDate.getDate());
+  while(it.getTime()<=endDate.getTime()){
+    const y=it.getFullYear(),m=it.getMonth(),d=it.getDate();
+    const key=bucketKeyOf(y,m,d,unit);
+    if(!seen.has(key)){
+      seen.add(key);
+      let by=y,bm=m,bd=d;
+      if(unit==="week"){const ws=weekStartDate(y,m,d);by=ws.getFullYear();bm=ws.getMonth();bd=ws.getDate();}
+      else if(unit==="month"){bd=1;}
+      else if(unit==="quarter"){bm=Math.floor(m/3)*3;bd=1;}
+      else if(unit==="year"){bm=0;bd=1;}
+      out.push({key,y:by,m:bm,d:bd,ts:new Date(by,bm,bd).getTime()});
+    }
+    it.setDate(it.getDate()+1);
+  }
+  return out;
+}
+/* Buendelt echte Tageswerte je Bucket zum DURCHSCHNITT (nicht zur Summe)
+   der Tage mit echten Daten — nur so bleibt die Skala mit dem taeglichen
+   Ziel (z.B. 2.400 kcal) vergleichbar, egal wie grob aggregiert wird.
+   Liefert ein einfaches Objekt keyed nach bucketKeyOf(...). */
+function bucketNutritionPoints(points,unit){
+  const map={};
+  points.forEach(p=>{
+    const key=bucketKeyOf(p.y,p.m,p.d,unit);
+    if(!map[key])map[key]={kcal:0,protein:0,carbs:0,fat:0,count:0};
+    const b=map[key];
+    b.kcal+=p.kcal;b.protein+=p.protein;b.carbs+=p.carbs;b.fat+=p.fat;b.count+=1;
+  });
+  const out={};
+  Object.keys(map).forEach(key=>{
+    const b=map[key];
+    out[key]={kcal:b.kcal/b.count,protein:b.protein/b.count,carbs:b.carbs/b.count,fat:b.fat/b.count,count:b.count};
+  });
+  return out;
+}
+/* Waehlt eine begrenzte Anzahl Indizes fuer X-Achsen-Beschriftungen aus —
+   nie eine Beschriftung pro Balken/Punkt bei vielen Eintraegen. Der
+   letzte (aktuellste) Index ist immer dabei. */
+function pickLabelIndices(n,maxLabels){
+  if(n<=maxLabels)return Array.from({length:n},(_,i)=>i);
+  const step=Math.ceil(n/maxLabels);
+  const out=[];
+  for(let i=0;i<n;i+=step)out.push(i);
+  if(out[out.length-1]!==n-1)out.push(n-1);
+  return out;
+}
+/* "Schoene", gerundete Achsenwerte (1/2/5 x 10^n) fuer die Y-Skala der
+   Detailansicht — NIE hartcodiert, immer aus den echten dargestellten
+   Werten (und ggf. dem echten Ziel) abgeleitet. Anders als auf der
+   kleinen Uebersichts-Card ist eine sichtbare Skala hier explizit
+   gewuenscht (siehe Aufgabenstellung "Detailansicht darf Grid-Lines
+   haben"). */
+function niceTicks(lo,hi,count){
+  const range=Math.max(hi-lo,1e-6);
+  const rawStep=range/Math.max(count-1,1);
+  const mag=Math.pow(10,Math.floor(Math.log10(rawStep)));
+  const norm=rawStep/mag;
+  const niceNorm=norm<=1?1:norm<=2?2:norm<=5?5:10;
+  const step=niceNorm*mag;
+  const start=Math.ceil(lo/step)*step;
+  const out=[];
+  for(let v=start;v<=hi+step*1e-6;v+=step)out.push(Math.round(v*100)/100);
+  if(out.length===0)out.push(Math.round(lo*100)/100);
+  return out;
+}
+/* Datumsbereich-Text ("27. August – 02. September 2026") — Jahr nur
+   einmal, wenn beide Enden im selben Jahr liegen, sonst bei beiden Enden
+   ("01. August 2025 – 01. September 2026"). */
+function detailDateRangeLabel(sy,sm,sd,ey,em,ed){
+  const sameYear=sy===ey;
+  return sd+". "+MN[sm]+(sameYear?"":" "+sy)+" – "+ed+". "+MN[em]+" "+ey;
+}
+const WD_FULL=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+/* X-Achsen-Beschriftung je nach Granularitaet — zweizeilig fuer Tag
+   (Wochentag/Datum) und Monat/Quartal/Jahr (Monat/Jahr), einzeilig fuer
+   Woche (Datum des Wochenbeginns). */
+function bucketDateLabel(y,m,d,unit){
+  if(unit==="day")return {l1:DS[(new Date(y,m,d).getDay()+6)%7],l2:String(d)};
+  if(unit==="week")return {l1:d+". "+MN[m].slice(0,3),l2:""};
+  if(unit==="year")return {l1:String(y),l2:""};
+  return {l1:MN[m].slice(0,3),l2:String(y)};
+}
+
+const STAT_DETAIL_CONFIG={
+  weight:{title:"Körpergewicht",unit:"kg",color:"var(--good)",chartType:"line"},
+  kcal:{title:"Kalorien",unit:"kcal",color:STAT_LOCK_COLORS.kcal,chartType:"bar"},
+  protein:{title:"Proteine",unit:"g",color:STAT_LOCK_COLORS.protein,chartType:"bar"},
+  carbs:{title:"Kohlenhydrate",unit:"g",color:STAT_LOCK_COLORS.carbs,chartType:"bar"},
+  fat:{title:"Fette",unit:"g",color:STAT_LOCK_COLORS.fat,chartType:"bar"},
+};
+
+/* Gemeinsame Chart-Komponente fuer Balken (Ernaehrung) UND Linie
+   (Koerpergewicht) — Y-Achse rechts mit dezenten gestrichelten Gridlines,
+   optionaler deutlicherer gestrichelter Ziellinie mit Flaggen-Symbol (nur
+   wenn target!=null — echte Unterscheidung zwischen "kein Ziel" und
+   "Ziel = 0"), Tap auf einen Balken/Punkt zeigt ein kompaktes Tooltip mit
+   Datum+Wert. "points" sind bereits die fertig aufbereiteten Chart-Punkte
+   (siehe StatDetailPage): bei Balken feste Slots (value=null -> kein
+   Balken, Position bleibt aber erhalten), bei Linie ausschliesslich echte
+   Messpunkte (zeitproportional positioniert, wie das bestehende
+   WeightTrendChart). */
+function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,emptyText,unit,isWeight,selIdx,onSelect}){
+  const W=340,H=220,MR=40,PT=16,PB=6;
+  const plotW=W-MR,plotH=H-PT-PB;
+
+  if(!hasData){
+    return(
+      <div style={{height:H,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"0 24px"}}>
+        <div className="sub" style={{fontSize:13}}>{emptyText}</div>
+      </div>
+    );
+  }
+
+  const values=points.filter(p=>p.value!=null).map(p=>p.value);
+  let lo,hi;
+  if(chartType==="bar"){
+    lo=0;
+    const rawHi=Math.max(...values,target||0,1)*1.15;
+    const ticks0=niceTicks(0,rawHi,6);
+    hi=Math.max(ticks0[ticks0.length-1],rawHi);
+  }else{
+    const vals=values.concat(target!=null?[target]:[]);
+    const mn=Math.min(...vals),mx=Math.max(...vals);
+    const span=Math.max(mx-mn,0.6);
+    lo=mn-span*0.3;hi=mx+span*0.3;
+  }
+  const ticks=niceTicks(lo,hi,6);
+  const yFor=v=>PT+plotH-((v-lo)/(hi-lo))*plotH;
+
+  const n=points.length;
+  const xForIdx=i=>plotW*(i+0.5)/n;
+  const tsMin=points[0].ts,tsMax=points[n-1].ts;
+  const xForTs=ts=>n>1?((ts-tsMin)/Math.max(tsMax-tsMin,1))*plotW:plotW/2;
+  const xFor=(p,i)=>chartType==="bar"?xForIdx(i):xForTs(p.ts);
+  /* X-Achsen-Beschriftung: bei Balken (feste, gleich breite Slots) reicht
+     eine Auswahl per Index. Bei der Linie (Koerpergewicht) sind die
+     echten Messpunkte oft SEHR ungleichmaessig ueber die Zeit verteilt
+     (z.B. taeglich in den letzten Wochen, aber nur alle paar Tage davor)
+     — eine indexbasierte Auswahl wuerde dann mehrere Labels dicht an
+     einem Zeitpunkt haeufen, waehrend andere Abschnitte leer blieben.
+     Stattdessen werden hier "count" Beschriftungen GLEICHMAESSIG ueber
+     die Zeitachse verteilt (unabhaengig davon, ob genau dort ein echter
+     Messpunkt liegt) — verhindert ueberlappende/gehaeufte Labels. */
+  const lineLabelCount=Math.min(7,n);
+  const lineTicks=chartType==="line"?Array.from({length:lineLabelCount},(_,i)=>{
+    const ts=lineLabelCount>1?tsMin+(tsMax-tsMin)*(i/(lineLabelCount-1)):tsMin;
+    const dt=new Date(ts);
+    return {x:xForTs(ts),y:dt.getFullYear(),m:dt.getMonth(),d:dt.getDate()};
+  }):null;
+  const labelIdx=chartType==="bar"?pickLabelIndices(n,6):null;
+  const path=chartType==="line"?points.map((p,i)=>(i===0?"M":"L")+xFor(p,i)+" "+yFor(p.value)).join(" "):"";
+  const lastIdx=n-1;
+
+  const sel=selIdx!=null?points[selIdx]:null;
+  const selDate=sel?new Date(sel.y,sel.m,sel.d):null;
+  const selLine1=sel?(isWeight
+    ?(sel.d+". "+MN[sel.m]+" "+sel.y)
+    :(WD_FULL[(selDate.getDay()+6)%7]+", "+sel.d+". "+MN[sel.m])):"";
+  const selLine2=sel&&sel.value!=null?fmtNum(sel.value,isWeight?1:0)+" "+unit:"";
+
+  const onTapChart=e=>{
+    const rect=e.currentTarget.getBoundingClientRect();
+    const relX=(e.clientX-rect.left)/rect.width*W;
+    let best=0,bestDist=Infinity;
+    points.forEach((p,i)=>{
+      if(chartType==="bar"&&p.value==null)return;
+      const dist=Math.abs(xFor(p,i)-relX);
+      if(dist<bestDist){bestDist=dist;best=i;}
+    });
+    onSelect(selIdx===best?null:best);
+  };
+
+  return(
+    <div style={{position:"relative"}}>
+      {sel&&(
+        <div style={{position:"absolute",top:0,left:0,background:"var(--card2)",borderRadius:10,padding:"6px 10px",fontSize:12,zIndex:2,pointerEvents:"none"}}>
+          <div style={{color:"var(--ink2)"}}>{selLine1}</div>
+          <div style={{fontWeight:700,color:"var(--ink)"}}>{selLine2}</div>
+        </div>
+      )}
+      <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",touchAction:"manipulation"}} onClick={onTapChart}>
+        {ticks.map((t,i)=>(
+          <React.Fragment key={i}>
+            <line x1="0" y1={yFor(t)} x2={plotW} y2={yFor(t)} stroke="var(--line)" strokeWidth="1" strokeDasharray="4,4" opacity=".5"/>
+            <text x={plotW+8} y={yFor(t)+3} fontSize="10" fill="var(--ink3)">{fmtNum(t,t%1?1:0)}</text>
+          </React.Fragment>
+        ))}
+        {target!=null&&(
+          <React.Fragment>
+            <line x1="0" y1={yFor(target)} x2={plotW} y2={yFor(target)} stroke="var(--ink2)" strokeWidth="1.4" strokeDasharray="5,4" opacity=".8"/>
+            <text x="2" y={yFor(target)-5} fontSize="11" fill="var(--ink2)">⚑</text>
+          </React.Fragment>
+        )}
+        {chartType==="bar"&&points.map((p,i)=>{
+          if(p.value==null)return null;
+          const bw=(plotW/n)*0.5;
+          const x=xForIdx(i)-bw/2;
+          const h=Math.max(3,((p.value-lo)/(hi-lo))*plotH);
+          return <rect key={i} x={x} y={PT+plotH-h} width={bw} height={h} rx="3" fill={color}
+            opacity={selIdx!=null&&selIdx!==i?.45:1} style={{transition:"height .25s ease, y .25s ease, opacity .15s ease"}}/>;
+        })}
+        {chartType==="line"&&(
+          <React.Fragment>
+            <path d={path} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+            {points.map((p,i)=>(
+              <circle key={p.ts} cx={xFor(p,i)} cy={yFor(p.value)} r={i===lastIdx?4.2:2.8} fill="var(--card)" stroke={color}
+                strokeWidth={i===selIdx?2.6:1.6} style={{transition:"cx .25s ease, cy .25s ease"}}/>
+            ))}
+          </React.Fragment>
+        )}
+      </svg>
+      <div style={{position:"relative",height:24,marginTop:4}}>
+        {chartType==="bar"
+          ?points.map((p,i)=>{
+              if(!labelIdx.includes(i))return null;
+              const leftPct=(xFor(p,i)/W)*100;
+              const lbl=bucketDateLabel(p.y,p.m,p.d,bucketUnit);
+              return(
+                <div key={i} style={{position:"absolute",left:leftPct+"%",transform:"translateX(-50%)",textAlign:"center",whiteSpace:"nowrap"}}>
+                  <div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l1}</div>
+                  {lbl.l2&&<div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l2}</div>}
+                </div>
+              );
+            })
+          :lineTicks.map((t,i)=>{
+              const leftPct=(t.x/W)*100;
+              const lbl=bucketDateLabel(t.y,t.m,t.d,bucketUnit);
+              return(
+                <div key={i} style={{position:"absolute",left:leftPct+"%",transform:"translateX(-50%)",textAlign:"center",whiteSpace:"nowrap"}}>
+                  <div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l1}</div>
+                  {lbl.l2&&<div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l2}</div>}
+                </div>
+              );
+            })}
+      </div>
+    </div>
+  );
+}
+
+/* Vollbild-Detailseite fuer eine einzelne Statistik-Kachel (Tap auf die
+   jeweilige StatCard in ErnaehrungStatsView). "range" steuert Zeitraum +
+   Granularitaet, "anchor" das Ende des aktuell sichtbaren Fensters
+   (Navigation ueber die Pfeile ueber dem Chart, ausser bei "Max" — dort
+   gibt es per Definition kein "vorher"). Ziel-Werte nutzen dieselbe
+   Berechnung wie die 7-Tage-Uebersicht (settingsOf/calcBMR/macroTargets
+   bzw. aktives Gewichtsziel) — echtes null statt eines vermeintlichen
+   0-Ziels, wenn nichts hinterlegt ist. Der Hauptwert nutzt ebenfalls
+   dieselbe Definition wie die Uebersicht: bei Ernaehrung der Durchschnitt
+   ueber die Tage mit echten Daten im Fenster (nicht ueber die
+   Fenstergroesse geteilt), bei Gewicht der zuletzt echte Messwert. */
+function StatDetailPage({type,data,mSet,goals,onBack}){
+  const cfg=STAT_DETAIL_CONFIG[type];
+  const isWeight=type==="weight";
+  const todayStart=useMemo(()=>new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()),[]);
+  const [range,setRange]=useState("1W");
+  const [anchor,setAnchor]=useState(todayStart);
+  const [selIdx,setSelIdx]=useState(null);
+  useEffect(()=>{setAnchor(todayStart);setSelIdx(null);},[range]);
+  useEffect(()=>{setSelIdx(null);},[anchor]);
+
+  const inRangeFn=useMemo(()=>weightDetailInRangeFn(range,anchor),[range,anchor]);
+  const rangeStart=useMemo(()=>weightDetailRangeStart(range,anchor),[range,anchor]);
+
+  const weightPtsRaw=useMemo(()=>isWeight?collectWeightPointsInRange(data,inRangeFn):[],[data,inRangeFn,isWeight]);
+  const nutriPtsRaw=useMemo(()=>!isWeight?collectNutritionPointsInRange(data,inRangeFn):[],[data,inRangeFn,isWeight]);
+
+  const effStart=rangeStart||(isWeight
+    ?(weightPtsRaw.length?new Date(weightPtsRaw[0].y,weightPtsRaw[0].m,weightPtsRaw[0].d):todayStart)
+    :(nutriPtsRaw.length?new Date(nutriPtsRaw[0].y,nutriPtsRaw[0].m,nutriPtsRaw[0].d):todayStart));
+  const effEnd=anchor;
+  const spanDays=Math.max(1,Math.round((effEnd-effStart)/86400000)+1);
+
+  const y0=NOW.getFullYear(),m0=NOW.getMonth();
+  const st=settingsOf(mSet,y0,m0);
+  const tdee=st?Math.round(calcBMR(st.weight,st.fat)*ACT[st.activityIdx].f):null;
+  const macros=st&&tdee?macroTargets(st.weight,st.fat,tdee):null;
+  const weightGoal=goals.find(g=>g.type==="weight"&&g.active!==false);
+  const target=isWeight?(weightGoal?parseFloat(weightGoal.target)||null:null)
+    :type==="kcal"?tdee
+    :macros?macros[type]:null;
+
+  const bucketUnit=pickNutritionBucketUnit(range,spanDays);
+
+  const chartPoints=useMemo(()=>{
+    if(isWeight)return weightPtsRaw.map(p=>({ts:p.ts,y:p.y,m:p.m,d:p.d,value:p.w}));
+    const slots=fixedBucketSlots(effStart,effEnd,bucketUnit);
+    const aggMap=bucketNutritionPoints(nutriPtsRaw,bucketUnit);
+    return slots.map(s=>{
+      const agg=aggMap[s.key];
+      return {ts:s.ts,y:s.y,m:s.m,d:s.d,value:agg?agg[type]:null};
+    });
+  },[isWeight,weightPtsRaw,nutriPtsRaw,effStart,effEnd,bucketUnit,type]);
+
+  const realValues=isWeight?weightPtsRaw.map(p=>p.w):nutriPtsRaw.map(p=>p[type]);
+  const hasData=realValues.length>0;
+  const mainValue=isWeight
+    ?(hasData?weightPtsRaw[weightPtsRaw.length-1].w:null)
+    :(hasData?realValues.reduce((a,b)=>a+b,0)/realValues.length:null);
+
+  const canNavPrev=range!=="Max";
+  const canNavNext=range!=="Max"&&effEnd.getTime()<todayStart.getTime();
+  const navBy=WEIGHT_DETAIL_RANGE_DAYS[range]||30;
+  const navPrev=()=>{if(!canNavPrev)return;const d=new Date(anchor);d.setDate(d.getDate()-navBy);setAnchor(d);};
+  const navNext=()=>{
+    if(!canNavNext)return;
+    const d=new Date(anchor);d.setDate(d.getDate()+navBy);
+    setAnchor(d.getTime()>todayStart.getTime()?todayStart:d);
+  };
+
+  const emptyText=isWeight?"Keine Gewichtseinträge in diesem Zeitraum.":"Trage Mahlzeiten ein, um deine Entwicklung zu sehen.";
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"var(--bg)",zIndex:150,display:"flex",flexDirection:"column",animation:"up .32s cubic-bezier(.32,.72,.28,1)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"calc(16px + env(safe-area-inset-top)) 18px 8px",flexShrink:0}}>
+        <button onClick={onBack} style={{background:"none",border:"none",color:"var(--ink)",fontSize:30,lineHeight:1,padding:"0 2px 0 0",cursor:"pointer"}}>‹</button>
+        <div style={{fontWeight:800,fontSize:19,letterSpacing:.3,textTransform:"uppercase",color:"var(--ink)"}}>{cfg.title}</div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"6px 18px calc(18px + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column"}}>
+        <div style={{marginTop:6}}>
+          <div style={{fontSize:32,fontWeight:800,color:"var(--ink)",letterSpacing:-.5}}>
+            {mainValue!=null?fmtNum(mainValue,isWeight?1:0)+" "+cfg.unit:"–"}
+          </div>
+          <div className="sub" style={{fontSize:13,marginTop:2}}>
+            {detailDateRangeLabel(effStart.getFullYear(),effStart.getMonth(),effStart.getDate(),effEnd.getFullYear(),effEnd.getMonth(),effEnd.getDate())}
+          </div>
+        </div>
+
+        {range!=="Max"&&(
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+            <button onClick={navPrev} disabled={!canNavPrev} style={{width:30,height:30,borderRadius:99,border:"none",background:"var(--card2)",color:canNavPrev?"var(--ink)":"var(--ink3)",opacity:canNavPrev?1:.5,fontSize:16,cursor:canNavPrev?"pointer":"default"}}>‹</button>
+            <button onClick={navNext} disabled={!canNavNext} style={{width:30,height:30,borderRadius:99,border:"none",background:"var(--card2)",color:canNavNext?"var(--ink)":"var(--ink3)",opacity:canNavNext?1:.5,fontSize:16,cursor:canNavNext?"pointer":"default"}}>›</button>
+          </div>
+        )}
+
+        <div style={{marginTop:22}}>
+          <StatDetailChart key={range+"-"+anchor.getTime()} chartType={cfg.chartType} color={cfg.color}
+            points={chartPoints} bucketUnit={bucketUnit} target={target} hasData={hasData} emptyText={emptyText}
+            unit={cfg.unit} isWeight={isWeight} selIdx={selIdx} onSelect={setSelIdx}/>
+        </div>
+
+        {hasData&&(
+          <div style={{display:"flex",alignItems:"center",gap:16,marginTop:10,fontSize:12,color:"var(--ink3)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{width:10,height:10,borderRadius:3,background:cfg.color,display:"inline-block"}}/>
+              {cfg.title}
+            </div>
+            {target!=null&&(
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span>⚑</span> Ziel
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{marginTop:32,marginBottom:8}}>
+          <RangePillBar ranges={WEIGHT_DETAIL_RANGES} value={range} onChange={setRange}/>
+        </div>
+      </div>
     </div>
   );
 }
