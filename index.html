@@ -1948,7 +1948,18 @@ function Sheet({onClose,title,children}){
     else setDragY(0);         // sonst zurueckfedern
   };
   return(
-    <div>
+    /* Manche Sheets (z.B. WidgetInfoSheet) werden aus Bequemlichkeit INNERHALB
+       einer bereits anklickbaren Karte gerendert (z.B. ein Dashboard-Widget
+       mit onClick={onNavigate}). Ohne diesen stopPropagation wuerde ein Klick
+       auf "Verstanden"/den Overlay-Hintergrund im Sheet nach oben durch den
+       DOM-Baum bis zur umschliessenden Karte durchgereicht und dort
+       zusaetzlich deren onClick (z.B. einen Tab-Wechsel) ausloesen — das
+       Sheet ist dann zwar geschlossen, aber die App navigiert ungewollt mit
+       weg. Ein einziger stopPropagation auf dem aeussersten Sheet-Wrapper
+       reicht: er faengt JEDEN Klick innerhalb des Sheets ab, bevor er den
+       eigentlichen DOM-Baum darunter erreicht — unabhaengig davon, wo das
+       Sheet zufaellig eingehaengt ist. */
+    <div onClick={e=>e.stopPropagation()}>
       <div className="ov" onClick={onClose}/>
       <div className="sheet" style={{transform:"translateY("+dragY+"px)",transition:dragging?"none":"transform .35s cubic-bezier(.32,.72,.28,1)"}}>
         <div className="grab" style={{padding:"12px 0 18px",margin:"-12px 0 -2px",touchAction:"none"}}
