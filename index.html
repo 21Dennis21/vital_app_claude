@@ -4222,76 +4222,6 @@ function last7CalendarDays(now){
   return arr;
 }
 
-/* ===== Gemeinsame Chart-Geometrie/Skala fuer die Ernaehrungs-Statistik-
-   Diagramme (Balken UND Linie) =====
-   EIN Koordinatensystem fuer alle: CHART_ML reserviert links Platz fuer
-   die Y-Achsen-Beschriftung, damit Skala, Gridlines, Balken/Punkte und die
-   Tagesbeschriftung darunter garantiert exakt zueinander ausgerichtet
-   bleiben (dieselbe ML-Reservierung wird 1:1 als CSS-Grid-Spaltenbreite
-   fuer die Tagesbeschriftung uebernommen, siehe ChartDayLabels). */
-const CHART_W=300,CHART_H=96,CHART_ML=32;
-/* "Schoene", gerundete Achsenwerte (1/2/5 × 10^n-Schritte) fuer einen
-   Wertebereich [lo,hi] — NIE hartcodiert, immer aus echten Daten und/oder
-   echten Zielwerten abgeleitet. "count" ist nur ein Richtwert (die
-   tatsaechliche Anzahl haengt von der Rundung ab, typischerweise 3-5). */
-function niceTicks(lo,hi,count){
-  const range=Math.max(hi-lo,1e-6);
-  const rawStep=range/Math.max(count-1,1);
-  const mag=Math.pow(10,Math.floor(Math.log10(rawStep)));
-  const norm=rawStep/mag;
-  const niceNorm=norm<=1?1:norm<=2?2:norm<=5?5:10;
-  const step=niceNorm*mag;
-  const start=Math.ceil(lo/step)*step;
-  const out=[];
-  for(let v=start;v<=hi+step*1e-6;v+=step)out.push(Math.round(v*100)/100);
-  if(out.length===0)out.push(Math.round(lo*100)/100);
-  return out;
-}
-/* Gemeinsame Achsen-/Grid-Darstellung: sehr dezente horizontale
-   Orientierungslinien + kleine Wertbeschriftung links (var(--ink3), sehr
-   geringe Deckkraft), optional eine deutlich sichtbarere gestrichelte
-   Ziel-/Referenzlinie mit Label — bewusst staerkerer Kontrast als die
-   normalen Gridlines, damit "wo liegt mein Ziel" sofort auffaellt. Wird
-   von allen Chart-Komponenten (echte Daten UND Locked-Preview) genutzt,
-   damit beide exakt dieselbe Skala/Optik verwenden — keine zweite
-   parallele Grid-Implementierung. */
-function ChartAxis({ticks,yFor,targetY,targetLabel}){
-  return(
-    <React.Fragment>
-      {ticks.map((t,i)=>(
-        <React.Fragment key={i}>
-          <line x1={CHART_ML} y1={yFor(t)} x2={CHART_W} y2={yFor(t)} stroke="var(--line)" strokeWidth="1" opacity=".4"/>
-          <text x={CHART_ML-6} y={yFor(t)+3} textAnchor="end" fontSize="8" fill="var(--ink3)">{fmtNum(t,t%1?1:0)}</text>
-        </React.Fragment>
-      ))}
-      {targetY!=null&&(
-        <React.Fragment>
-          <line x1={CHART_ML} y1={targetY} x2={CHART_W} y2={targetY} stroke="var(--ink2)" strokeWidth="1.3" strokeDasharray="4,3" opacity=".75"/>
-          {targetLabel&&<text x={CHART_W} y={targetY-4} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--ink2)">{targetLabel}</text>}
-        </React.Fragment>
-      )}
-    </React.Fragment>
-  );
-}
-/* Gemeinsame Tagesbeschriftung (Wochentag + optional Datum) unter jedem
-   Chart. Die erste Grid-Spalte bleibt bewusst leer und ist exakt so breit
-   wie CHART_ML in der SVG (als Anteil von CHART_W) — dadurch liegt jede
-   der 7 Tagesspalten exakt unter ihrem Balken/Punkt, obwohl die SVG links
-   Platz fuer die Y-Achse reserviert. */
-function ChartDayLabels({days,highlight,showDate=true}){
-  return(
-    <div style={{display:"grid",gridTemplateColumns:(CHART_ML/CHART_W*100)+"% repeat(7,1fr)",marginTop:4}}>
-      <div/>
-      {days.map((d,i)=>(
-        <div key={i} style={{textAlign:"center"}}>
-          <div className="sub" style={{fontSize:10,fontWeight:highlight&&highlight[i]?700:500,color:highlight&&highlight[i]?"var(--ink)":"var(--ink3)"}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
-          {showDate&&<div className="sub" style={{fontSize:9,color:"var(--ink3)",marginTop:1}}>{d.d}</div>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* Gemeinsame Kartenhuelle fuer alle fuenf Statistik-Karten: Titel oben
    links, "Letzte 7 Tage" darunter, optionaler Kopfbereich rechts (Wert/
    Veraenderung), Diagramm darunter. onOpen (optional) macht die ganze
@@ -4348,96 +4278,70 @@ const STAT_LOCK_BARS=[ // rein dekorativ, keine echten Werte — je Balken eigen
 const STAT_LOCK_COLORS={kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E",training:"var(--accent)"};
 /* title (optional): fette Ueberschrift ueber dem Erklaertext, z.B. fuer
    den Trainings-Locked-State ("Noch keine Trainings gefunden" + Zusatz-
-   text). days/target/targetLabel (optional): zeigt im Hintergrund
-   dieselbe Skala/Gridlines/Ziellinie wie das spaetere echte Diagramm
-   (ChartAxis, siehe oben) sowie die Tagesbeschriftung darunter — "damit
-   der Nutzer bereits im gesperrten Zustand sieht, WAS ihn erwartet".
-   Bewusst rein OPTIONAL und ausschliesslich bei echten Werten gesetzt
-   (kein Ziel = keine Skala, keine erfundene Achse): der bestehende
-   Trainings-Aufrufort uebergibt diese Props nicht und bleibt dadurch
-   visuell exakt unveraendert. Die dekorativen Balken bleiben unveraendert
-   rein dekorativ (keine Zahlen darauf) und werden zusaetzlich transparenter
-   dargestellt, damit sie klar als Platzhalter erkennbar bleiben und nicht
-   mit der (falls vorhandenen) echten Skala verwechselt werden. */
-function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal",days,target,targetLabel}){
+   text). Bestehende Ernaehrungs-Aufrufstellen nutzen weiterhin nur "text"
+   und bleiben dadurch unveraendert. */
+function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
   const color=STAT_LOCK_COLORS[colorKey]||STAT_LOCK_COLORS.kcal;
-  const hasScale=target>0;
-  const ticks=hasScale?niceTicks(0,target*1.15,4):[];
-  const domainMax=hasScale?Math.max(ticks[ticks.length-1],target):1;
-  const yFor=v=>CHART_H-(v/domainMax)*CHART_H;
   return(
-    <div>
-      {/* position:relative ohne feste Hoehe — die SVG (normaler Textfluss,
-          exakt wie bei den echten Diagrammen) bestimmt die Hoehe ueber ihr
-          eigenes Seitenverhaeltnis; Balken/Abdunkler/Lock-Inhalt liegen
-          per inset:0 absolut darueber, dadurch keine Verzerrung der
-          Achsenbeschriftung durch ein erzwungenes abweichendes
-          Seitenverhaeltnis. Die Tagesbeschriftung steht bewusst AUSSERHALB
-          dieser Box (siehe unten) — CTA/Text ueberdecken sie dadurch nie. */}
-      <div style={{position:"relative",borderRadius:14,overflow:"hidden"}}>
-        <svg viewBox={"0 0 "+CHART_W+" "+CHART_H} style={{width:"100%",display:"block"}}>
-          {hasScale&&<ChartAxis ticks={ticks} yFor={yFor} targetY={yFor(target)} targetLabel={targetLabel}/>}
-        </svg>
-        <div aria-hidden="true" style={{position:"absolute",left:(CHART_ML/CHART_W*100)+"%",right:8,top:8,bottom:8,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6}}>
-          {STAT_LOCK_BARS.map((b,i)=>(
-            <div key={i} style={{flex:1,height:b.h+"%",background:color,opacity:.55,borderRadius:"9px 9px 3px 3px",
-              transformOrigin:"bottom","--bar-min":b.min,"--bar-max":b.max,
-              animation:"statBarLevel "+b.dur+"s ease-in-out infinite alternate",animationDelay:b.delay+"s"}}/>
-          ))}
-        </div>
-        {/* Nur noch ein sehr leichter Abdunkler — die farbigen Balken sollen
-            klar als eigenstaendiges, hochwertiges Gestaltungselement
-            erkennbar bleiben. Die Lesbarkeit von Text/CTA uebernimmt
-            stattdessen ausschliesslich das eigene, deutlich staerkere
-            Panel weiter unten. */}
-        <div style={{position:"absolute",inset:0,background:"var(--card)",opacity:.15}}/>
-        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"14px 16px",textAlign:"center"}}>
-          <div style={{width:44,height:44,minWidth:44,minHeight:44,flexShrink:0,borderRadius:99,background:"var(--card2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,marginBottom:10,boxShadow:"0 3px 12px rgba(0,0,0,.28)"}}>🔒</div>
-          <div style={{position:"relative",borderRadius:12}}>
-            <div style={{position:"absolute",inset:"-8px -12px",background:"var(--card)",opacity:.9,borderRadius:12}}/>
-            <div style={{position:"relative",padding:"0 2px"}}>
-              {title&&<div style={{fontSize:13,fontWeight:700,color:"var(--ink)",marginBottom:3}}>{title}</div>}
-              <div className="sub" style={{fontSize:12,lineHeight:1.4,fontWeight:600,color:"var(--ink)"}}>{text}</div>
-              {ctaLabel&&onCta&&(
-                <div className="pill on" onClick={e=>{e.stopPropagation();tapH();onCta();}}
-                  style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,padding:"var(--sp-1) var(--sp-2)",cursor:"pointer"}}>
-                  {ctaLabel} <span style={{fontSize:15}}>→</span>
-                </div>
-              )}
-            </div>
+    <div style={{position:"relative",height:148,overflow:"hidden",borderRadius:14}}>
+      <div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,padding:"0 6px 6px"}}>
+        {STAT_LOCK_BARS.map((b,i)=>(
+          <div key={i} style={{flex:1,height:b.h+"%",background:color,borderRadius:"9px 9px 3px 3px",
+            transformOrigin:"bottom","--bar-min":b.min,"--bar-max":b.max,
+            animation:"statBarLevel "+b.dur+"s ease-in-out infinite alternate",animationDelay:b.delay+"s"}}/>
+        ))}
+      </div>
+      {/* Nur noch ein sehr leichter Abdunkler — die farbigen Balken sollen
+          klar als eigenstaendiges, hochwertiges Gestaltungselement
+          erkennbar bleiben (Vorgabe: "staerkerer Kontrast zum Card-
+          Hintergrund", "duerfen einen groesseren Teil des Chart-Bereichs
+          einnehmen"). Die Lesbarkeit von Text/CTA uebernimmt stattdessen
+          ausschliesslich das eigene, deutlich staerkere Panel weiter unten. */}
+      <div style={{position:"absolute",inset:0,background:"var(--card)",opacity:.15}}/>
+      <div style={{position:"relative",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"14px 16px",textAlign:"center"}}>
+        <div style={{width:44,height:44,minWidth:44,minHeight:44,flexShrink:0,borderRadius:99,background:"var(--card2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,marginBottom:10,boxShadow:"0 3px 12px rgba(0,0,0,.28)"}}>🔒</div>
+        <div style={{position:"relative",borderRadius:12}}>
+          <div style={{position:"absolute",inset:"-8px -12px",background:"var(--card)",opacity:.9,borderRadius:12}}/>
+          <div style={{position:"relative",padding:"0 2px"}}>
+            {title&&<div style={{fontSize:13,fontWeight:700,color:"var(--ink)",marginBottom:3}}>{title}</div>}
+            <div className="sub" style={{fontSize:12,lineHeight:1.4,fontWeight:600,color:"var(--ink)"}}>{text}</div>
+            {ctaLabel&&onCta&&(
+              <div className="pill on" onClick={e=>{e.stopPropagation();tapH();onCta();}}
+                style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,padding:"var(--sp-1) var(--sp-2)",cursor:"pointer"}}>
+                {ctaLabel} <span style={{fontSize:15}}>→</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
-      {days&&<ChartDayLabels days={days}/>}
     </div>
   );
 }
 
 /* Balkendiagramm fuer Kalorien/Proteine/Kohlenhydrate/Fette — eine
    gemeinsame Komponente statt vier fast identischer Implementierungen.
-   Nutzt die gemeinsame Chart-Skala (ChartAxis/niceTicks/CHART_ML): dezente
-   Y-Achse + Gridlines fuer die Groessenordnung, "target" (optional, >0)
-   zeichnet zusaetzlich eine deutlichere gestrichelte Ziel-/Referenzlinie
-   auf Hoehe des bestehenden taeglichen Ziels. */
+   "target" (optional, >0) fliesst nur in die Skalierung der Balkenhoehen
+   ein (maxVal), es wird bewusst KEINE sichtbare Linie/Beschriftung dafuer
+   gezeichnet — die Karten sollen clean bleiben. */
 function NutritionBarChart({days,values,target,unit,color}){
-  const plotW=CHART_W-CHART_ML,colW=plotW/7;
-  const hi=Math.max(...values,target||0,1);
-  const ticks=niceTicks(0,hi*1.15,4);
-  const maxVal=Math.max(ticks[ticks.length-1],hi);
-  const yFor=v=>CHART_H-(v/maxVal)*CHART_H;
+  const W=300,H=84,colW=W/7;
+  const maxVal=Math.max(...values,target||0,1)*1.15;
+  const yFor=v=>H-(v/maxVal)*H;
   return(
     <div>
-      <svg viewBox={"0 0 "+CHART_W+" "+CHART_H} style={{width:"100%",display:"block"}}>
-        <ChartAxis ticks={ticks} yFor={yFor} targetY={target>0?yFor(target):null}
-          targetLabel={target>0?"Ziel "+fmtNum(target,0)+(unit?" "+unit:""):null}/>
+      <svg viewBox={"0 0 "+W+" "+(H+12)} style={{width:"100%",display:"block"}}>
         {values.map((v,i)=>{
           const bw=colW*0.46;
-          const x=CHART_ML+colW*i+colW/2-bw/2;
-          const h=v>0?Math.max(3,(v/maxVal)*CHART_H):0;
-          return <rect key={i} x={x} y={CHART_H-h} width={bw} height={h} rx="3" fill={color}/>;
+          const x=colW*i+colW/2-bw/2;
+          const h=v>0?Math.max(3,(v/maxVal)*H):0;
+          return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="3" fill={color}/>;
         })}
       </svg>
-      <ChartDayLabels days={days}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
+        {days.map((d,i)=>(
+          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4449,27 +4353,28 @@ function NutritionBarChart({days,values,target,unit,color}){
    echtem Eintrag, "i" ist deren Position (0-6) unter den 7 Kalendertagen,
    damit jeder Punkt exakt ueber seinem Datum liegt, auch bei Luecken. */
 function WeightStatChart({days,points,targetWeight}){
-  const plotW=CHART_W-CHART_ML,colW=plotW/7;
-  const xFor=i=>CHART_ML+colW*i+colW/2;
+  const W=300,H=84,colW=W/7;
+  const xFor=i=>colW*i+colW/2;
   const vals=points.map(p=>p.w).concat(targetWeight>0?[targetWeight]:[]);
   const min=Math.min(...vals),max=Math.max(...vals);
   const span=Math.max(max-min,0.6);
   const lo=min-span*0.3,hi=max+span*0.3;
-  const yFor=w=>CHART_H-((w-lo)/(hi-lo))*CHART_H;
-  const ticks=niceTicks(lo,hi,4);
+  const yFor=w=>H-((w-lo)/(hi-lo))*H;
   const path=points.map((p,i)=>(i===0?"M":"L")+xFor(p.i)+" "+yFor(p.w)).join(" ");
   const lastI=points.length?points[points.length-1].i:null;
   return(
     <div>
-      <svg viewBox={"0 0 "+CHART_W+" "+CHART_H} style={{width:"100%",display:"block"}}>
-        <ChartAxis ticks={ticks} yFor={yFor} targetY={targetWeight>0?yFor(targetWeight):null}
-          targetLabel={targetWeight>0?"Ziel "+fmtNum(targetWeight,1)+" kg":null}/>
+      <svg viewBox={"0 0 "+W+" "+(H+12)} style={{width:"100%",display:"block"}}>
         {points.length>1&&<path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
         {points.map(p=>(
           <circle key={p.i} cx={xFor(p.i)} cy={yFor(p.w)} r={p.i===lastI?3.6:2.4} fill="var(--accent)" stroke="var(--card)" strokeWidth="1"/>
         ))}
       </svg>
-      <ChartDayLabels days={days}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
+        {days.map((d,i)=>(
+          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4551,29 +4456,25 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
 
       <StatCard title="Kalorien">
         {!anyMealLogged
-          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}
-              days={days} target={tdee||0} targetLabel={tdee?("Ziel "+fmtNum(tdee,0)+" kcal"):null}/>
+          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Proteine">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}
-              days={days} target={macros.protein} targetLabel={macros.protein?("Ziel "+fmtNum(macros.protein,0)+" g"):null}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Kohlenhydrate">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}
-              days={days} target={macros.carbs} targetLabel={macros.carbs?("Ziel "+fmtNum(macros.carbs,0)+" g"):null}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color="#4E93AE"/>}
       </StatCard>
 
       <StatCard title="Fette">
         {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}
-              days={days} target={macros.fat} targetLabel={macros.fat?("Ziel "+fmtNum(macros.fat,0)+" g"):null}/>
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color="var(--amber)"/>}
       </StatCard>
     </div>
