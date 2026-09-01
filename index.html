@@ -4272,9 +4272,15 @@ const STAT_LOCK_BARS=[ // rein dekorativ, keine echten Werte — je Balken eigen
    Screenshots angelehnt, nicht 1:1 kopiert) — bewusst NICHT das globale
    Farbsystem (--accent/--good/--amber), da diese Balken ausdruecklich rein
    dekorativ sind und nicht mit echten Bilanz-/Fortschrittsfarben
-   verwechselt werden sollen. */
-const STAT_LOCK_COLORS={weight:"#6B9AB8",kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E"};
-function LockedStatisticState({text,ctaLabel,onCta,colorKey="kcal"}){
+   verwechselt werden sollen. Einzige bewusste Ausnahme: "training" nutzt
+   explizit die bestehende Accent-Farbe (siehe Vorgabe "dezente Accent-
+   Farbe" fuer den Trainings-Locked-State) — hier keine neue Farbe. */
+const STAT_LOCK_COLORS={weight:"#6B9AB8",kcal:"#33A99D",protein:"#B8A488",carbs:"#9DB05E",fat:"#5C8F5E",training:"var(--accent)"};
+/* title (optional): fette Ueberschrift ueber dem Erklaertext, z.B. fuer
+   den Trainings-Locked-State ("Noch keine Trainings gefunden" + Zusatz-
+   text). Bestehende Ernaehrungs-Aufrufstellen nutzen weiterhin nur "text"
+   und bleiben dadurch unveraendert. */
+function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
   const color=STAT_LOCK_COLORS[colorKey]||STAT_LOCK_COLORS.kcal;
   return(
     <div style={{position:"relative",height:148,overflow:"hidden",borderRadius:14}}>
@@ -4297,6 +4303,7 @@ function LockedStatisticState({text,ctaLabel,onCta,colorKey="kcal"}){
         <div style={{position:"relative",borderRadius:12}}>
           <div style={{position:"absolute",inset:"-8px -12px",background:"var(--card)",opacity:.9,borderRadius:12}}/>
           <div style={{position:"relative",padding:"0 2px"}}>
+            {title&&<div style={{fontSize:13,fontWeight:700,color:"var(--ink)",marginBottom:3}}>{title}</div>}
             <div className="sub" style={{fontSize:12,lineHeight:1.4,fontWeight:600,color:"var(--ink)"}}>{text}</div>
             {ctaLabel&&onCta&&(
               <div className="pill on" onClick={e=>{e.stopPropagation();tapH();onCta();}}
@@ -4476,21 +4483,133 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
   );
 }
 
+/* ===== STATISTIKEN → TRAINING: 7-Tage-Schnellübersicht =====
+   Analog zur Ernaehrungs-Schnelluebersicht (last7CalendarDays, StatCard,
+   LockedStatisticState) — bewusst dieselben bereits vorhandenen Bausteine
+   wiederverwendet, keine zweite parallele Implementierung. Nutzt
+   ausschliesslich bereits vorhandene Daten: dayData()/sports[]/kcalBurned
+   (calendar-engine.js + die zentrale Stelle, die kcalBurned beim
+   Speichern/Loeschen einer Aktivitaet pflegt — siehe App()). kcalBurned
+   ist je Sportart einheitlich vorhanden (im Unterschied zu Dauer, die nur
+   bei "gym" erfasst wird — siehe ActivitySheet), daher aktuell die
+   sinnvollste durchgaengige Balkenhoehen-Metrik (Stufe 2/3 der Vorgabe).
+   Struktur bewusst so gehalten, dass eine spaetere Metrik (z.B.
+   Trainingsdauer, Volumen) nur "values" ersetzen muesste — TrainingBarChart
+   selbst ist bereits metrik-agnostisch. */
+function TrainingBarChart({days,values,trainedFlags}){
+  const W=300,H=84,colW=W/7;
+  const maxVal=Math.max(...values,1)*1.15;
+  return(
+    <div>
+      <svg viewBox={"0 0 "+W+" "+(H+4)} style={{width:"100%",display:"block"}}>
+        {values.map((v,i)=>{
+          const bw=colW*0.5;
+          const x=colW*i+colW/2-bw/2;
+          /* Trainierte Tage: echte, proportionale Balkenhoehe (mit
+             Mindesthoehe, damit auch kleine Werte sichtbar bleiben).
+             Nicht trainierte Tage: feste, deutlich niedrigere neutrale
+             Basishoehe — rein als ruhiger Platzhalter, keine erfundene
+             Kennzahl. */
+          const h=trainedFlags[i]?Math.max(6,(v/maxVal)*H):8;
+          const color=trainedFlags[i]?"var(--accent)":"var(--card2)";
+          return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="4" fill={color}/>;
+        })}
+      </svg>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:6}}>
+        {days.map((d,i)=>(
+          <div key={i} style={{textAlign:"center"}}>
+            <div className="sub" style={{fontSize:10,fontWeight:trainedFlags[i]?700:500,color:trainedFlags[i]?"var(--ink)":"var(--ink3)"}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+            <div className="sub" style={{fontSize:9,color:"var(--ink3)",marginTop:1}}>{d.d}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrainingStatsView({data,openActivity}){
+  const days=useMemo(()=>last7CalendarDays(NOW),[]);
+  const dayRecords=useMemo(()=>days.map(d=>dayData(data,d.y,d.m,d.d)),[days,data]);
+  const kcalValues=dayRecords.map(x=>x.kcalBurned||0);
+  const trainedFlags=dayRecords.map(x=>!!(x.sports&&x.sports.length));
+  const anyTrained=trainedFlags.some(Boolean);
+  const totalKcal=kcalValues.reduce((s,v)=>s+v,0);
+
+  /* Vorwoche (Tage 8-14 zurueck) fuer den Trendvergleich — dieselbe
+     Metrik (kcalBurned) wie oben, damit der Vergleich konsistent bleibt. */
+  const prevDays=useMemo(()=>{const d=new Date(NOW);d.setDate(d.getDate()-7);return last7CalendarDays(d);},[]);
+  const prevTotalKcal=useMemo(()=>prevDays.reduce((s,d)=>s+(dayData(data,d.y,d.m,d.d).kcalBurned||0),0),[prevDays,data]);
+
+  /* Prozentualer Trend — behandelt explizit den 0/0- und 0/>0-Sonderfall
+     (siehe Vorgabe: niemals NaN/Infinity/undefined anzeigen). */
+  const trend=useMemo(()=>{
+    if(prevTotalKcal===0){
+      if(totalKcal===0)return {kind:"same",pct:0};
+      return {kind:"new",pct:null};
+    }
+    const pct=Math.round(((totalKcal-prevTotalKcal)/prevTotalKcal)*100);
+    if(pct>0)return {kind:"up",pct};
+    if(pct<0)return {kind:"down",pct};
+    return {kind:"same",pct:0};
+  },[totalKcal,prevTotalKcal]);
+
+  const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
+
+  return(
+    <div>
+      <StatCard title="Trainingsübersicht">
+        {anyTrained
+          ?<TrainingBarChart days={days} values={kcalValues} trainedFlags={trainedFlags}/>
+          :<LockedStatisticState title="Noch keine Trainings gefunden"
+              text="Absolviere dein erstes Training, um hier deine Entwicklung zu sehen."
+              colorKey="training" ctaLabel="Training starten" onCta={()=>openActivity(y,m,d,null)}/>}
+      </StatCard>
+
+      <div style={{display:"flex",gap:"var(--sp-2)"}}>
+        <div className="card card-compact" style={{flex:1,minWidth:0}}>
+          <div className="lbl" style={{fontWeight:700,color:"var(--ink)",fontSize:"var(--fs-desc)",marginBottom:"var(--sp-2)"}}>Aktivitäten</div>
+          <div className="num" style={{fontSize:22,fontWeight:700}}>{fmtNum(totalKcal,0)} kcal</div>
+          <div className="sub" style={{marginTop:6,fontSize:11,lineHeight:1.4}}>In den letzten 7 Tagen verbrannt</div>
+        </div>
+        <div className="card card-compact" style={{flex:1,minWidth:0}}>
+          <div className="lbl" style={{fontWeight:700,color:"var(--ink)",fontSize:"var(--fs-desc)",marginBottom:"var(--sp-2)"}}>Wöchentlicher Trend</div>
+          {trend.kind==="new"?(
+            <div className="num" style={{fontSize:22,fontWeight:700,color:SEM.good}}>↑ Neu aktiv</div>
+          ):(
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span className="num" style={{fontSize:22,fontWeight:700,color:trend.kind==="up"?SEM.good:"var(--ink)"}}>
+                {trend.kind==="up"?"↑":trend.kind==="down"?"↓":"→"} {trend.kind==="same"?"0":(trend.pct>0?"+":"")+trend.pct}%
+              </span>
+            </div>
+          )}
+          <div className="sub" style={{marginTop:6,fontSize:11,lineHeight:1.4}}>
+            {trend.kind==="up"?"Mehr als in der Vorwoche"
+              :trend.kind==="down"?"Weniger als in der Vorwoche"
+              :trend.kind==="new"?"Weiter so — dein Trend zeigt sich nach der nächsten Woche."
+              :"Unverändert zur Vorwoche"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===== TAB 4 (Bottom Nav): STATISTIKEN =====
    Neue Struktur: Ueberschrift "Statistiken" + Unternavigation Uebersicht/
    Training/Ernaehrung. "Uebersicht" bettet die komplette, unveraenderte
    bisherige Verlauf-Seite (VerlaufView: Kalender/Rueckblick/Gewicht/Sport/
    Jahr, Tagesdetails, alle Berechnungen) unangetastet ein — keine parallele
-   Statistik-Implementierung. "Training" bleibt vorerst ein leerer
-   Platzhalter. "Ernaehrung" zeigt die neue 7-Tage-Schnelluebersicht (siehe
-   ErnaehrungStatsView oben) — ausschliesslich echte Daten, keine Mock-
-   Werte, Cardio zaehlt spaeter zu Training statt eigener Tab.
+   Statistik-Implementierung. "Training" zeigt die neue 7-Tage-
+   Schnelluebersicht (siehe TrainingStatsView oben). "Ernaehrung" zeigt die
+   bestehende 7-Tage-Schnelluebersicht (siehe ErnaehrungStatsView oben) —
+   beide ausschliesslich echte Daten, keine Mock-Werte, Cardio zaehlt
+   spaeter zu Training statt eigener Tab.
    "Uebersicht" ist Standard; ein remount ueber den key an der Aufrufstelle
    (verlaufSeg als initialSeg fuer Dashboard-Navigation wie
    onNavigate("verlauf","Gewicht")) setzt auch statTab wieder auf
    "Uebersicht" zurueck, damit ein Dashboard-Sprung zu z.B. "Gewicht"
    sichtbar landet, selbst wenn zuvor "Training" oder "Ernaehrung" aktiv war. */
-function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup,onOpenWeightModal,onNavigate}){
+function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,currentDay,initialSeg,openDay,openSetup,openActivity,onOpenWeightModal,onNavigate}){
   const [statTab,setStatTab]=useState("Übersicht");
   return(
     <div className="vl-screen">
@@ -4501,9 +4620,7 @@ function StatistikenView({data,mSet,goals,calibProfile,weightConfirmations,curre
           weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={initialSeg}
           openDay={openDay} openSetup={openSetup}/>}
       {statTab==="Training"&&
-        <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
-          <div className="sub">Trainingsstatistiken befinden sich im Aufbau.</div>
-        </div>}
+        <TrainingStatsView data={data} openActivity={openActivity}/>}
       {statTab==="Ernährung"&&
         <ErnaehrungStatsView data={data} mSet={mSet} goals={goals} onOpenWeightModal={onOpenWeightModal} onNavigate={onNavigate}/>}
     </div>
@@ -6476,7 +6593,7 @@ function App(){
       {tab==="heute"&&<HomeView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)} onOpenSettings={()=>setTab("profil")}/>}
       {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
       {tab==="training"&&<TrainingView data={data} openActivity={openActivity}/>}
-      {tab==="verlauf"&&<StatistikenView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup} onOpenWeightModal={()=>setShowWeightModal(true)} onNavigate={navigateTo}/>}
+      {tab==="verlauf"&&<StatistikenView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup} openActivity={openActivity} onOpenWeightModal={()=>setShowWeightModal(true)} onNavigate={navigateTo}/>}
       {tab==="ziele"&&<Page onClose={()=>setTab("heute")} title="Ziele"><ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/></Page>}
       {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals} onClose={()=>setTab("heute")}/>}
       {["heute","ernaehrung","training","verlauf"].includes(tab)&&<TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>}
