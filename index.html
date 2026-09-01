@@ -180,6 +180,14 @@ input::placeholder{color:var(--ink3);}
 .marker-pop{transform-box:fill-box;transform-origin:50% 50%;animation:markerpop .13s ease-out;}
 @keyframes tooltipfade{from{opacity:0;}to{opacity:1;}}
 .tooltip-fade{display:inline-block;animation:tooltipfade .13s ease-out;}
+/* Dezente "atmende" Platzhalter-Balken fuer LockedStatisticState (Statistik-
+   Karten ohne Daten) — reines CSS, kein JS-Animationsloop. Skaliert nur
+   vertikal (scaleY, GPU-beschleunigt) um die eigene Basis-Hoehe herum,
+   Ankerpunkt unten (transformOrigin:"bottom" inline gesetzt). Die bereits
+   bestehende globale @media(prefers-reduced-motion:reduce)-Regel weiter
+   unten deaktiviert diese Animation automatisch — die Balken fallen dann
+   auf ihre statische, per Inline-Style gesetzte Basis-Hoehe zurueck. */
+@keyframes statBarBreathe{0%,100%{transform:scaleY(.82)}50%{transform:scaleY(1.12)}}
 /* Horizontale Zeitraum-Pill-Leiste (Gewichtsanalyse) — bewusst deutlich
    dezenter als die Hauptnavigation (.seg/.segb): kleiner, weniger Padding,
    kleinere Rundung, KEINE Akzentfarbe (die bleibt der Hauptnavigation, dem
@@ -4226,19 +4234,43 @@ function StatCard({title,headerRight,onOpen,children}){
   );
 }
 
-/* Dezenter Leerzustand — erzeugt bewusst KEINE Fuellbalken, nur Text +
-   optionaler bereits bestehender CTA (Navigation/Funktion, keine neue
-   Logging-Logik). */
-function StatEmpty({ctaLabel,onCta}){
+/* "Gesperrter" Zustand fuer Statistik-Karten ohne ausreichende echte
+   Daten — bewusst kein statischer "Keine Daten"-Text mehr, sondern ein
+   hochwertigerer, motivierender Zustand: dezente animierte Platzhalter-
+   Balken im Hintergrund (rein dekorativ, NIE echte Werte/Zahlen) hinter
+   einem abgedunkelten Overlay mit Schloss-Icon, kurzer Erklaerung und
+   bereits bestehendem CTA (Navigation/Funktion, keine neue Logging-
+   Logik). EINE gemeinsame Komponente fuer alle 5 Statistik-Karten statt
+   fuenf fast identischer Implementierungen. Die "Sperre" selbst ist rein
+   datengetrieben (der Aufrufer entscheidet anhand echter Daten, ob diese
+   Komponente ueberhaupt gerendert wird) — kein eigener locked/unlocked-
+   Status wird gespeichert. Balken-Animation ist reines CSS (siehe
+   @keyframes statBarBreathe oben im <style>-Block) — kein JS-
+   Animationsloop, kein zusaetzlicher React-State, respektiert dadurch
+   automatisch die bereits bestehende globale
+   prefers-reduced-motion-Regel (Balken zeigen dann nur ihre statische
+   Basis-Hoehe, keine Bewegung mehr). */
+const STAT_LOCK_BAR_HEIGHTS=[36,60,44,72,50,66,40]; // rein dekorativ, keine echten Werte
+function LockedStatisticState({text,ctaLabel,onCta}){
   return(
-    <div style={{textAlign:"center",padding:"14px 0 4px"}}>
-      <div className="sub">Noch keine Daten für diesen Zeitraum.</div>
-      {ctaLabel&&onCta&&(
-        <div onClick={e=>{e.stopPropagation();tapH();onCta();}}
-          style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600,color:"var(--accent)",cursor:"pointer"}}>
-          {ctaLabel} <span style={{fontSize:15}}>→</span>
-        </div>
-      )}
+    <div style={{position:"relative",height:96,overflow:"hidden",borderRadius:14}}>
+      <div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:5,padding:"0 4px 4px"}}>
+        {STAT_LOCK_BAR_HEIGHTS.map((h,i)=>(
+          <div key={i} style={{flex:1,height:h+"%",background:"var(--card2)",borderRadius:"4px 4px 2px 2px",
+            transformOrigin:"bottom",animation:"statBarBreathe 3.6s ease-in-out infinite",animationDelay:(i*0.22)+"s"}}/>
+        ))}
+      </div>
+      <div style={{position:"absolute",inset:0,background:"var(--card)",opacity:.84}}/>
+      <div style={{position:"relative",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 16px",textAlign:"center"}}>
+        <div style={{fontSize:19,opacity:.8,marginBottom:6}}>🔒</div>
+        <div className="sub" style={{fontSize:12,lineHeight:1.4}}>{text}</div>
+        {ctaLabel&&onCta&&(
+          <div onClick={e=>{e.stopPropagation();tapH();onCta();}}
+            style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600,color:"var(--accent)",cursor:"pointer"}}>
+            {ctaLabel} <span style={{fontSize:15}}>→</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -4350,8 +4382,17 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
   const diffW=weightPoints.length>=2?curW-weightPoints[0].w:null;
   const wDirection=inferWeightGoalDirection(goals,curW);
 
-  const anyLogged=dayRecords.some(isDayLogged);
-  const mealCta={ctaLabel:onNavigate?"Mahlzeit eintragen":null,onCta:onNavigate?()=>onNavigate("ernaehrung"):null};
+  /* WICHTIG: bewusst NICHT isDayLogged() (week-engine.js) verwenden — das
+     ist app-weit ein breiterer Flag ("irgendetwas an diesem Tag erfasst",
+     wird z.B. beim reinen Speichern eines Gewichts ueber attemptSaveWeight
+     ebenfalls auf true gesetzt, siehe saveWeightForDateRaw). Fuer die
+     Kalorien-/Makro-Karten zaehlt ausschliesslich, ob an einem der 7 Tage
+     tatsaechlich eine Mahlzeit eingetragen wurde — sonst wuerde ein reiner
+     Gewichtseintrag faelschlich einen leeren 0-Balken-Chart statt des
+     Locked State zeigen. */
+  const anyMealLogged=dayRecords.some(x=>Object.values(x.meals||{}).some(items=>(items||[]).length>0));
+  const mealCtaLabel=onNavigate?"Mahlzeit eintragen":null;
+  const onMealCta=onNavigate?()=>onNavigate("ernaehrung"):null;
 
   return(
     <div>
@@ -4367,31 +4408,32 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           </div>
         )}>
         {weightPoints.length===0
-          ?<StatEmpty ctaLabel={onOpenWeightModal?"Gewicht eintragen":null} onCta={onOpenWeightModal}/>
+          ?<LockedStatisticState text="Trage dein Gewicht ein, um deine Entwicklung zu sehen."
+              ctaLabel={onOpenWeightModal?"Gewicht eintragen":null} onCta={onOpenWeightModal}/>
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
       <StatCard title="Kalorien">
-        {!anyLogged
-          ?<StatEmpty {...mealCta}/>
+        {!anyMealLogged
+          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Proteine">
-        {!anyLogged
-          ?<StatEmpty {...mealCta}/>
+        {!anyMealLogged
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color="var(--accent)"/>}
       </StatCard>
 
       <StatCard title="Kohlenhydrate">
-        {!anyLogged
-          ?<StatEmpty {...mealCta}/>
+        {!anyMealLogged
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color="#4E93AE"/>}
       </StatCard>
 
       <StatCard title="Fette">
-        {!anyLogged
-          ?<StatEmpty {...mealCta}/>
+        {!anyMealLogged
+          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." ctaLabel={mealCtaLabel} onCta={onMealCta}/>
           :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color="var(--amber)"/>}
       </StatCard>
     </div>
