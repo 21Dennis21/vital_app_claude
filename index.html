@@ -4221,6 +4221,54 @@ function last7CalendarDays(now){
   }
   return arr;
 }
+/* Ganzzahl mit deutscher Tausendertrennung (z.B. "2.143") — dieselbe
+   Schreibweise, die die App an anderen Stellen bereits fuer kcal-Werte
+   nutzt (toLocaleString("de-DE")), hier zentral fuer die Ø/Ziel-Anzeigen
+   der Ernaehrungs-Statistik-Karten. */
+function fmtInt(n){return Math.round(n||0).toLocaleString("de-DE");}
+/* Gemeinsame Tagesbeschriftung (Wochentag + Datum) unter jedem Statistik-
+   Diagramm — sieben gleich breite Spalten, keine Y-Achsen-Randreservierung
+   noetig (die Charts haben bewusst keine sichtbare Skala). */
+function ChartDayLabels({days}){
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
+      {days.map((d,i)=>(
+        <div key={i} style={{textAlign:"center"}}>
+          <div className="sub" style={{fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+          <div className="sub" style={{fontSize:9,marginTop:1}}>{d.d}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+/* Koerpergewicht-Carry-Forward fuer die letzten 7 Kalendertage: an Tagen
+   ohne neue Messung wird fuer die VISUALISIERUNG das zuletzt bekannte
+   Gewicht fortgefuehrt, statt die Kurve abreissen zu lassen — es werden
+   dabei KEINE neuen Eintraege in "data" erzeugt (rein abgeleitete
+   Anzeigewerte). "real:true" markiert einen Tag mit tatsaechlicher
+   Messung, "real:false" einen fortgefuehrten Tag (aktuell nicht separat
+   dargestellt, aber bewusst mitgefuehrt, damit die Datenquelle jederzeit
+   zwischen beiden unterscheiden kann). Liegt vor Beginn des 7-Tage-
+   Fensters bereits ein Gewicht vor, dient dieses als Startwert; wurde noch
+   nie ein Gewicht eingetragen, bleiben die betroffenen Tage ohne Punkt
+   (fuehrt zu leerem "points"-Array -> bestehender Empty State). */
+function last7WeightCarryForward(data,days){
+  let known=null;
+  const first=days[0];
+  const it=new Date(first.y,first.m,first.d);
+  for(let i=0;i<90;i++){
+    const x=dayData(data,it.getFullYear(),it.getMonth(),it.getDate());
+    if(x.weight>0){known=x.weight;break;}
+    it.setDate(it.getDate()-1);
+  }
+  const out=[];
+  days.forEach((d,i)=>{
+    const x=dayData(data,d.y,d.m,d.d);
+    if(x.weight>0){known=x.weight;out.push({i,w:known,real:true});}
+    else if(known!=null)out.push({i,w:known,real:false});
+  });
+  return out;
+}
 
 /* Gemeinsame Kartenhuelle fuer alle fuenf Statistik-Karten: Titel oben
    links, "Letzte 7 Tage" darunter, optionaler Kopfbereich rechts (Wert/
@@ -4337,44 +4385,40 @@ function NutritionBarChart({days,values,target,unit,color}){
           return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="3" fill={color}/>;
         })}
       </svg>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
-        {days.map((d,i)=>(
-          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
-        ))}
-      </div>
+      <ChartDayLabels days={days}/>
     </div>
   );
 }
 
 /* Punkte-/Liniendiagramm fuer Koerpergewicht — bewusst eigenstaendig statt
-   NutritionBarChart (Linie statt Balken) UND bewusst NICHT bei fehlenden
-   Tagen aufgefuellt (siehe Vorgabe: nur tatsaechlich vorhandene Messungen,
-   keine erfundenen Zwischenwerte) — "points" enthaelt nur Tage mit
-   echtem Eintrag, "i" ist deren Position (0-6) unter den 7 Kalendertagen,
-   damit jeder Punkt exakt ueber seinem Datum liegt, auch bei Luecken. */
+   NutritionBarChart (Linie statt Balken). "points" kommt aus
+   last7WeightCarryForward() und enthaelt bereits fuer jeden anzeigbaren
+   Tag einen Wert (echt oder fortgefuehrt), "i" ist dessen Position (0-6)
+   unter den 7 Kalendertagen. PADTOP reserviert Platz fuer die
+   Wertbeschriftung oberhalb jedes Punktes, damit sie auch beim hoechsten
+   Punkt nie abgeschnitten wird. */
 function WeightStatChart({days,points,targetWeight}){
-  const W=300,H=84,colW=W/7;
+  const W=300,H=78,PADTOP=16,colW=W/7;
   const xFor=i=>colW*i+colW/2;
   const vals=points.map(p=>p.w).concat(targetWeight>0?[targetWeight]:[]);
   const min=Math.min(...vals),max=Math.max(...vals);
   const span=Math.max(max-min,0.6);
   const lo=min-span*0.3,hi=max+span*0.3;
-  const yFor=w=>H-((w-lo)/(hi-lo))*H;
+  const yFor=w=>PADTOP+H-((w-lo)/(hi-lo))*H;
   const path=points.map((p,i)=>(i===0?"M":"L")+xFor(p.i)+" "+yFor(p.w)).join(" ");
   const lastI=points.length?points[points.length-1].i:null;
   return(
     <div>
-      <svg viewBox={"0 0 "+W+" "+(H+12)} style={{width:"100%",display:"block"}}>
-        {points.length>1&&<path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+      <svg viewBox={"0 0 "+W+" "+(PADTOP+H+12)} style={{width:"100%",display:"block"}}>
+        {points.length>1&&<path d={path} fill="none" stroke="var(--good)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
         {points.map(p=>(
-          <circle key={p.i} cx={xFor(p.i)} cy={yFor(p.w)} r={p.i===lastI?3.6:2.4} fill="var(--accent)" stroke="var(--card)" strokeWidth="1"/>
+          <React.Fragment key={p.i}>
+            <text x={xFor(p.i)} y={yFor(p.w)-8} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--ink2)">{fmtNum(p.w,1)}</text>
+            <circle cx={xFor(p.i)} cy={yFor(p.w)} r={p.i===lastI?3.6:2.6} fill="var(--card)" stroke="var(--good)" strokeWidth="1.6"/>
+          </React.Fragment>
         ))}
       </svg>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:4}}>
-        {days.map((d,i)=>(
-          <div key={i} className="sub" style={{textAlign:"center",fontSize:10}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
-        ))}
-      </div>
+      <ChartDayLabels days={days}/>
     </div>
   );
 }
@@ -4394,32 +4438,35 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
   const tdee=st?Math.round(calcBMR(st.weight,st.fat)*ACT[st.activityIdx].f):null;
   const macros=st&&tdee?macroTargets(st.weight,st.fat,tdee):{carbs:0,protein:0,fat:0};
 
-  /* Koerpergewicht: ausschliesslich echte Eintraege innerhalb der letzten
-     7 Kalendertage, "i" = Position unter den 7 Tagen fuer die exakte
-     Ausrichtung im Diagramm. */
-  const weightPoints=useMemo(()=>{
-    const out=[];
-    days.forEach((d,i)=>{
-      const x=dayData(data,d.y,d.m,d.d);
-      if(x.weight>0)out.push({i,w:x.weight});
-    });
-    return out;
-  },[days,data]);
+  /* Koerpergewicht: Carry-Forward-Darstellung (siehe
+     last7WeightCarryForward) — Tage ohne neue Messung zeigen das zuletzt
+     bekannte Gewicht fort, "i" = Position unter den 7 Tagen fuer die
+     exakte Ausrichtung im Diagramm. */
+  const weightPoints=useMemo(()=>last7WeightCarryForward(data,days),[days,data]);
   const weightGoal=goals.find(g=>g.type==="weight"&&g.active!==false);
   const targetWeight=weightGoal?parseFloat(weightGoal.target)||0:0;
   const curW=weightPoints.length?weightPoints[weightPoints.length-1].w:0;
   const diffW=weightPoints.length>=2?curW-weightPoints[0].w:null;
   const wDirection=inferWeightGoalDirection(goals,curW);
 
-  /* WICHTIG: bewusst NICHT isDayLogged() (week-engine.js) verwenden — das
-     ist app-weit ein breiterer Flag ("irgendetwas an diesem Tag erfasst",
-     wird z.B. beim reinen Speichern eines Gewichts ueber attemptSaveWeight
-     ebenfalls auf true gesetzt, siehe saveWeightForDateRaw). Fuer die
-     Kalorien-/Makro-Karten zaehlt ausschliesslich, ob an einem der 7 Tage
-     tatsaechlich eine Mahlzeit eingetragen wurde — sonst wuerde ein reiner
-     Gewichtseintrag faelschlich einen leeren 0-Balken-Chart statt des
-     Locked State zeigen. */
-  const anyMealLogged=dayRecords.some(x=>Object.values(x.meals||{}).some(items=>(items||[]).length>0));
+  /* Zentrale 7-Tage-Aggregation fuer die Ernaehrungswerte — bewusst
+     GETRENNT von der Gewichts-Logik: hier wird NICHTS fortgefuehrt, ein
+     Tag ohne Mahlzeit bleibt 0/kein Balken (siehe NutritionBarChart).
+     "mealDays" sind ausschliesslich Tage mit tatsaechlich eingetragener
+     Mahlzeit — Grundlage sowohl fuer den Locked/Unlocked-Zustand als auch
+     fuer den Ø-Durchschnitt (der NICHT durch 7 geteilt wird, sondern nur
+     durch die Tage mit echten Daten, sonst wuerde ein einzelner
+     geloggter Tag einen falsch niedrigen Schnitt ergeben). WICHTIG:
+     bewusst NICHT isDayLogged() (week-engine.js) verwenden — das ist
+     app-weit ein breiterer Flag ("irgendetwas an diesem Tag erfasst",
+     wird z.B. beim reinen Speichern eines Gewichts ueber
+     attemptSaveWeight ebenfalls auf true gesetzt, siehe
+     saveWeightForDateRaw), waehrend hier ausschliesslich echte
+     Mahlzeiten zaehlen sollen. */
+  const mealDays=useMemo(()=>dayRecords.filter(x=>Object.values(x.meals||{}).some(items=>(items||[]).length>0)),[dayRecords]);
+  const avgOf=key=>mealDays.length?mealDays.reduce((s,x)=>s+(x[key]||0),0)/mealDays.length:null;
+  const avgKcal=avgOf("kcalIn"),avgProtein=avgOf("proteinIn"),avgCarbs=avgOf("carbsIn"),avgFat=avgOf("fatIn");
+  const anyMealLogged=mealDays.length>0;
   const mealCtaLabel=onNavigate?"Mahlzeit eintragen":null;
   const onMealCta=onNavigate?()=>onNavigate("ernaehrung"):null;
 
@@ -4454,28 +4501,60 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
-      <StatCard title="Kalorien">
+      <StatCard title="Kalorien"
+        headerRight={anyMealLogged&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
+              Ø {fmtInt(avgKcal)} kcal{tdee>0?" / "+fmtInt(tdee)+" kcal":""}
+            </div>
+            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
+          </div>
+        )}>
         {!anyMealLogged
           ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color="var(--accent)"/>}
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color={STAT_LOCK_COLORS.kcal}/>}
       </StatCard>
 
-      <StatCard title="Proteine">
+      <StatCard title="Proteine"
+        headerRight={anyMealLogged&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
+              Ø {fmtInt(avgProtein)}g{macros.protein>0?" / "+fmtInt(macros.protein)+"g":""}
+            </div>
+            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
+          </div>
+        )}>
         {!anyMealLogged
           ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color="var(--accent)"/>}
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color={STAT_LOCK_COLORS.protein}/>}
       </StatCard>
 
-      <StatCard title="Kohlenhydrate">
+      <StatCard title="Kohlenhydrate"
+        headerRight={anyMealLogged&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
+              Ø {fmtInt(avgCarbs)}g{macros.carbs>0?" / "+fmtInt(macros.carbs)+"g":""}
+            </div>
+            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
+          </div>
+        )}>
         {!anyMealLogged
           ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color="#4E93AE"/>}
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color={STAT_LOCK_COLORS.carbs}/>}
       </StatCard>
 
-      <StatCard title="Fette">
+      <StatCard title="Fette"
+        headerRight={anyMealLogged&&(
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
+              Ø {fmtInt(avgFat)}g{macros.fat>0?" / "+fmtInt(macros.fat)+"g":""}
+            </div>
+            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
+          </div>
+        )}>
         {!anyMealLogged
           ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color="var(--amber)"/>}
+          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color={STAT_LOCK_COLORS.fat}/>}
       </StatCard>
     </div>
   );
