@@ -2164,15 +2164,33 @@ function MonthNav({y,m,onPrev,onNext,marginBottom="var(--sp-2)",variant}){
   );
 }
 
-/* Tab-Icons als schlanke SVG-Linienzeichnungen (Ersatz fuer SF Symbols im Web) */
+/* Tab-Icons als schlanke SVG-Linienzeichnungen (Ersatz fuer SF Symbols im Web).
+   "heute" (jetzt Home) und "verlauf" (jetzt Statistiken) behalten ihre
+   bisherigen Icons — passen inhaltlich unveraendert (Haus/Balkendiagramm).
+   "ernaehrung" (Teller) und "training" (Puls/Aktivitaet) sind neu, im
+   selben Strichstil (viewBox 24x24, stroke=currentColor, strokeWidth 1.9)
+   ergaenzt — keine neue Icon-Bibliothek, nur zwei weitere Linien-SVGs nach
+   demselben bereits etablierten Muster. "ziele"/"profil" bleiben als
+   interne Keys bestehen (weiterhin fuer die aus der Bottom-Nav entfernten,
+   aber ueber Zahnrad/Dashboard-Widgets erreichbaren Screens verwendet),
+   ihre Icons werden aber nirgends mehr angezeigt. */
 const IC={
   heute:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>,
+  ernaehrung:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.6"/></svg>,
+  training:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
   verlauf:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M5 20v-7"/><path d="M12 20V5"/><path d="M19 20v-10"/></svg>,
   ziele:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r=".7" fill="currentColor"/></svg>,
   profil:<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>,
 };
+/* Bottom Navigation: HOME | ERNÄHRUNG | TRAINING | STATISTIKEN. Interne
+   Keys "heute"/"verlauf" bewusst UNVERAENDERT gelassen (nur Label/Position/
+   Icon geaendert) — vermeidet, jede bestehende onNavigate("verlauf",...)-
+   Stelle (mehrere Dashboard-Widgets) mit umbenennen zu muessen. "ziele" und
+   "profil" sind absichtlich NICHT mehr Teil dieser Liste (siehe App():
+   beide bleiben als Screen erreichbar, nur nicht mehr als eigener Bottom-
+   Tab). */
 function TabBar({tab,setTab}){
-  const tabs=[["heute","Heute"],["verlauf","Verlauf"],["ziele","Ziele"],["profil","Mehr"]];
+  const tabs=[["heute","Home"],["ernaehrung","Ernährung"],["training","Training"],["verlauf","Statistiken"]];
   return(
     <div className="tabbar">
       {tabs.map(([k,l])=>(
@@ -2730,7 +2748,28 @@ function CalorieBreakdownSheet({st,budget,eaten,burned,tdee,goals,data,onClose})
   );
 }
 
-function HeuteView({data,mSet,goals,dashRefresh,openDay,openSetup,openActivity,openMeal,openMealDetail,openPersonalize,onNavigate,onOpenWeightModal}){
+/* ===== TAB 1: HOME — ausschliesslich das personalisierbare Dashboard.
+   Zahnrad oben rechts oeffnet den bisherigen "Mehr"-Bereich (ueber
+   onOpenSettings, an der App()-Aufrufstelle auf setTab("profil") gemappt).
+   DashboardSection selbst bleibt unveraendert (gleiche Props wie zuvor in
+   HeuteView). ===== */
+function HomeView({data,mSet,goals,dashRefresh,openPersonalize,onNavigate,onOpenWeightModal,onOpenSettings}){
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:"var(--sp-2)"}}>
+        <button className="dc" aria-label="Einstellungen" onClick={()=>{tapH();onOpenSettings();}}
+          style={{width:38,height:38,borderRadius:99,background:"var(--card2)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"var(--ink)"}}>⚙️</button>
+      </div>
+      <DashboardSection data={data} mSet={mSet} goals={goals} refreshKey={dashRefresh} onPersonalize={openPersonalize} onNavigate={onNavigate} onEditWeight={onOpenWeightModal}/>
+    </div>
+  );
+}
+
+/* ===== TAB 2: ERNÄHRUNG — Begruessung, Kalorien-Hero-Karte, Gewicht heute,
+   Mahlzeiten, Aktivitaeten. Entspricht 1:1 dem bisherigen Inhalt von
+   HeuteView, nur ohne die DashboardSection am Ende (die jetzt in HomeView
+   liegt). ===== */
+function ErnaehrungView({data,mSet,goals,openDay,openSetup,openActivity,openMeal,openMealDetail,onOpenWeightModal}){
   const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
   const today=dayData(data,y,m,d);
   const st=settingsOf(mSet,y,m);
@@ -2890,12 +2929,25 @@ function HeuteView({data,mSet,goals,dashRefresh,openDay,openSetup,openActivity,o
         </div>
       </div>
 
-      <DashboardSection data={data} mSet={mSet} goals={goals} refreshKey={dashRefresh} onPersonalize={openPersonalize} onNavigate={onNavigate} onEditWeight={onOpenWeightModal}/>
     </div>
   );
 }
 
-/* ===== TAB 2: VERLAUF — Kalender, Wochen, Gewicht, Sport, Jahr als Segmente ===== */
+/* ===== TAB 3: TRAINING — noch keine fertige Funktionalitaet vorhanden,
+   daher bewusst nur ein leerer Platzhalter-Screen ohne erfundene Features.
+   Wird spaeter separat ausgebaut. ===== */
+function TrainingView(){
+  return(
+    <div>
+      <div className="h1" style={{marginBottom:18}}>Training</div>
+      <div className="card" style={{textAlign:"center",padding:"32px 20px"}}>
+        <div className="sub">Der Trainingsbereich befindet sich im Aufbau.</div>
+      </div>
+    </div>
+  );
+}
+
+/* ===== TAB 4: STATISTIKEN (bisher "Verlauf") — Kalender, Wochen, Gewicht, Sport, Jahr als Segmente ===== */
 /* ===== Interaktives Gewichts-Diagramm =====
    Grosses, minimalistisches Diagramm als eigenstaendige Komponente. Beim
    Ziehen/Druecken ueber die Zeichenflaeche erscheinen eine vertikale
@@ -4145,8 +4197,7 @@ function ZieleView({data,mSet,goals,openGoal}){
 
   return(
     <div>
-      <div className="row" style={{marginBottom:14}}>
-        <div className="h1">Ziele</div>
+      <div className="row" style={{marginBottom:14,justifyContent:"flex-end"}}>
         <button className="pill on" style={{padding:"9px 16px"}} onClick={()=>{tapH();openGoal(null);}}>＋ Neues Ziel</button>
       </div>
 
@@ -4297,7 +4348,7 @@ function MenuRow({icon,label,sub,onClick}){
   );
 }
 
-function ProfilView({data,mSet,theme,setTheme,openSetup,setData,setMSet,setGoals}){
+function ProfilView({data,mSet,theme,setTheme,openSetup,setData,setMSet,setGoals,onClose}){
   const [screen,setScreen]=useState(null);
   const back=()=>setScreen(null);
   if(screen==="profil")return <ProfilDetailPage mSet={mSet} openSetup={openSetup} onClose={back}/>;
@@ -4320,8 +4371,7 @@ Bei Fragen oder Problemen nutze „Feedback“."/>;
 Es gibt aktuell keinen eingebauten Feedback-Kanal in der App selbst."/>;
 
   return(
-    <div>
-      <div className="h1" style={{marginBottom:18}}>Mehr</div>
+    <Page onClose={onClose} title="Mehr">
       <div className="card" style={{padding:0,overflow:"hidden"}}>
         <MenuRow icon="👤" label="Profil" sub="Grundbedarf" onClick={()=>setScreen("profil")}/>
         <MenuRow icon="⚙️" label="Einstellungen" sub="Darstellung, Testdaten" onClick={()=>setScreen("einstellungen")}/>
@@ -4333,7 +4383,7 @@ Es gibt aktuell keinen eingebauten Feedback-Kanal in der App selbst."/>;
         <MenuRow icon="✉️" label="Feedback" onClick={()=>setScreen("feedback")}/>
       </div>
       <div className="sub" style={{textAlign:"center",padding:"16px 0 20px"}}>VITAL · Katch-McArdle · 1 kg Fett ≈ {KCAL_PER_KG} kcal</div>
-    </div>
+    </Page>
   );
 }
 
@@ -6054,11 +6104,13 @@ function App(){
   };
   return(
     <div className="app">
-      {tab==="heute"&&<HeuteView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openDay={openDay} openSetup={openSetup} openActivity={openActivity} openMeal={openMeal} openMealDetail={openMealDetail} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
+      {tab==="heute"&&<HomeView data={data} mSet={mSet} goals={goals} dashRefresh={dashRefresh} openPersonalize={()=>setShowPersonalize(true)} onNavigate={navigateTo} onOpenWeightModal={()=>setShowWeightModal(true)} onOpenSettings={()=>setTab("profil")}/>}
+      {tab==="ernaehrung"&&<ErnaehrungView data={data} mSet={mSet} goals={goals} openDay={openDay} openSetup={openSetup} openActivity={openActivity} openMeal={openMeal} openMealDetail={openMealDetail} onOpenWeightModal={()=>setShowWeightModal(true)}/>}
+      {tab==="training"&&<TrainingView/>}
       {tab==="verlauf"&&<VerlaufView key={verlaufSeg||"default"} data={data} mSet={mSet} goals={goals} calibProfile={calibProfile} weightConfirmations={weightConfirmations} currentDay={currentDay} initialSeg={verlaufSeg} openDay={openDay} openSetup={openSetup}/>}
-      {tab==="ziele"&&<ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/>}
-      {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals}/>}
-      <TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>
+      {tab==="ziele"&&<Page onClose={()=>setTab("heute")} title="Ziele"><ZieleView data={data} mSet={mSet} goals={goals} openGoal={g=>setGoalT(g)}/></Page>}
+      {tab==="profil"&&<ProfilView data={data} mSet={mSet} theme={theme} setTheme={setTheme} openSetup={openSetup} setData={setData} setMSet={setMSet} setGoals={setGoals} onClose={()=>setTab("heute")}/>}
+      {["heute","ernaehrung","training","verlauf"].includes(tab)&&<TabBar tab={tab} setTab={t=>{setVerlaufSeg(null);setTab(t);}}/>}
       {dayT&&<DayDetailSheet key={dk(dayT.y,dayT.m,dayT.d)} date={dayT} data={data} mSet={mSet}
         onSaveWeight={attemptSaveWeight}
         onOpenMealDetail={(y,m,d,mealKey)=>{setDayT(null);openMealDetail(y,m,d,mealKey);}}

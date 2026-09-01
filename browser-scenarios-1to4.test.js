@@ -54,6 +54,11 @@ async function main(){
   const ls = dom.window.localStorage;
   check(d.getElementById("root").innerHTML.length>0, "SETUP: App rendert mit Vorab-Daten");
 
+  // "Gewicht heute" liegt seit der Tab-Restrukturierung im Ernährung-Tab,
+  // nicht mehr auf dem Home-Tab (der jetzt ausschliesslich das Dashboard zeigt).
+  clickByText(d, "Ernährung");
+  await flush(dom);
+
   // =================================================================
   console.log("\n--- 1. Normales Gewicht speichern (Dashboard) ---");
   clickByText(d, "⚖️ Gewicht heute");

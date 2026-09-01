@@ -52,7 +52,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 6. Denselben Ablauf über den Kalender testen ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   // Im Verlauf zur Kalenderansicht wechseln, sofern nicht bereits aktiv, und den 2. August oeffnen
   const calButtons=[...d.querySelectorAll("button")].filter(b=>b.textContent.trim()==="Kalender");

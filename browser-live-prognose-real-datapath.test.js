@@ -96,7 +96,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 1. August: Grundbedarf einrichten + 3 Tage loggen (echte UI) ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Kalender");
   await flush(dom);
@@ -108,7 +108,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 2. Juli: ERST Tage loggen, DANACH Grundbedarf nachtragen (Reihenfolge wie beim echten Nutzer plausibel) ---");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Kalender");
   await flush(dom);
@@ -123,7 +123,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 3. Ankergewicht über die echte 'Gewicht heute'-UI eintragen ---");
-  clickByText(d, "Heute");
+  clickByText(d, "Ernährung");
   await flush(dom);
   clickByText(d, "⚖️ Gewicht heute");
   await flush(dom);
@@ -156,7 +156,7 @@ async function main(){
   check(forecast.status==="ok", "Engine: ok (einfaches Modell hat keine Mindestanzahl an Tagen mehr, erhalten: "+forecast.status+")");
   check(forecast.validBalanceDays===6, "Engine: validBalanceDays=6 (erhalten: "+forecast.validBalanceDays+")");
 
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);
@@ -168,21 +168,21 @@ async function main(){
   // =================================================================
   console.log("\n--- 6. 7. Tag (28.7.) nachtragen — Meldung aktualisiert sich SOFORT, ohne Reload ---");
   // WICHTIG (Diagnose-Fund, siehe Abschlussbericht): VerlaufView wird beim
-  // Tab-Wechsel weg von "Verlauf" komplett unmountet ({tab==="verlauf"&&...})
+  // Tab-Wechsel weg von "Statistiken" komplett unmountet ({tab==="verlauf"&&...})
   // und beim Zurueckwechseln FRISCH neu gemountet — der Kalender-Monats-
   // Cursor (sy/sm) springt dabei auf den AKTUELLEN Monat zurueck, auch wenn
-  // zuvor Juli angezeigt wurde (wie hier durch den Abstecher zu "Heute" in
+  // zuvor Juli angezeigt wurde (wie hier durch den Abstecher zu "Ernährung" in
   // Schritt 3). Ohne dieses erneute "‹" wuerde der folgende Tagesklick auf
   // "28" den AUGUST-28. treffen statt Juli 28. -- exakt der Mechanismus, der
   // beim echten Nutzer zu falsch einsortierten Tagen fuehren kann, wenn
-  // zwischendurch zu "Heute"/anderen Tabs gewechselt wird.
+  // zwischendurch zu "Ernährung"/anderen Tabs gewechselt wird.
   clickByText(d, "Kalender");
   await flush(dom);
   clickByText(d, "Vorheriger Monat");
   await flush(dom);
   check(bodyHas(d,"Juli 2026"), "Kalender zeigt nach dem Tab-Ausflug wieder Juli 2026 (Monats-Cursor wurde zurueckgesetzt, erneute Navigation noetig)");
   check(await logDayViaRealUi(d, dom, 28), "Juli-Tag 28 über die echte Ernährungs-UI nachgetragen");
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   clickByText(d, "Gewicht");
   await flush(dom);

@@ -41,6 +41,11 @@ async function main(){
   check(d.getElementById("root").innerHTML.length>0, "SETUP: App rendert mit Vorab-Daten");
   consoleErrors.length=0; // Setup-Rauschen nicht mitzaehlen
 
+  // "Gewicht heute" liegt seit der Tab-Restrukturierung im Ernährung-Tab,
+  // nicht mehr auf dem Home-Tab (der jetzt ausschliesslich das Dashboard zeigt).
+  clickByText(d, "Ernährung");
+  await flush(dom);
+
   // =================================================================
   console.log("\n--- 1. Normales Gewicht speichern ---");
   clickByText(d, "⚖️ Gewicht heute");
@@ -179,7 +184,7 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 14. Dashboard- und Kalendergewicht nutzen denselben Validierungsweg ---");
-  clickByText(d2, "Verlauf");
+  clickByText(d2, "Statistiken");
   await flush(dom2);
   const dayCells = [...d2.querySelectorAll(".cell")].filter(e=>e.children[0] && e.children[0].textContent.trim()==="2");
   const dayCell = dayCells[0];

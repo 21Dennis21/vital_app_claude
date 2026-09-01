@@ -40,7 +40,7 @@ function barsOf(card){
   // --- Augustansicht ---
   // Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment
   // (dem Standardsegment) — kein separater "Rückblick"-Klick mehr noetig.
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   let kw31 = kw31Card(d);
   check(!!kw31, "KW-31-Karte in der Augustansicht gefunden");

@@ -43,7 +43,7 @@ function barsOf(kw31){
   // --- Vorher: Wochenkarte pruefen, 31.7. muss noch grau/nicht geloggt sein ---
   // (Wochenkarten stehen seit dem UI-Refactoring direkt im Kalender-Segment,
   // dem Standardsegment — kein separater "Rückblick"-Klick mehr noetig.)
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
   let kw31 = [...d.querySelectorAll(".card")].find(c=>c.textContent.includes("KW 31"));
   check(!!kw31, "KW-31-Karte vor dem Nachtragen gefunden");
@@ -76,7 +76,7 @@ function barsOf(kw31){
   // Sheet schliessen (Klick auf den abdunkelnden Overlay-Hintergrund, wie
   // an anderer Stelle im Code ueblich) -- optional, das Speichern selbst
   // ist bereits synchron durch onFieldDone/attemptSaveWeight passiert.
-  clickByText(d, "Verlauf");
+  clickByText(d, "Statistiken");
   await flush(dom);
 
   // --- Danach: OHNE Remount pruefen, ob alles sofort aktualisiert ist ---
