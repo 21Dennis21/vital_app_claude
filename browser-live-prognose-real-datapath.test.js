@@ -123,7 +123,11 @@ async function main(){
 
   // =================================================================
   console.log("\n--- 3. Ankergewicht über die echte 'Gewicht heute'-UI eintragen ---");
-  clickByText(d, "Ernährung");
+  // Gezielt den Bottom-Nav-Tab "Ernährung" treffen, nicht den gleichnamigen
+  // Statistik-Untertab (Übersicht/Training/Ernährung), der aktuell ebenfalls
+  // im DOM steht, da wir noch auf "Statistiken" sind.
+  const ernaehrungTabBtn = [...d.querySelectorAll(".tabbar button")].find(b=>b.textContent.trim()==="Ernährung");
+  ernaehrungTabBtn.dispatchEvent(new dom.window.MouseEvent("click",{bubbles:true,cancelable:true}));
   await flush(dom);
   clickByText(d, "⚖️ Gewicht heute");
   await flush(dom);
