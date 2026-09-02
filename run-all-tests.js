@@ -39,6 +39,7 @@ const ENGINE_TESTS=[
   "forecast-engine.usagegap.test.js",
   "forecast-engine.weightvalidation.test.js",
   "chart-resolution.test.js",
+  "period-nav.test.js",
 ];
 const BROWSER_TESTS=[
   "browser-scenarios-1to4.test.js",
@@ -150,7 +151,7 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
 
 // ========== 2b. Syntax-Check ausgelagerte Utility-/Engine-Skripte ==========
 section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js");
-["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js"].forEach(file=>{
+["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js"].forEach(file=>{
   runStep(file+": Syntax ok (node --check)", ()=>{
     execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
   });
