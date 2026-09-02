@@ -180,6 +180,24 @@ input::placeholder{color:var(--ink3);}
 .marker-pop{transform-box:fill-box;transform-origin:50% 50%;animation:markerpop .13s ease-out;}
 @keyframes tooltipfade{from{opacity:0;}to{opacity:1;}}
 .tooltip-fade{display:inline-block;animation:tooltipfade .13s ease-out;}
+/* Einmalige Entrance-Animation fuer die ECHTEN Statistik-Balken (Statistiken
+   -> Ernaehrung, Schnellansicht UND Detailansicht) — bewusst getrennt von
+   der dauerhaften STAT_LOCK_BARS-Animation des Locked-State. Reines
+   scaleY(0)->scaleY(1) per CSS-Animation (kein JS-Zustand, kein Re-Render
+   pro Frame), Ankerpunkt fest UNTEN (transformBox:"fill-box" +
+   transformOrigin:"50% 100%", jeweils inline am Balken gesetzt) — die
+   Baseline bleibt dadurch fix, nur die Hoehe waechst nach oben. Der leichte
+   Links-nach-rechts-Stagger wird ebenfalls inline ueber animation-delay
+   gesetzt (siehe barEntranceStyle()). Startet ausschliesslich beim
+   tatsaechlichen Mounten des Balkens (Betreten von Statistiken/Ernaehrung
+   bzw. Oeffnen einer Detailseite unmountet/remountet die jeweilige
+   Chart-Komponente bereits vollstaendig — siehe StatistikenView/
+   ErnaehrungStatsView/StatDetailChart), NICHT bei gewoehnlichen Re-Renders
+   (Scrubbing/Haptik/Selektion aendern nur internen State, keinen Mount).
+   Kein Bounce/Spring/Overshoot — einfaches ease-out. Die bereits bestehende
+   globale @media(prefers-reduced-motion:reduce)-Regel deaktiviert diese
+   Animation automatisch (Balken erscheinen dann sofort in Endhoehe). */
+@keyframes barGrowIn{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 /* Deutlich sichtbare "atmende" Platzhalter-Balken fuer LockedStatisticState
    (Statistik-Karten ohne Daten) — reines CSS, kein JS-Animationsloop.
    Animiert eine ECHTE, deutlich wahrnehmbare Hoehenveraenderung per scaleY
@@ -4423,6 +4441,15 @@ function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
   );
 }
 
+/* Inline-Style-Fragment fuer die einmalige Balken-Entrance-Animation
+   (siehe @keyframes barGrowIn oben) — von der Schnellansicht
+   (NutritionBarChart) UND der Detailansicht (StatDetailChart) genutzt,
+   damit beide Charts exakt dieselbe Dauer/Verzoegerung/Easing verwenden
+   ("dieselbe visuelle Sprache", siehe Aufgabenstellung). "i" = Balkenindex
+   von links, ergibt den leichten Links-nach-rechts-Stagger. */
+function barEntranceStyle(i){
+  return {transformBox:"fill-box",transformOrigin:"50% 100%",animation:"barGrowIn 500ms ease-out "+(i*45)+"ms both"};
+}
 /* SVG-Pfad fuer ein Rechteck mit UNABHAENGIGEN oberen/unteren Eckradien
    (native <rect rx> kennt nur einen einzigen Radius fuer alle 4 Ecken) —
    fuer die "Capsule"-Optik der Statistik-Balken: oben stark, unten nur
@@ -4551,7 +4578,7 @@ function NutritionBarChart({days,values,target,color,onScrub}){
           const x=xAtCenter(i)-bw/2;
           const h=v>0?Math.max(3,(v/maxVal)*H):0;
           return <path key={i} d={roundedBarPath(x,H-h,bw,h,5,2)} fill={color}
-            opacity={selIdx!=null&&selIdx!==i?.5:1} style={{transition:"opacity .15s ease"}}/>;
+            opacity={selIdx!=null&&selIdx!==i?.5:1} style={{...barEntranceStyle(i),transition:"opacity .15s ease"}}/>;
         })}
         {hasTarget&&(
           <React.Fragment>
@@ -5083,7 +5110,8 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
           const x=xForIdx(i)-bw/2;
           const h=Math.max(3,((p.value-lo)/(hi-lo))*plotH);
           return <rect key={i} x={x} y={PT+plotH-h} width={bw} height={h} rx="3" fill={color}
-            opacity={selIdx!=null&&selIdx!==i?.45:1} style={{transition:"height .25s ease, y .25s ease, opacity .15s ease"}}/>;
+            opacity={selIdx!=null&&selIdx!==i?.45:1}
+            style={{...barEntranceStyle(i),transition:"height .25s ease, y .25s ease, opacity .15s ease"}}/>;
         })}
         {chartType==="line"&&(
           <React.Fragment>
