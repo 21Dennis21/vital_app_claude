@@ -26,9 +26,9 @@
               nicht gibt) — "Max" hat keine feste Groessenordnung.
    Datenpunkte/Zeit-Slots (welche Positionen ueberhaupt existieren),
    sichtbare X-Achsen-Beschriftungen (welche davon einen Text bekommen,
-   siehe pickTimeTicks/pickWeekAnchoredDayTicks) und die Aggregation der
-   Werte (bucketNutritionPoints/buildWeightSeries) bleiben bewusst getrennte
-   Zustaendigkeiten.
+   siehe pickStrideTicks/pickEvenStrideTicks/pickWeekAnchoredDayTicks) und
+   die Aggregation der Werte (bucketNutritionPoints/buildWeightSeries)
+   bleiben bewusst getrennte Zustaendigkeiten.
 
    Oeffentliche API:
      bucketStartOf(y,m,d,granularity)
@@ -39,7 +39,8 @@
      statGranularityFor(range,effStart,effEnd)
      pickMaxGranularity(effStart,effEnd)
      buildWeightSeries(points,granularity)
-     pickTimeTicks(points,maxCount)
+     pickStrideTicks(points,stride)
+     pickEvenStrideTicks(points,maxCount)
      pickWeekAnchoredDayTicks(points)
      bucketDateLabel(y,m,d,granularity)
      selDetailDateLabel(p,granularity,isWeight) */
@@ -180,33 +181,41 @@ function buildWeightSeries(points,granularity){
   out.sort((a,b)=>a.ts-b.ts);
   return out;
 }
-/* Waehlt bis zu "maxCount" X-Achsen-Beschriftungspositionen GLEICHMAESSIG
-   ueber die Zeitachse verteilt — bewusst getrennt von der Anzahl der
-   dargestellten Datenpunkte (26 Punkte koennen z.B. nur 6 Labels haben).
-   Bei n<=maxCount werden einfach ALLE Punkte beschriftet (kein
-   Interpolieren noetig — erhaelt z.B. "immer alle 7 Tage in 1W sichtbar").
-   Jedes Label sitzt IMMER exakt ueber einem echten dargestellten Punkt
-   (naechstgelegene Zeit), nie frei zwischen zwei Punkten. Funktioniert
-   identisch fuer Balken- und Linien-Charts (beide Punktarten tragen
-   bereits einen echten Zeitstempel "ts"). */
-function pickTimeTicks(points,maxCount){
+/* Waehlt X-Achsen-Beschriftungspositionen mit KONSTANTEM Abstand (jeder
+   "stride"-te Punkt, beginnend beim ersten sichtbaren Punkt) — bewusst
+   getrennt von der Anzahl der dargestellten Datenpunkte selbst (z.B.
+   koennen 26 Wochen-Datenpunkte nur jede 2. beschriftet bekommen, KW11/13/
+   15/... bleiben trotzdem echte, anwaehlbare Punkte). Ein reiner
+   Konstant-Schritt statt einer "naechster Punkt zu gleichmaessig verteilten
+   Zeitpunkten"-Auswahl, weil letztere bei nicht glatt teilbaren Punktzahlen
+   UNGLEICHMAESSIGE Abstaende erzeugt (z.B. "KW23,25,27,29,32,34,36" — der
+   Sprung von 29 auf 32 wirkt wie eine fehlende KW31, siehe Aufgaben-
+   stellung). Mit konstantem Schritt ist der zeitliche Abstand zwischen
+   zwei sichtbaren Labels IMMER gleich. */
+function pickStrideTicks(points,stride){
   const n=points.length;
   if(n===0)return [];
-  if(n<=maxCount)return points.map((p,i)=>({idx:i,ts:p.ts,y:p.y,m:p.m,d:p.d}));
-  const tsMin=points[0].ts,tsMax=points[n-1].ts;
   const out=[];
-  for(let i=0;i<maxCount;i++){
-    const targetTs=maxCount>1?tsMin+(tsMax-tsMin)*(i/(maxCount-1)):tsMin;
-    let best=0,bestDist=Infinity;
-    points.forEach((p,idx)=>{const dist=Math.abs(p.ts-targetTs);if(dist<bestDist){bestDist=dist;best=idx;}});
-    if(!out.some(o=>o.idx===best))out.push({idx:best,ts:points[best].ts,y:points[best].y,m:points[best].m,d:points[best].d});
-  }
+  for(let i=0;i<n;i+=stride)out.push({idx:i,ts:points[i].ts,y:points[i].y,m:points[i].m,d:points[i].d});
   return out;
+}
+/* Wie pickStrideTicks, waehlt aber die Schrittweite selbst so, dass
+   hoechstens "maxCount" Labels entstehen — bei n<=maxCount ergibt das
+   automatisch Schritt 1 (ALLE Punkte beschriftet, kein Ausduennen noetig,
+   z.B. "immer alle 7 Tage in 1W" oder "immer alle Monate in 12M"
+   sichtbar). Faellt die Punktzahl darueber, wird IMMER noch ein
+   gleichmaessiger Rhythmus verwendet (z.B. 15 Wochen bei maxCount 7 ->
+   jede 2. Woche), nie eine unregelmaessige Folge. */
+function pickEvenStrideTicks(points,maxCount){
+  const n=points.length;
+  if(n===0)return [];
+  if(n<=maxCount)return pickStrideTicks(points,1);
+  return pickStrideTicks(points,Math.ceil(n/maxCount));
 }
 /* Spezielle Tick-Auswahl fuer taegliche Granularitaet ueber mehrere Wochen
    (aktuell nur fuer 1M relevant, siehe StatDetailPage: dort bleibt jeder
    Kalendertag ein eigener Punkt/Slot, aber nicht jeder Tag soll ein
-   sichtbares Textlabel bekommen). Anders als pickTimeTicks() NICHT
+   sichtbares Textlabel bekommen). Anders als pickStrideTicks() NICHT
    gleichmaessig ueber die Zeit verteilt, sondern an der echten
    Wochenstruktur ausgerichtet: der erste sichtbare Tag wird IMMER
    beschriftet (auch wenn er kein Montag ist — z.B. bei einem rollierenden
@@ -226,11 +235,17 @@ function pickWeekAnchoredDayTicks(points){
 }
 /* Kompakte X-Achsen-Beschriftung je Granularitaet — zweizeilig fuer Tag
    (Wochentag/Datum) und Monat/Quartal (Monat/Jahr), einzeilig fuer Woche
-   ("KW N", echte ISO-Kalenderwochennummer — siehe Aufgabenstellung: 3M/6M
-   sollen eindeutig wochenbasiert lesbar sein) und Jahr. */
+   ("KWn" OHNE Leerzeichen, echte ISO-Kalenderwochennummer) und Jahr. Das
+   fehlende Leerzeichen bei "week" ist bewusst: bei 3M sollen nach
+   Moeglichkeit ALLE ca. 13 Kalenderwochen nebeneinander passen (siehe
+   Aufgabenstellung "Platz responsiv nutzen") — "KW35" statt "KW 35" spart
+   genau das eine Zeichen, das dafuer oft den Ausschlag gibt. Die
+   ausfuehrlichere Form mit Leerzeichen bleibt dem groesseren, nicht
+   platzkritischen Scrubbing-Infobereich vorbehalten (siehe
+   selDetailDateLabel). */
 function bucketDateLabel(y,m,d,granularity){
   if(granularity==="day")return {l1:DS[(new Date(y,m,d).getDay()+6)%7],l2:String(d)};
-  if(granularity==="week")return {l1:"KW "+isoWeek(y,m,d),l2:""};
+  if(granularity==="week")return {l1:"KW"+isoWeek(y,m,d),l2:""};
   if(granularity==="year")return {l1:String(y),l2:""};
   return {l1:MN[m].slice(0,3),l2:String(y)};
 }
@@ -295,7 +310,8 @@ if(typeof module!=="undefined" && module.exports){
     statGranularityFor,
     pickMaxGranularity,
     buildWeightSeries,
-    pickTimeTicks,
+    pickStrideTicks,
+    pickEvenStrideTicks,
     pickWeekAnchoredDayTicks,
   };
 }
