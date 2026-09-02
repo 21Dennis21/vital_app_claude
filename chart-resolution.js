@@ -36,6 +36,7 @@
      pickGranularityBySpan(startDate,endDate,chartType)
      buildWeightSeries(points,granularity)
      pickTimeTicks(points,maxCount)
+     pickWeekAnchoredDayTicks(points)
      bucketDateLabel(y,m,d,granularity)
      selDetailDateLabel(p,granularity,isWeight) */
 
@@ -241,6 +242,27 @@ function pickTimeTicks(points,maxCount){
   }
   return out;
 }
+/* Spezielle Tick-Auswahl fuer taegliche Granularitaet ueber mehrere Wochen
+   (aktuell nur fuer 1M relevant, siehe StatDetailPage: dort bleibt jeder
+   Kalendertag ein eigener Punkt/Slot, aber nicht jeder Tag soll ein
+   sichtbares Textlabel bekommen). Anders als pickTimeTicks() NICHT
+   gleichmaessig ueber die Zeit verteilt, sondern an der echten
+   Wochenstruktur ausgerichtet: der erste sichtbare Tag wird IMMER
+   beschriftet (auch wenn er kein Montag ist — z.B. bei einem rollierenden
+   Fenster, das an einem Donnerstag beginnt), danach jeder Montag im
+   sichtbaren Zeitraum. Alle uebrigen Tage bleiben unabhaengig davon als
+   eigene Punkte/Slots erhalten — diese Funktion waehlt ausschliesslich
+   aus, WELCHE davon zusaetzlich ein sichtbares Textlabel bekommen. */
+function pickWeekAnchoredDayTicks(points){
+  const n=points.length;
+  if(n===0)return [];
+  const out=[{idx:0,ts:points[0].ts,y:points[0].y,m:points[0].m,d:points[0].d}];
+  for(let i=1;i<n;i++){
+    const p=points[i];
+    if(new Date(p.y,p.m,p.d).getDay()===1)out.push({idx:i,ts:p.ts,y:p.y,m:p.m,d:p.d});
+  }
+  return out;
+}
 /* Kompakte X-Achsen-Beschriftung je Granularitaet — zweizeilig fuer Tag
    (Wochentag/Datum) und Monat/Quartal/Jahr (Monat/Jahr), einzeilig fuer
    Woche/2 Wochen (Datum des Bucket-Beginns). */
@@ -293,5 +315,6 @@ if(typeof module!=="undefined" && module.exports){
     pickGranularityBySpan,
     buildWeightSeries,
     pickTimeTicks,
+    pickWeekAnchoredDayTicks,
   };
 }

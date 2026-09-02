@@ -310,5 +310,49 @@ console.log("========== MONATS-/JAHRESWECHSEL ==========");
   assertEq(endQ4.d,31,"Quartalsende Q4: 31. Dezember");
 }
 
+console.log("========== pickWeekAnchoredDayTicks (1M: Starttag + Montage) ==========");
+function dayPoints(y,m,startD,endD){
+  const out=[];
+  for(let d=startD;d<=endD;d++)out.push({y,m,d,ts:new Date(y,m,d).getTime()});
+  return out;
+}
+function tickLabels(ticks){return ticks.map(t=>t.d+"."+(t.m+1)+".");}
+{
+  // Voller Kalendermonat August 2026 (31 Tage, 01.08. ist ein Samstag) —
+  // Montage im August 2026: 03./10./17./24./31.
+  const pts=dayPoints(2026,7,1,31);
+  const ticks=CR.pickWeekAnchoredDayTicks(pts);
+  assertEq(pts.length,31,"August 2026: 31 Tagespositionen bleiben ALLE erhalten");
+  assertEq(tickLabels(ticks).join(","),"1.8.,3.8.,10.8.,17.8.,24.8.,31.8.","August 2026: Starttag (01.08., kein Montag) + alle 5 Montage");
+}
+{
+  // Rollierendes 1M-Fenster Do 04.08. - Mi 02.09.2026 (30 Tage, Aufgabenstellungs-Beispiel)
+  const pts=dayPoints(2026,7,4,31).concat(dayPoints(2026,8,1,2));
+  const ticks=CR.pickWeekAnchoredDayTicks(pts);
+  assertEq(pts.length,30,"Rollierendes 1M-Fenster: 30 Tagespositionen bleiben ALLE erhalten");
+  assertEq(tickLabels(ticks).join(","),"4.8.,10.8.,17.8.,24.8.,31.8.","Rollierendes 1M-Fenster: Starttag (04.08.) + Montage 10./17./24./31.08. (exakt das Aufgabenstellungs-Beispiel)");
+}
+{
+  // Voller Kalendermonat, dessen 1. Tag SELBST ein Montag ist (Juni 2026)
+  // -> darf nicht doppelt als Tick erscheinen
+  const pts=dayPoints(2026,5,1,30);
+  const ticks=CR.pickWeekAnchoredDayTicks(pts);
+  assertEq(pts.length,30,"Juni 2026: 30 Tagespositionen bleiben ALLE erhalten");
+  assertEq(tickLabels(ticks).join(","),"1.6.,8.6.,15.6.,22.6.,29.6.","Juni 2026 (01.06. ist bereits Montag): kein doppelter Tick fuer den Starttag");
+}
+{
+  // Februar (Schaltjahr, 29 Tage) — 01.02.2024 ist ein Donnerstag
+  const pts=dayPoints(2024,1,1,29);
+  const ticks=CR.pickWeekAnchoredDayTicks(pts);
+  assertEq(pts.length,29,"Februar 2024 (Schaltjahr): 29 Tagespositionen bleiben ALLE erhalten");
+  assertEq(ticks[0].d,1,"Februar 2024: Starttag 01.02. immer als erster Tick");
+  assertEq(ticks.every((t,i)=>i===0||new Date(t.y,t.m,t.d).getDay()===1),true,"Februar 2024: alle weiteren Ticks sind echte Montage");
+}
+{
+  assertEq(CR.pickWeekAnchoredDayTicks([]).length,0,"Leeres Array: keine Ticks, kein Crash");
+  const single=dayPoints(2026,7,15,15);
+  assertEq(CR.pickWeekAnchoredDayTicks(single).length,1,"Einzelner Tag: genau ein Tick (der Starttag selbst)");
+}
+
 console.log("\n"+passed+" bestanden, "+failed+" fehlgeschlagen");
 process.exit(failed>0?1:0);
