@@ -16,8 +16,6 @@
      weightRangeLabel(key,b)
      navWeightRange(key,anchorY,anchorM,anchorD,dir)
      collectWeightPointsInRange(data,inRangeFn)
-     weightAggModeFor(rangeKey,pointCount)
-     aggregateWeightPoints(points,mode)
      inferWeightGoalDirection(goals,curW)
      weightDetailRangeStart(rangeKey,now)
      weightDetailInRangeFn(rangeKey,now)
@@ -127,20 +125,6 @@ function collectWeightPointsInRange(data,inRangeFn){
   out.sort((a,b)=>a.ts-b.ts);
   return out;
 }
-/* WICHTIG: Es wird NIE mehr aggregiert/gemittelt — jede tatsaechlich
-   eingetragene Messung wird angezeigt, in jedem Zeitraum, auch bei Jahr,
-   Halbjahr und Gesamt. Frueher gab es hier eine Verdichtung bei sehr vielen
-   Punkten (Wochen-/Monatsmittel); das wurde bewusst entfernt, weil das
-   einen Verlauf vortaeuschen wuerde, der so nie geloggt wurde. Die Funktion
-   bleibt als bewusster No-Op stehen, falls spaeter doch wieder eine
-   NICHT-datenreduzierende Verdichtung (z.B. rein visuell) gewuenscht wird. */
-function weightAggModeFor(rangeKey,pointCount){
-  return "none";
-}
-function aggregateWeightPoints(points,mode){
-  return points.map(p=>({...p,isAgg:false}));
-}
-
 /* Leitet aus den aktiven Zielen ab, ob es gerade ums Abnehmen, Zunehmen
    oder Halten geht — zentral an einer Stelle, damit Dashboard-Gewichts-
    karte UND Live-Prognose exakt dieselbe Einschaetzung verwenden. Ohne

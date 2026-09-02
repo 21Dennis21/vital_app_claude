@@ -32,6 +32,10 @@
 <script src="goal-engine.js"></script>
 <!-- Phase 2F (Migrationsplan): reine Ernaehrungslogik ausgelagert. -->
 <script src="nutrition-engine.js"></script>
+<!-- Adaptive Aggregations-/Aufloesungs-Engine fuer die Statistik-
+     Detailcharts (Koerpergewicht + Ernaehrung) — reine, DOM-unabhaengige
+     Logik, ausgelagert nach demselben Muster wie die uebrigen *-engine.js. -->
+<script src="chart-resolution.js"></script>
 <style>
 /* ===== DESIGN-TOKENS =====
    Alle Farben liegen in CSS-Variablen. Dark Mode tauscht nur die Variablen —
@@ -4823,81 +4827,6 @@ function collectNutritionPointsInRange(data,inRangeFn){
   out.sort((a,b)=>a.ts-b.ts);
   return out;
 }
-/* Waehlt die Aggregations-/Achsen-Granularitaet passend zum Zeitraum
-   (Vorgabe: 1W/1M taeglich, 3M wochenweise, 6M/12M monatsweise, Max
-   abhaengig von der tatsaechlichen Datenspanne) — nie ein Balken/Label
-   pro Tag ueber Monate hinweg, das waere unlesbar. */
-function pickNutritionBucketUnit(rangeKey,spanDays){
-  if(rangeKey==="1W"||rangeKey==="1M")return "day";
-  if(rangeKey==="3M")return "week";
-  if(rangeKey==="6M"||rangeKey==="12M")return "month";
-  if(spanDays<=35)return "day";
-  if(spanDays<=190)return "week";
-  if(spanDays<=730)return "month";
-  if(spanDays<=365*8)return "quarter";
-  return "year";
-}
-function bucketKeyOf(y,m,d,unit){
-  if(unit==="day")return y+"-"+m+"-"+d;
-  if(unit==="week")return "w"+weekStartDate(y,m,d).getTime();
-  if(unit==="month")return "m"+y+"-"+m;
-  if(unit==="quarter")return "q"+y+"-"+Math.floor(m/3);
-  return "y"+y;
-}
-/* Feste Bucket-Slots ueber den gesamten Anzeigezeitraum (taeglich/
-   woechentlich/monatlich/quartalsweise/jaehrlich je nach "unit") — dadurch
-   bleibt jeder Zeitabschnitt an seiner festen Position, auch wenn dort
-   keine Daten vorhanden sind (kein Balken statt verschobener Balken). */
-function fixedBucketSlots(startDate,endDate,unit){
-  const out=[];
-  const seen=new Set();
-  const it=new Date(startDate.getFullYear(),startDate.getMonth(),startDate.getDate());
-  while(it.getTime()<=endDate.getTime()){
-    const y=it.getFullYear(),m=it.getMonth(),d=it.getDate();
-    const key=bucketKeyOf(y,m,d,unit);
-    if(!seen.has(key)){
-      seen.add(key);
-      let by=y,bm=m,bd=d;
-      if(unit==="week"){const ws=weekStartDate(y,m,d);by=ws.getFullYear();bm=ws.getMonth();bd=ws.getDate();}
-      else if(unit==="month"){bd=1;}
-      else if(unit==="quarter"){bm=Math.floor(m/3)*3;bd=1;}
-      else if(unit==="year"){bm=0;bd=1;}
-      out.push({key,y:by,m:bm,d:bd,ts:new Date(by,bm,bd).getTime()});
-    }
-    it.setDate(it.getDate()+1);
-  }
-  return out;
-}
-/* Buendelt echte Tageswerte je Bucket zum DURCHSCHNITT (nicht zur Summe)
-   der Tage mit echten Daten — nur so bleibt die Skala mit dem taeglichen
-   Ziel (z.B. 2.400 kcal) vergleichbar, egal wie grob aggregiert wird.
-   Liefert ein einfaches Objekt keyed nach bucketKeyOf(...). */
-function bucketNutritionPoints(points,unit){
-  const map={};
-  points.forEach(p=>{
-    const key=bucketKeyOf(p.y,p.m,p.d,unit);
-    if(!map[key])map[key]={kcal:0,protein:0,carbs:0,fat:0,count:0};
-    const b=map[key];
-    b.kcal+=p.kcal;b.protein+=p.protein;b.carbs+=p.carbs;b.fat+=p.fat;b.count+=1;
-  });
-  const out={};
-  Object.keys(map).forEach(key=>{
-    const b=map[key];
-    out[key]={kcal:b.kcal/b.count,protein:b.protein/b.count,carbs:b.carbs/b.count,fat:b.fat/b.count,count:b.count};
-  });
-  return out;
-}
-/* Waehlt eine begrenzte Anzahl Indizes fuer X-Achsen-Beschriftungen aus —
-   nie eine Beschriftung pro Balken/Punkt bei vielen Eintraegen. Der
-   letzte (aktuellste) Index ist immer dabei. */
-function pickLabelIndices(n,maxLabels){
-  if(n<=maxLabels)return Array.from({length:n},(_,i)=>i);
-  const step=Math.ceil(n/maxLabels);
-  const out=[];
-  for(let i=0;i<n;i+=step)out.push(i);
-  if(out[out.length-1]!==n-1)out.push(n-1);
-  return out;
-}
 /* "Schoene", gerundete Achsenwerte (1/2/5 x 10^n) fuer die Y-Skala der
    Detailansicht — NIE hartcodiert, immer aus den echten dargestellten
    Werten (und ggf. dem echten Ziel) abgeleitet. Anders als auf der
@@ -4919,35 +4848,19 @@ function niceTicks(lo,hi,count){
 }
 /* Datumsbereich-Text ("27. August – 02. September 2026") — Jahr nur
    einmal, wenn beide Enden im selben Jahr liegen, sonst bei beiden Enden
-   ("01. August 2025 – 01. September 2026"). */
+   ("01. August 2025 – 01. September 2026"). Wird auch von
+   selDetailDateLabel() (chart-resolution.js) fuer aggregierte Wochen-/
+   Zweiwochen-Buckets wiederverwendet. */
 function detailDateRangeLabel(sy,sm,sd,ey,em,ed){
   const sameYear=sy===ey;
   return sd+". "+MN[sm]+(sameYear?"":" "+sy)+" – "+ed+". "+MN[em]+" "+ey;
 }
 const WD_FULL=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
-/* X-Achsen-Beschriftung je nach Granularitaet — zweizeilig fuer Tag
-   (Wochentag/Datum) und Monat/Quartal/Jahr (Monat/Jahr), einzeilig fuer
-   Woche (Datum des Wochenbeginns). */
-function bucketDateLabel(y,m,d,unit){
-  if(unit==="day")return {l1:DS[(new Date(y,m,d).getDay()+6)%7],l2:String(d)};
-  if(unit==="week")return {l1:d+". "+MN[m].slice(0,3),l2:""};
-  if(unit==="year")return {l1:String(y),l2:""};
-  return {l1:MN[m].slice(0,3),l2:String(y)};
-}
-/* Ausgeschriebene Datumsbeschriftung fuer den festen Scrubbing-Infobereich
-   (StatDetailChart) — im Unterschied zu bucketDateLabel() (kompakte
-   X-Achsen-Beschriftung) hier mit vollem Wochentag/Monatsnamen und passend
-   zur jeweils bereits verwendeten Aggregationsstufe des Charts (Tag/Woche/
-   Monat/Quartal/Jahr), damit z.B. bei "3M" nicht faelschlich ein einzelner
-   Wochentag suggeriert wird. */
-function selDetailDateLabel(p,bucketUnit,isWeight){
-  if(isWeight)return p.d+". "+MN[p.m]+" "+p.y;
-  if(bucketUnit==="week")return "Woche vom "+p.d+". "+MN[p.m];
-  if(bucketUnit==="month"||bucketUnit==="quarter")return MN[p.m]+" "+p.y;
-  if(bucketUnit==="year")return String(p.y);
-  const dt=new Date(p.y,p.m,p.d);
-  return WD_FULL[(dt.getDay()+6)%7]+", "+p.d+". "+MN[p.m];
-}
+/* pickNutritionBucketUnit/bucketKeyOf/fixedBucketSlots/bucketNutritionPoints/
+   pickLabelIndices/bucketDateLabel/selDetailDateLabel: siehe
+   chart-resolution.js (zentrale, adaptive Aggregations-/Aufloesungs-Engine
+   fuer alle Statistik-Detailcharts — ersetzt die frueheren, rein
+   zeitraum-basierten Regeln hier). */
 
 const STAT_DETAIL_CONFIG={
   weight:{title:"Körpergewicht",unit:"kg",color:"var(--good)",chartType:"line"},
@@ -5014,25 +4927,15 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
   const tsMin=points[0].ts,tsMax=points[n-1].ts;
   const xForTs=ts=>n>1?((ts-tsMin)/Math.max(tsMax-tsMin,1))*plotW:plotW/2;
   const xFor=(p,i)=>chartType==="bar"?xForIdx(i):xForTs(p.ts);
-  /* X-Achsen-Beschriftung: bei Balken (feste, gleich breite Slots) reicht
-     eine Auswahl per Index. Bei der Linie (Koerpergewicht) sind die
-     echten Messpunkte oft SEHR ungleichmaessig ueber die Zeit verteilt
-     (z.B. taeglich in den letzten Wochen, aber nur alle paar Tage davor)
-     — eine indexbasierte Auswahl wuerde dann mehrere Labels dicht an
-     einem Zeitpunkt haeufen, waehrend andere Abschnitte leer blieben.
-     Stattdessen werden hier "count" Beschriftungen GLEICHMAESSIG ueber
-     die Zeitachse verteilt (unabhaengig davon, ob genau dort ein echter
-     Messpunkt liegt) — verhindert ueberlappende/gehaeufte Labels. */
-  const lineLabelCount=Math.min(7,n);
-  const lineTicks=chartType==="line"?Array.from({length:lineLabelCount},(_,i)=>{
-    const ts=lineLabelCount>1?tsMin+(tsMax-tsMin)*(i/(lineLabelCount-1)):tsMin;
-    const dt=new Date(ts);
-    return {x:xForTs(ts),y:dt.getFullYear(),m:dt.getMonth(),d:dt.getDate()};
-  }):null;
-  /* Bei bis zu 7 Balken (insbesondere "1W") IMMER alle Labels zeigen —
-     erst bei mehr Slots (Monats-/Quartalsansichten) auf eine begrenzte
-     Auswahl ausweichen, um Ueberlappung zu vermeiden. */
-  const labelIdx=chartType==="bar"?(n<=7?Array.from({length:n},(_,i)=>i):pickLabelIndices(n,6)):null;
+  /* X-Achsen-Beschriftung: bewusst GETRENNT von der Anzahl dargestellter
+     Punkte (siehe chart-resolution.js/pickTimeTicks) — bis zu 7 Labels
+     GLEICHMAESSIG ueber die Zeitachse verteilt, unabhaengig davon, ob
+     genau dort ein Punkt liegt oder wie ungleichmaessig echte Buckets
+     ueber die Zeit verteilt sind (Monate/Wochen haben z.B. unterschiedlich
+     viele Tage) — verhindert ueberlappende/gehaeufte Labels. Bei <=7
+     Punkten werden einfach ALLE beschriftet (erhaelt z.B. "immer alle 7
+     Tage in 1W sichtbar"). Funktioniert identisch fuer Balken UND Linie. */
+  const xTicks=pickTimeTicks(points,7);
   const path=chartType==="line"?points.map((p,i)=>(i===0?"M":"L")+xFor(p,i)+" "+yFor(p.value)).join(" "):"";
   const lastIdx=n-1;
 
@@ -5073,7 +4976,7 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
 
   const sel=selIdx!=null?points[selIdx]:null;
   const selLine1=sel?selDetailDateLabel(sel,bucketUnit,isWeight):"";
-  const selLine2=sel?(sel.value!=null?fmtNum(sel.value,isWeight?1:0)+" "+unit:"Keine Daten"):"";
+  const selLine2=sel?(sel.value!=null?(sel.isAgg?"Ø ":"")+fmtNum(sel.value,isWeight?1:0)+" "+unit:"Keine Daten"):"";
 
   return(
     <div>
@@ -5131,28 +5034,16 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
         )}
       </svg>
       <div style={{position:"relative",height:24,marginTop:4}}>
-        {chartType==="bar"
-          ?points.map((p,i)=>{
-              if(!labelIdx.includes(i))return null;
-              const leftPct=(xFor(p,i)/W)*100;
-              const lbl=bucketDateLabel(p.y,p.m,p.d,bucketUnit);
-              return(
-                <div key={i} style={{position:"absolute",left:leftPct+"%",transform:"translateX(-50%)",textAlign:"center",whiteSpace:"nowrap"}}>
-                  <div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l1}</div>
-                  {lbl.l2&&<div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l2}</div>}
-                </div>
-              );
-            })
-          :lineTicks.map((t,i)=>{
-              const leftPct=(t.x/W)*100;
-              const lbl=bucketDateLabel(t.y,t.m,t.d,bucketUnit);
-              return(
-                <div key={i} style={{position:"absolute",left:leftPct+"%",transform:"translateX(-50%)",textAlign:"center",whiteSpace:"nowrap"}}>
-                  <div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l1}</div>
-                  {lbl.l2&&<div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l2}</div>}
-                </div>
-              );
-            })}
+        {xTicks.map(t=>{
+          const leftPct=(xFor(points[t.idx],t.idx)/W)*100;
+          const lbl=bucketDateLabel(t.y,t.m,t.d,bucketUnit);
+          return(
+            <div key={t.idx} style={{position:"absolute",left:leftPct+"%",transform:"translateX(-50%)",textAlign:"center",whiteSpace:"nowrap"}}>
+              <div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l1}</div>
+              {lbl.l2&&<div className="sub" style={{fontSize:9,lineHeight:1.3}}>{lbl.l2}</div>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -5187,7 +5078,6 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
     ?(weightPtsRaw.length?new Date(weightPtsRaw[0].y,weightPtsRaw[0].m,weightPtsRaw[0].d):todayStart)
     :(nutriPtsRaw.length?new Date(nutriPtsRaw[0].y,nutriPtsRaw[0].m,nutriPtsRaw[0].d):todayStart));
   const effEnd=anchor;
-  const spanDays=Math.max(1,Math.round((effEnd-effStart)/86400000)+1);
 
   const y0=NOW.getFullYear(),m0=NOW.getMonth();
   const st=settingsOf(mSet,y0,m0);
@@ -5198,15 +5088,25 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
     :type==="kcal"?tdee
     :macros?macros[type]:null;
 
-  const bucketUnit=pickNutritionBucketUnit(range,spanDays);
+  /* Adaptive Granularitaet statt fester Zeitraum->Einheit-Regeln (siehe
+     chart-resolution.js): bei Koerpergewicht (Linie, keine festen Slots)
+     richtet sich die Wahl nach der tatsaechlichen DICHTE der echten
+     Messungen — ein duenn befuellter langer Zeitraum bleibt fein
+     aufgeloest. Bei Ernaehrung (Balken, feste Positionsslots je Tag/Woche/
+     ...) richtet sie sich nach der Zeitspanne selbst, da dort jeder Slot
+     unabhaengig von echten Daten seine Position behalten muss. */
+  const bucketUnit=useMemo(
+    ()=>isWeight?pickGranularityByDensity(weightPtsRaw,"line"):pickGranularityBySpan(effStart,effEnd,"bar"),
+    [isWeight,weightPtsRaw,effStart,effEnd]
+  );
 
   const chartPoints=useMemo(()=>{
-    if(isWeight)return weightPtsRaw.map(p=>({ts:p.ts,y:p.y,m:p.m,d:p.d,value:p.w}));
+    if(isWeight)return buildWeightSeries(weightPtsRaw,bucketUnit);
     const slots=fixedBucketSlots(effStart,effEnd,bucketUnit);
     const aggMap=bucketNutritionPoints(nutriPtsRaw,bucketUnit);
     return slots.map(s=>{
       const agg=aggMap[s.key];
-      return {ts:s.ts,y:s.y,m:s.m,d:s.d,value:agg?agg[type]:null};
+      return {ts:s.ts,y:s.y,m:s.m,d:s.d,value:agg?agg[type]:null,isAgg:bucketUnit!=="day"};
     });
   },[isWeight,weightPtsRaw,nutriPtsRaw,effStart,effEnd,bucketUnit,type]);
 
