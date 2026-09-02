@@ -195,19 +195,20 @@ input::placeholder{color:var(--ink3);}
    diese Animation automatisch — die Balken fallen dann auf ihre statische,
    per Inline-Style gesetzte Basis-Hoehe zurueck. */
 @keyframes statBarLevel{from{transform:scaleY(var(--bar-min,.4))}to{transform:scaleY(var(--bar-max,1.3))}}
-/* Horizontale Zeitraum-Pill-Leiste (Gewichtsanalyse) — bewusst deutlich
-   dezenter als die Hauptnavigation (.seg/.segb): kleiner, weniger Padding,
-   kleinere Rundung, KEINE Akzentfarbe (die bleibt der Hauptnavigation, dem
-   Diagramm und primaeren Aktionen vorbehalten). Aktiv = heller/angehobener
-   Chip mit heller Schrift, Inaktiv = verschwindet foermlich in den
-   Hintergrund. Zentriert statt ueber die volle Breite gestreckt, mit
-   spuerbarem Abstand (~28px) zur Hauptnavigation darueber. Alle Pills
-   stecken in EINER gemeinsamen, gerundeten Huelle (wie bei .seg oben) —
-   dadurch wirkt es als eine geschlossene Toolbar statt fuenf einzelner,
-   frei schwebender Buttons. */
-.range-scroll{display:flex;justify-content:center;}
-.range-toolbar{display:inline-flex;gap:2px;background:var(--pill-off);padding:3px;border-radius:19px;max-width:100%;}
-.range-pill{flex:0 1 auto;min-width:0;height:32px;padding:0 8px;border-radius:16px;border:none;background:transparent;color:var(--ink3);font-family:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background .18s,color .18s,transform .15s;display:flex;align-items:center;justify-content:center;}
+/* Horizontale Zeitraum-Pill-Leiste (Detailstatistiken/Gewichtsanalyse) —
+   bewusst deutlich dezenter als die Hauptnavigation (.seg/.segb): kleiner,
+   weniger Padding, kleinere Rundung, KEINE Akzentfarbe (die bleibt der
+   Hauptnavigation, dem Diagramm und primaeren Aktionen vorbehalten). Aktiv
+   = heller/angehobener Chip mit heller Schrift, Inaktiv = verschwindet
+   foermlich in den Hintergrund. Erstreckt sich ueber die volle verfuegbare
+   Breite, alle Segmente gleich breit (flex:1), statt als schmale,
+   zentrierte Pille zu wirken — mit spuerbarem Abstand (~28px) zur
+   Hauptnavigation darueber. Alle Pills stecken in EINER gemeinsamen,
+   gerundeten Huelle (wie bei .seg oben) — dadurch wirkt es als eine
+   geschlossene Toolbar statt fuenf einzelner, frei schwebender Buttons. */
+.range-scroll{display:flex;}
+.range-toolbar{display:flex;width:100%;gap:2px;background:var(--pill-off);padding:3px;border-radius:19px;}
+.range-pill{flex:1 1 0;min-width:0;height:32px;padding:0 4px;border-radius:16px;border:none;background:transparent;color:var(--ink3);font-family:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background .18s,color .18s,transform .15s;display:flex;align-items:center;justify-content:center;}
 .range-pill.on{background:var(--pill-on);color:var(--ink);font-weight:700;}
 .range-pill:active{transform:scale(.98);}
 /* Auf schmalen Displays (jetzt mit 6 statt 5 Chips grosszuegiger bemessen)
@@ -4821,9 +4822,16 @@ const STAT_DETAIL_CONFIG={
    (siehe StatDetailPage): bei Balken feste Slots (value=null -> kein
    Balken, Position bleibt aber erhalten), bei Linie ausschliesslich echte
    Messpunkte (zeitproportional positioniert, wie das bestehende
-   WeightTrendChart). */
-function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,emptyText,unit,isWeight,selIdx,onSelect}){
-  const W=340,H=220,MR=40,PT=16,PB=6;
+   WeightTrendChart). Optional statt "target" ein "targetRange"
+   ({min,ideal,max} in Werte-Einheiten, aktuell nur bei Kalorien genutzt):
+   ein dezentes, halbtransparentes Band zwischen min/max mit einer
+   deutlicheren gestrichelten Linie + Flagge exakt in der Mitte (ideal) —
+   ersetzt in diesem Fall die einzelne Ziellinie. Optionale "avgValue"
+   (ebenfalls aktuell nur bei Kalorien) zeichnet zusaetzlich eine sehr
+   duenne, neutrale Durchschnittslinie mit kleiner "Ø"-Markierung —
+   bewusst unauffaelliger als Balken und Zielbereich. */
+function StatDetailChart({chartType,color,points,bucketUnit,target,targetRange,avgValue,hasData,emptyText,unit,isWeight,selIdx,onSelect}){
+  const W=340,H=200,MR=28,PT=14,PB=6;
   const plotW=W-MR,plotH=H-PT-PB;
 
   if(!hasData){
@@ -4838,7 +4846,7 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
   let lo,hi;
   if(chartType==="bar"){
     lo=0;
-    const rawHi=Math.max(...values,target||0,1)*1.15;
+    const rawHi=Math.max(...values,targetRange?targetRange.max:(target||0),avgValue||0,1)*1.15;
     const ticks0=niceTicks(0,rawHi,6);
     hi=Math.max(ticks0[ticks0.length-1],rawHi);
   }else{
@@ -4870,7 +4878,10 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
     const dt=new Date(ts);
     return {x:xForTs(ts),y:dt.getFullYear(),m:dt.getMonth(),d:dt.getDate()};
   }):null;
-  const labelIdx=chartType==="bar"?pickLabelIndices(n,6):null;
+  /* Bei bis zu 7 Balken (insbesondere "1W") IMMER alle Labels zeigen —
+     erst bei mehr Slots (Monats-/Quartalsansichten) auf eine begrenzte
+     Auswahl ausweichen, um Ueberlappung zu vermeiden. */
+  const labelIdx=chartType==="bar"?(n<=7?Array.from({length:n},(_,i)=>i):pickLabelIndices(n,6)):null;
   const path=chartType==="line"?points.map((p,i)=>(i===0?"M":"L")+xFor(p,i)+" "+yFor(p.value)).join(" "):"";
   const lastIdx=n-1;
 
@@ -4908,7 +4919,14 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
             <text x={plotW+8} y={yFor(t)+3} fontSize="10" fill="var(--ink3)">{fmtNum(t,t%1?1:0)}</text>
           </React.Fragment>
         ))}
-        {target!=null&&(
+        {/* Zielbereich-Band: dezent, halbtransparent, HINTER den Balken
+           gezeichnet — die Balken bleiben dadurch vollstaendig sichtbar,
+           das Band wirkt nur wie eine sanfte Zone im Hintergrund. */}
+        {targetRange!=null&&(
+          <rect x="0" y={yFor(targetRange.max)} width={plotW}
+            height={Math.max(0,yFor(targetRange.min)-yFor(targetRange.max))} fill={color} opacity=".14"/>
+        )}
+        {!targetRange&&target!=null&&(
           <React.Fragment>
             <line x1="0" y1={yFor(target)} x2={plotW} y2={yFor(target)} stroke="var(--ink2)" strokeWidth="1.4" strokeDasharray="5,4" opacity=".8"/>
             <text x="2" y={yFor(target)-5} fontSize="11" fill="var(--ink2)">⚑</text>
@@ -4916,7 +4934,7 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
         )}
         {chartType==="bar"&&points.map((p,i)=>{
           if(p.value==null)return null;
-          const bw=(plotW/n)*0.5;
+          const bw=(plotW/n)*0.56;
           const x=xForIdx(i)-bw/2;
           const h=Math.max(3,((p.value-lo)/(hi-lo))*plotH);
           return <rect key={i} x={x} y={PT+plotH-h} width={bw} height={h} rx="3" fill={color}
@@ -4929,6 +4947,25 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
               <circle key={p.ts} cx={xFor(p,i)} cy={yFor(p.value)} r={i===lastIdx?4.2:2.8} fill="var(--card)" stroke={color}
                 strokeWidth={i===selIdx?2.6:1.6} style={{transition:"cx .25s ease, cy .25s ease"}}/>
             ))}
+          </React.Fragment>
+        )}
+        {/* Durchschnittslinie: sehr duenn, neutral, geringere Prioritaet als
+           Balken/Zielbereich — bewusst NACH den Balken gezeichnet, damit sie
+           auch ueber hohen Balken durchgaengig erkennbar bleibt, aber ohne
+           Zielfahne oder auffaellige Beschriftung. */}
+        {avgValue!=null&&(
+          <React.Fragment>
+            <line x1="0" y1={yFor(avgValue)} x2={plotW} y2={yFor(avgValue)} stroke="var(--ink3)" strokeWidth="1" opacity=".55"/>
+            <text x="2" y={yFor(avgValue)-4} fontSize="9" fill="var(--ink3)" opacity=".85">Ø</text>
+          </React.Fragment>
+        )}
+        {/* Idealwert-Mittellinie des Zielbereichs: zuletzt gezeichnet (oberste
+           Ebene), damit sie auch ueber hohen Balken sichtbar bleibt — analog
+           zum Marker im Kalorien-Ring. */}
+        {targetRange!=null&&(
+          <React.Fragment>
+            <line x1="0" y1={yFor(targetRange.ideal)} x2={plotW} y2={yFor(targetRange.ideal)} stroke={color} strokeWidth="1.6" strokeDasharray="5,4" opacity=".9"/>
+            <text x={plotW-2} y={yFor(targetRange.ideal)-5} textAnchor="end" fontSize="11" fill={color}>⚑</text>
           </React.Fragment>
         )}
       </svg>
@@ -5001,6 +5038,14 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
   const target=isWeight?(weightGoal?parseFloat(weightGoal.target)||null:null)
     :type==="kcal"?tdee
     :macros?macros[type]:null;
+  /* Dynamischer Zielkorridor fuers Kaloriendefizit (siehe Kalorien-Ring) —
+     ausschliesslich bei "kcal" statt der einzelnen Ziellinie, ebenfalls
+     immer aus dem aktuellen Tagesbedarf abgeleitet, nie hart programmiert. */
+  const targetRange=type==="kcal"&&tdee?{
+    min:Math.max(0,tdee-750),
+    ideal:Math.max(0,tdee-500),
+    max:Math.max(0,tdee-250),
+  }:null;
 
   const bucketUnit=pickNutritionBucketUnit(range,spanDays);
 
@@ -5019,6 +5064,11 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
   const mainValue=isWeight
     ?(hasData?weightPtsRaw[weightPtsRaw.length-1].w:null)
     :(hasData?realValues.reduce((a,b)=>a+b,0)/realValues.length:null);
+  /* Durchschnittslinie im Chart nutzt exakt denselben Wert wie die grosse
+     Kopfzahl oben (Durchschnitt ueber die Tage mit echten Eintraegen im
+     Zeitraum, Tage ohne Eintrag zaehlen nicht als 0 mit) — aktuell nur bei
+     Kalorien gewuenscht. */
+  const avgValue=type==="kcal"?mainValue:null;
 
   const canNavPrev=range!=="Max";
   const canNavNext=range!=="Max"&&effEnd.getTime()<todayStart.getTime();
@@ -5057,19 +5107,25 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
 
         <div style={{marginTop:22}}>
           <StatDetailChart key={range+"-"+anchor.getTime()} chartType={cfg.chartType} color={cfg.color}
-            points={chartPoints} bucketUnit={bucketUnit} target={target} hasData={hasData} emptyText={emptyText}
+            points={chartPoints} bucketUnit={bucketUnit} target={target} targetRange={targetRange} avgValue={avgValue}
+            hasData={hasData} emptyText={emptyText}
             unit={cfg.unit} isWeight={isWeight} selIdx={selIdx} onSelect={setSelIdx}/>
         </div>
 
         {hasData&&(
-          <div style={{display:"flex",alignItems:"center",gap:16,marginTop:10,fontSize:12,color:"var(--ink3)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:16,marginTop:10,fontSize:12,color:"var(--ink3)",flexWrap:"wrap",rowGap:6}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{width:10,height:10,borderRadius:3,background:cfg.color,display:"inline-block"}}/>
               {cfg.title}
             </div>
-            {target!=null&&(
+            {(targetRange!=null||target!=null)&&(
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span>⚑</span> Ziel
+              </div>
+            )}
+            {avgValue!=null&&(
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:"var(--ink3)"}}>Ø</span> Durchschnitt
               </div>
             )}
           </div>
