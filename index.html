@@ -4391,17 +4391,18 @@ function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
    per *1.15-Faktor), diese Skala bleibt aber reine Berechnungsgrundlage
    und wird dem Nutzer nie angezeigt (der echte Ø/Ziel-Wert steht bereits
    oben rechts in der Kartenkopfzeile). Einzige sichtbare horizontale
-   Referenz ist die Ziellinie selbst — keine Y-Achse. Rechts bleibt eine
-   schmale, fest reservierte Spalte (MR) AUSSCHLIESSLICH fuer die kleine
-   Zielfahne; die Balken-Plotflaeche endet technisch davor, ein Balken
-   kann die Fahne dadurch nie beruehren, selbst wenn er das Ziel deutlich
-   ueberschreitet. Die Ziellinie wird bewusst NACH den Balken gezeichnet
-   (spaeter im SVG = optisch obendrauf) und bleibt dadurch sichtbar, wenn
-   ein Balken sie durchlaeuft. Kein Ziel vorhanden (target<=0, dieselbe
-   Bedingung wie schon bei der Ø/Ziel-Kopfzeile) -> weder Linie noch
-   Fahne. */
+   Referenz ist die Ziellinie selbst — keine Y-Achse. Die Ziellinie laeuft
+   fast ueber die komplette Chartbreite (nur die sehr schmale Spalte MR
+   bleibt frei); die winzige Zielfahne sitzt DIREKT OBERHALB des rechten
+   Linienendes (nicht mehr daneben) — MR ist dadurch nur noch so breit,
+   dass die letzte Tagesspalte klar von der Fahne getrennt bleibt, ein
+   Balken kann sie also selbst bei voller Hoehe nie beruehren. Die
+   Ziellinie wird bewusst NACH den Balken gezeichnet (spaeter im SVG =
+   optisch obendrauf) und bleibt dadurch sichtbar, wenn ein Balken sie
+   durchlaeuft. Kein Ziel vorhanden (target<=0, dieselbe Bedingung wie
+   schon bei der Ø/Ziel-Kopfzeile) -> weder Linie noch Fahne. */
 function NutritionBarChart({days,values,target,color}){
-  const W=320,MR=26,H=118,colW=(W-MR)/7;
+  const W=320,MR=10,H=118,colW=(W-MR)/7;
   const hasTarget=target>0;
   const maxVal=Math.max(...values,target||0,1)*1.15;
   const yFor=v=>H-(v/maxVal)*H;
@@ -4417,7 +4418,7 @@ function NutritionBarChart({days,values,target,color}){
         {hasTarget&&(
           <React.Fragment>
             <line x1="0" y1={yFor(target)} x2={W-MR} y2={yFor(target)} stroke={color} strokeWidth="1.3" strokeDasharray="4,3" opacity=".7"/>
-            <text x={W-MR+4} y={yFor(target)+4} fontSize="11" fill={color}>⚑</text>
+            <text x={W-MR} y={yFor(target)-5} textAnchor="middle" fontSize="7" fill={color}>⚑</text>
           </React.Fragment>
         )}
       </svg>
