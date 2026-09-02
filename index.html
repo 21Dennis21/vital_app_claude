@@ -1889,19 +1889,43 @@ function Ring({size=190,stroke=16,progress=0,color,children}){
    den Rest. Spaetere Aenderungen von "progress" (z.B. nach dem Essen)
    animieren ueber dieselbe Transition automatisch mit. Optional anklickbar
    fuer eine Detailansicht. */
-function Gauge({size=246,stroke=18,progress=0,color,children,onClick}){
-  const r=(size-stroke)/2, c=2*Math.PI*r;
+function Gauge({size=246,stroke=18,progress=0,color,targetRange,children,onClick}){
+  const r=(size-stroke)/2, c=2*Math.PI*r, cx=size/2, cy=size/2;
   const [mounted,setMounted]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   const p=mounted?Math.min(Math.max(progress,0),1):0;
+  /* Zielkorridor (Kaloriendefizit-Bereich) als heller Bogenabschnitt direkt
+     im Ring, plus ein kurzer, kontrastreicherer Strich exakt in der Mitte
+     des Korridors (Idealwert). Der Marker wird zuletzt gezeichnet, damit er
+     auch dann sichtbar bleibt, wenn der Fortschrittsbogen ueber ihn hinaus
+     gewachsen ist. */
+  let corridorBand=null, marker=null;
+  if(targetRange){
+    const min=Math.min(Math.max(targetRange.min,0),1), max=Math.min(Math.max(targetRange.max,0),1);
+    const len=Math.max(0,max-min)*c;
+    const ideal=Math.min(Math.max(targetRange.ideal,0),1);
+    const ang=ideal*2*Math.PI;
+    const inner=r-stroke/2-2, outer=r+stroke/2+2;
+    corridorBand=(
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={len+" "+c} strokeDashoffset={-min*c} opacity=".32"/>
+    );
+    marker=(
+      <line x1={cx+inner*Math.cos(ang)} y1={cy+inner*Math.sin(ang)}
+        x2={cx+outer*Math.cos(ang)} y2={cy+outer*Math.sin(ang)}
+        stroke={color} strokeWidth="2.5" strokeLinecap="round" opacity=".95"/>
+    );
+  }
   return(
     <div className={onClick?"dc":undefined} onClick={onClick}
       style={{position:"relative",width:size,height:size,cursor:onClick?"pointer":undefined}}>
       <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--card2)" strokeWidth={stroke}/>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--card2)" strokeWidth={stroke}/>
+        {corridorBand}
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeDasharray={c} strokeDashoffset={c*(1-p)} strokeLinecap="round"
           style={{transition:"stroke-dashoffset .7s cubic-bezier(.32,.72,.28,1),stroke .4s"}}/>
+        {marker}
       </svg>
       <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>{children}</div>
     </div>
@@ -2845,6 +2869,14 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openMeal,openMealDeta
            Das Vorzeichen + diese Farbe allein vermitteln Defizit/Ueberschuss
            — kein ausgeschriebenes Wort mehr im Zentrum noetig. */
         const bilanzColor=isBalanced?"var(--ink)":isDeficit?"var(--good)":pct>1.15?"#C0453E":"var(--amber)";
+        /* Dynamischer Zielkorridor fuers gesunde Kaloriendefizit, immer aus
+           dem aktuellen Tagesbedarf abgeleitet (nie hart programmiert) —
+           verschiebt sich automatisch mit, wenn Sport das Budget veraendert. */
+        const targetRange=budget?{
+          min:Math.max(0,(budget-750)/budget),
+          ideal:Math.max(0,(budget-500)/budget),
+          max:Math.max(0,(budget-250)/budget),
+        }:null;
         return(
         <div className="card card-hero">
           <div style={{display:"flex",justifyContent:"flex-end"}}>
@@ -2853,7 +2885,7 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openMeal,openMealDeta
           {/* Vollstaendiger Ring: zeigt einzig die Tagesbilanz, sonst nichts
               im Zentrum. Anklickbar fuer die detaillierte Aufschluesselung. */}
           <div style={{display:"flex",justifyContent:"center"}}>
-            <Gauge progress={pct} color={bilanzColor} onClick={()=>{tapH();setShowCalDetail(true);}}>
+            <Gauge progress={pct} color={bilanzColor} targetRange={targetRange} onClick={()=>{tapH();setShowCalDetail(true);}}>
               <div className="num" style={{fontSize:"var(--fs-hero)",fontWeight:700,letterSpacing:-1.2,color:bilanzColor}}>
                 {isBalanced?"0":(isDeficit?"−":"+")+Math.abs(bilanz)}
               </div>
