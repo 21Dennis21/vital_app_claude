@@ -38,6 +38,7 @@ const ENGINE_TESTS=[
   "forecast-engine.integration2.test.js",
   "forecast-engine.usagegap.test.js",
   "forecast-engine.weightvalidation.test.js",
+  "chart-resolution.test.js",
 ];
 const BROWSER_TESTS=[
   "browser-scenarios-1to4.test.js",
@@ -148,15 +149,15 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
 });
 
 // ========== 2b. Syntax-Check ausgelagerte Utility-/Engine-Skripte ==========
-section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js");
-["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js"].forEach(file=>{
+section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js");
+["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js"].forEach(file=>{
   runStep(file+": Syntax ok (node --check)", ()=>{
     execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
   });
 });
 
-// ========== 3. Forecast-Engine Node-Unit-Tests ==========
-section("3. Forecast-Engine Node-Unit-Tests");
+// ========== 3. Reine Engine-Node-Unit-Tests (Forecast + Chart-Resolution) ==========
+section("3. Reine Engine-Node-Unit-Tests (Forecast + Chart-Resolution)");
 ENGINE_TESTS.forEach(file=>{
   runStep(file, ()=>runNodeScript(file));
 });
