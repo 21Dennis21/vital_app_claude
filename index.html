@@ -4269,21 +4269,26 @@ function fmtInt(n){return Math.round(n||0).toLocaleString("de-DE");}
    etwas dezenter/grauer (var(--ink3)) — der heutige Tag hebt sich durch
    weissen, fetten Wochentag+Datum PLUS einen kleinen Punkt in der
    jeweiligen Statistikfarbe ab (sehr subtil, keine Auswahlflaeche/Pill). */
-function ChartDayLabels({days,mlPct=0,mrPct=0,accentColor="var(--accent)"}){
+function ChartDayLabels({days,mlPct=0,mrPct=0,accentColor="var(--accent)",selIdx=null}){
   return(
     <div style={{display:"flex",marginTop:12}}>
       {mlPct>0&&<div style={{flex:"0 0 "+mlPct+"%"}}/>}
       <div style={{flex:"1 1 0%",display:"grid",gridTemplateColumns:"repeat(7,1fr)",minWidth:0}}>
         {days.map((d,i)=>{
           const isToday=d.y===NOW.getFullYear()&&d.m===NOW.getMonth()&&d.d===NOW.getDate();
-          const wdColor=isToday?"var(--ink)":"var(--ink2)";
-          const dColor=isToday?"var(--ink)":"var(--ink3)";
+          /* "emphasized" fasst "heutiger Tag" UND "gerade per Scrubbing
+             ausgewaehlter Tag" zusammen — dieselbe dezente Hervorhebung
+             (heller/semibold + Punkt), bewusst keine dritte, zusaetzliche
+             Abstufung fuer ein minimalistisches Gesamtbild. */
+          const emphasized=isToday||i===selIdx;
+          const wdColor=emphasized?"var(--ink)":"var(--ink2)";
+          const dColor=emphasized?"var(--ink)":"var(--ink3)";
           return(
             <div key={i} style={{textAlign:"center"}}>
-              <div style={{fontSize:13,color:wdColor,fontWeight:isToday?700:600}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
-              <div style={{fontSize:11,marginTop:3,color:dColor,fontWeight:isToday?600:400}}>{d.d}</div>
+              <div style={{fontSize:13,color:wdColor,fontWeight:emphasized?700:600}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+              <div style={{fontSize:11,marginTop:3,color:dColor,fontWeight:emphasized?600:400}}>{d.d}</div>
               <div style={{height:8,marginTop:3}}>
-                {isToday&&<div style={{width:5,height:5,borderRadius:99,background:accentColor,margin:"0 auto"}}/>}
+                {emphasized&&<div style={{width:5,height:5,borderRadius:99,background:accentColor,margin:"0 auto"}}/>}
               </div>
             </div>
           );
@@ -4418,6 +4423,24 @@ function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
   );
 }
 
+/* SVG-Pfad fuer ein Rechteck mit UNABHAENGIGEN oberen/unteren Eckradien
+   (native <rect rx> kennt nur einen einzigen Radius fuer alle 4 Ecken) —
+   fuer die "Capsule"-Optik der Statistik-Balken: oben stark, unten nur
+   leicht abgerundet. Radien werden auf h/2 bzw. w/2 geclamped, damit auch
+   sehr niedrige Balken (Mindesthoehe bei kleinen Werten) nicht optisch
+   verzerren, sondern sauber zu einer kleinen Pille zusammenlaufen. */
+function roundedBarPath(x,y,w,h,topR,botR){
+  const tr=Math.max(0,Math.min(topR,w/2,h/2)), br=Math.max(0,Math.min(botR,w/2,h/2));
+  return "M"+x+","+(y+tr)+
+    " A"+tr+","+tr+" 0 0 1 "+(x+tr)+","+y+
+    " L"+(x+w-tr)+","+y+
+    " A"+tr+","+tr+" 0 0 1 "+(x+w)+","+(y+tr)+
+    " L"+(x+w)+","+(y+h-br)+
+    " A"+br+","+br+" 0 0 1 "+(x+w-br)+","+(y+h)+
+    " L"+(x+br)+","+(y+h)+
+    " A"+br+","+br+" 0 0 1 "+x+","+(y+h-br)+
+    " Z";
+}
 /* Balkendiagramm fuer Kalorien/Proteine/Kohlenhydrate/Fette — eine
    gemeinsame Komponente statt vier fast identischer Implementierungen.
    BEWUSST OHNE sichtbare Y-Achse — weder Skalenwerte/Zahlen noch
@@ -4435,30 +4458,138 @@ function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
    Ziellinie wird bewusst NACH den Balken gezeichnet (spaeter im SVG =
    optisch obendrauf) und bleibt dadurch sichtbar, wenn ein Balken sie
    durchlaeuft. Kein Ziel vorhanden (target<=0, dieselbe Bedingung wie
-   schon bei der Ø/Ziel-Kopfzeile) -> weder Linie noch Fahne. */
-function NutritionBarChart({days,values,target,color}){
-  const W=320,MR=10,H=136,colW=(W-MR)/7;
+   schon bei der Ø/Ziel-Kopfzeile) -> weder Linie noch Fahne.
+   Balkenbreite/-form bewusst an den animierten Locked-State angelehnt
+   (breiter, stark obenrundend abgerundet, siehe STAT_LOCK_BARS/
+   roundedBarPath) — die Balkenhoehe selbst bleibt dabei rein datenbasiert
+   unveraendert, nur Breite/Form wurden angepasst.
+   Scrubbing: identisches, bereits bewaehrtes Tap-vs-Drag-Muster wie
+   WeightPreviewSpark (dragStateRef/DRAG_PX/justDraggedRef/onChartClick
+   mit stopPropagation) — ein reiner Tap oeffnet weiterhin ueber das
+   umschliessende StatCard.onClick die Detailansicht, erst eine tatsaech-
+   liche horizontale Bewegung startet das Scrubben ueber die 7 gleich
+   grossen Tagesspalten. "onScrub" meldet den aktuell beruehrten Tages-
+   index (oder null nach dem Loslassen) nach aussen, damit die Kopfzeile
+   der Karte (siehe NutritionStatCard) den Ø-Wert kurzzeitig gegen den
+   Wert des beruehrten Tages austauschen kann. */
+function NutritionBarChart({days,values,target,color,onScrub}){
+  const svgRef=useRef(null);
+  const [selIdx,setSelIdx]=useState(null);
+  const lastHapticIdx=useRef(null);
+  const dragStateRef=useRef({active:false,startX:0,startY:0});
+  const justDraggedRef=useRef(false);
+  const revertTimerRef=useRef(null);
+  const DRAG_PX=6;
+
+  const W=320,MR=10,H=136,colW=(W-MR)/7,plotW=W-MR;
   const hasTarget=target>0;
   const maxVal=Math.max(...values,target||0,1)*1.15;
   const yFor=v=>H-(v/maxVal)*H;
+  const n=values.length;
+  const xAtCenter=i=>colW*i+colW/2;
+  const nearestIdx=svgX=>Math.min(Math.max(Math.floor(svgX/colW),0),n-1);
+
+  const selectIdx=idx=>{
+    setSelIdx(idx);
+    onScrub&&onScrub(idx);
+    if(idx!==lastHapticIdx.current){tapH();lastHapticIdx.current=idx;}
+  };
+  const handleAt=clientX=>{
+    if(!svgRef.current)return;
+    clearTimeout(revertTimerRef.current);
+    const rect=svgRef.current.getBoundingClientRect();
+    const relX=Math.min(1,Math.max(0,(clientX-rect.left)/rect.width));
+    selectIdx(nearestIdx(relX*W));
+  };
+  /* Wert bleibt nach dem Loslassen noch kurz (450ms) sichtbar, statt
+     sofort zu verschwinden — der Nutzer soll die zuletzt beruehrte Zahl
+     noch lesen koennen, bevor die Kopfzeile zurueck auf den Durchschnitt
+     wechselt (siehe Aufgabenstellung "nach kurzer Zeit zurueckwechseln"). */
+  const endSelection=()=>{
+    revertTimerRef.current=setTimeout(()=>{
+      setSelIdx(null);lastHapticIdx.current=null;
+      onScrub&&onScrub(null);
+    },450);
+  };
+  const beginDrag=(x,y)=>{dragStateRef.current={active:false,startX:x,startY:y};};
+  const moveDrag=(x,y,commit)=>{
+    const st=dragStateRef.current;
+    if(!st.active&&(Math.abs(x-st.startX)>DRAG_PX||Math.abs(y-st.startY)>DRAG_PX))st.active=true;
+    if(st.active)commit();
+  };
+  const onTouchStart=e=>{const t=e.touches[0];beginDrag(t.clientX,t.clientY);};
+  const onTouchMove=e=>{
+    const t=e.touches[0];
+    moveDrag(t.clientX,t.clientY,()=>handleAt(t.clientX));
+    if(dragStateRef.current.active)e.preventDefault();
+  };
+  const onTouchEnd=()=>{
+    if(dragStateRef.current.active){justDraggedRef.current=true;endSelection();}
+    dragStateRef.current.active=false;
+  };
+  const onMouseDown=e=>beginDrag(e.clientX,e.clientY);
+  const onMouseMove=e=>{if(e.buttons===1)moveDrag(e.clientX,e.clientY,()=>handleAt(e.clientX));};
+  const onMouseUp=()=>{
+    if(dragStateRef.current.active){justDraggedRef.current=true;endSelection();}
+    dragStateRef.current.active=false;
+  };
+  const onMouseLeave=()=>{
+    if(dragStateRef.current.active)endSelection();
+    dragStateRef.current.active=false;
+  };
+  const onChartClick=e=>{
+    if(justDraggedRef.current){e.stopPropagation();justDraggedRef.current=false;}
+  };
+
   return(
     <div>
-      <svg viewBox={"0 0 "+W+" "+(H+6)} style={{width:"100%",display:"block"}}>
+      <svg ref={svgRef} viewBox={"0 0 "+W+" "+(H+6)} style={{width:"100%",display:"block",touchAction:"pan-y"}}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave} onClick={onChartClick}>
         {values.map((v,i)=>{
-          const bw=colW*0.58;
-          const x=colW*i+colW/2-bw/2;
+          const bw=colW*0.82;
+          const x=xAtCenter(i)-bw/2;
           const h=v>0?Math.max(3,(v/maxVal)*H):0;
-          return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="4" fill={color}/>;
+          return <path key={i} d={roundedBarPath(x,H-h,bw,h,5,2)} fill={color}
+            opacity={selIdx!=null&&selIdx!==i?.5:1} style={{transition:"opacity .15s ease"}}/>;
         })}
         {hasTarget&&(
           <React.Fragment>
-            <line x1="0" y1={yFor(target)} x2={W-MR} y2={yFor(target)} stroke={color} strokeWidth="1.3" strokeDasharray="4,3" opacity=".7"/>
-            <text x={W-MR} y={yFor(target)-6} textAnchor="middle" fontSize="8.5" fill={color}>⚑</text>
+            <line x1="0" y1={yFor(target)} x2={plotW} y2={yFor(target)} stroke={color} strokeWidth="1.3" strokeDasharray="4,3" opacity=".7"/>
+            <text x={plotW} y={yFor(target)-6} textAnchor="middle" fontSize="8.5" fill={color}>⚑</text>
           </React.Fragment>
         )}
       </svg>
-      <ChartDayLabels days={days} mrPct={MR/W*100} accentColor={color}/>
+      <ChartDayLabels days={days} mrPct={MR/W*100} accentColor={color} selIdx={selIdx}/>
     </div>
+  );
+}
+/* Formatiert einen Ernaehrungswert mit Einheit — exakt dieselbe Schreib-
+   weise wie die bisherige Ø/Ziel-Kopfzeile (kcal MIT Leerzeichen vor der
+   Einheit, Gramm OHNE). */
+function fmtNutriUnit(n,unit){return unit==="kcal"?fmtInt(n)+" kcal":fmtInt(n)+unit;}
+/* Gemeinsamer Wrapper fuer die vier Ernaehrungs-Statistik-Karten: kombi-
+   niert StatCard + NutritionBarChart und ersetzt waehrend des Scrubbings
+   den normalen Ø/Ziel-Kopfbereich durch den Wert des gerade beruehrten
+   Tages ("Di · 500 kcal") — bleibt dabei innerhalb der bestehenden
+   Kopfzeile, kein zusaetzlicher Tooltip im Chart selbst. */
+function NutritionStatCard({title,days,values,target,unit,color,avgValue,onOpen}){
+  const [scrubIdx,setScrubIdx]=useState(null);
+  const sel=scrubIdx!=null?{day:days[scrubIdx],value:values[scrubIdx]}:null;
+  const headerRight=(
+    <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+      <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
+        {sel
+          ?DS[(new Date(sel.day.y,sel.day.m,sel.day.d).getDay()+6)%7]+" · "+fmtNutriUnit(sel.value,unit)
+          :"Ø "+fmtNutriUnit(avgValue,unit)+(target>0?" / "+fmtNutriUnit(target,unit):"")}
+      </div>
+      <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
+    </div>
+  );
+  return(
+    <StatCard title={title} onOpen={onOpen} headerRight={headerRight}>
+      <NutritionBarChart days={days} values={values} target={target} color={color} onScrub={setScrubIdx}/>
+    </StatCard>
   );
 }
 
@@ -4597,61 +4728,33 @@ function ErnaehrungStatsView({data,mSet,goals,onOpenWeightModal,onNavigate}){
           :<WeightStatChart days={days} points={weightPoints} targetWeight={targetWeight}/>}
       </StatCard>
 
-      <StatCard title="Kalorien" onOpen={()=>setDetailStat("kcal")}
-        headerRight={anyMealLogged&&(
-          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
-              Ø {fmtInt(avgKcal)} kcal{tdee>0?" / "+fmtInt(tdee)+" kcal":""}
-            </div>
-            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
-          </div>
-        )}>
-        {!anyMealLogged
-          ?<LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0} unit="kcal" color={STAT_LOCK_COLORS.kcal}/>}
-      </StatCard>
+      {anyMealLogged
+        ?<NutritionStatCard title="Kalorien" days={days} values={dayRecords.map(x=>x.kcalIn||0)} target={tdee||0}
+            unit="kcal" color={STAT_LOCK_COLORS.kcal} avgValue={avgKcal} onOpen={()=>setDetailStat("kcal")}/>
+        :<StatCard title="Kalorien" onOpen={()=>setDetailStat("kcal")}>
+            <LockedStatisticState text="Trage Mahlzeiten ein, um deine Entwicklung zu sehen." colorKey="kcal" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          </StatCard>}
 
-      <StatCard title="Proteine" onOpen={()=>setDetailStat("protein")}
-        headerRight={anyMealLogged&&(
-          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
-              Ø {fmtInt(avgProtein)}g{macros.protein>0?" / "+fmtInt(macros.protein)+"g":""}
-            </div>
-            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
-          </div>
-        )}>
-        {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein} unit="g" color={STAT_LOCK_COLORS.protein}/>}
-      </StatCard>
+      {anyMealLogged
+        ?<NutritionStatCard title="Proteine" days={days} values={dayRecords.map(x=>x.proteinIn||0)} target={macros.protein}
+            unit="g" color={STAT_LOCK_COLORS.protein} avgValue={avgProtein} onOpen={()=>setDetailStat("protein")}/>
+        :<StatCard title="Proteine" onOpen={()=>setDetailStat("protein")}>
+            <LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="protein" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          </StatCard>}
 
-      <StatCard title="Kohlenhydrate" onOpen={()=>setDetailStat("carbs")}
-        headerRight={anyMealLogged&&(
-          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
-              Ø {fmtInt(avgCarbs)}g{macros.carbs>0?" / "+fmtInt(macros.carbs)+"g":""}
-            </div>
-            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
-          </div>
-        )}>
-        {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs} unit="g" color={STAT_LOCK_COLORS.carbs}/>}
-      </StatCard>
+      {anyMealLogged
+        ?<NutritionStatCard title="Kohlenhydrate" days={days} values={dayRecords.map(x=>x.carbsIn||0)} target={macros.carbs}
+            unit="g" color={STAT_LOCK_COLORS.carbs} avgValue={avgCarbs} onOpen={()=>setDetailStat("carbs")}/>
+        :<StatCard title="Kohlenhydrate" onOpen={()=>setDetailStat("carbs")}>
+            <LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="carbs" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          </StatCard>}
 
-      <StatCard title="Fette" onOpen={()=>setDetailStat("fat")}
-        headerRight={anyMealLogged&&(
-          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-            <div className="num" style={{fontSize:13,fontWeight:600,color:"var(--ink2)"}}>
-              Ø {fmtInt(avgFat)}g{macros.fat>0?" / "+fmtInt(macros.fat)+"g":""}
-            </div>
-            <span style={{fontSize:15,color:"var(--ink3)"}}>›</span>
-          </div>
-        )}>
-        {!anyMealLogged
-          ?<LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
-          :<NutritionBarChart days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat} unit="g" color={STAT_LOCK_COLORS.fat}/>}
-      </StatCard>
+      {anyMealLogged
+        ?<NutritionStatCard title="Fette" days={days} values={dayRecords.map(x=>x.fatIn||0)} target={macros.fat}
+            unit="g" color={STAT_LOCK_COLORS.fat} avgValue={avgFat} onOpen={()=>setDetailStat("fat")}/>
+        :<StatCard title="Fette" onOpen={()=>setDetailStat("fat")}>
+            <LockedStatisticState text="Sobald du Mahlzeiten einträgst, siehst du hier deine Entwicklung." colorKey="fat" ctaLabel={mealCtaLabel} onCta={onMealCta}/>
+          </StatCard>}
 
       {detailStat&&<StatDetailPage type={detailStat} data={data} mSet={mSet} goals={goals} onBack={()=>setDetailStat(null)}/>}
     </div>
