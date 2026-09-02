@@ -1,13 +1,23 @@
-/* chart-resolution.test.js — Fixture-basierte, automatisierte Bewertung der
-   adaptiven Aggregations-/Aufloesungs-Engine (chart-resolution.js) fuer
-   unterschiedliche Datendichten bei Koerpergewicht und Ernaehrung (siehe
-   Aufgabenstellung Phase 10/11: Testfaelle + automatische Bewertung).
+/* chart-resolution.test.js — Fixture-basierte Tests des zentralen Zeitraum-/
+   Aggregationssystems (chart-resolution.js) fuer die Statistik-Detailcharts:
+   feste Kalender-Granularitaet je Zeitspanne (statGranularityFor), die
+   dynamische Wahl bei "Max" (pickMaxGranularity), echte ISO-Kalenderwochen-
+   Bucketing ueber Monats-/Jahresgrenzen hinweg, sowie die 1M-Tages-Tick-
+   Auswahl (pickWeekAnchoredDayTicks).
 
    date-utils.js definiert seine Hilfsfunktionen als globale Browser-
    Funktionen (kein CommonJS-Modul) — fuer den Node-Test werden sie einmalig
    per vm.runInThisContext() in den globalen Kontext geladen, exakt wie sie
    im Browser via <script> verfuegbar waeren (chart-resolution.js nutzt zur
-   Laufzeit weekStartDate/addMonths/daysInMonthOf daraus). */
+   Laufzeit weekStartDate/isoWeek/addMonths/daysInMonthOf daraus).
+
+   bucketDateLabel()/selDetailDateLabel() (die sichtbaren "KW N"/Monats-/
+   Jahres-Texte) brauchen zusaetzlich MN/DS/WD_FULL/detailDateRangeLabel aus
+   index.html und werden deshalb hier bewusst NICHT direkt getestet (siehe
+   Modul-Exports-Kommentar in chart-resolution.js) — ihre korrekte
+   Darstellung wird stattdessen per Playwright gegen den echten App-Code
+   verifiziert. Hier getestet wird die darunterliegende, reine Bucket-/
+   Kalendermathematik, auf der diese Labels aufbauen. */
 const fs=require("fs");
 const path=require("path");
 const vm=require("vm");
@@ -24,290 +34,182 @@ function assertEq(actual,expected,label){
   if(ok){passed++;}
   else{failed++;console.error("❌ FAIL:",label,"— erwartet:",expected,"erhalten:",actual);}
 }
-function assertLte(actual,max,label){
-  const ok=actual<=max;
-  if(ok){passed++;}
-  else{failed++;console.error("❌ FAIL:",label,"— erwartet <=",max,"erhalten:",actual);}
-}
 function assertNoNaNInfinity(points,label){
   const bad=points.some(p=>p.value!=null&&(Number.isNaN(p.value)||!Number.isFinite(p.value)));
   if(!bad){passed++;}
   else{failed++;console.error("❌ FAIL:",label,"— NaN/Infinity in Werten gefunden");}
 }
 
-const DAY=86400000;
-function endOfDay(y,m,d){return new Date(y,m,d);}
-// Erzeugt "count" taegliche echte Gewichtsmessungen endend bei "end" (inkl.), 70kg Basis + kleine Variation
-function dailyWeightSeries(end,count,base){
-  base=base||80;
-  const out=[];
-  for(let i=count-1;i>=0;i--){
-    const d=new Date(end);d.setDate(d.getDate()-i);
-    out.push({y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),w:base-i*0.02,ts:d.getTime()});
-  }
-  return out;
-}
-// Erzeugt "count" SPARSE Messungen gleichmaessig ueber "spanDays" verteilt
-function sparseWeightSeries(end,spanDays,count,base){
-  base=base||80;
-  const out=[];
-  for(let i=0;i<count;i++){
-    const offset=Math.round((spanDays-1)*(i/(count-1||1)));
-    const d=new Date(end);d.setDate(d.getDate()-(spanDays-1)+offset);
-    out.push({y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),w:base,ts:d.getTime()});
-  }
-  return out;
-}
-function dailyNutritionSeries(end,count,kcalBase){
-  kcalBase=kcalBase||2000;
-  const out=[];
-  for(let i=count-1;i>=0;i--){
-    const d=new Date(end);d.setDate(d.getDate()-i);
-    out.push({y:d.getFullYear(),m:d.getMonth(),d:d.getDate(),kcal:kcalBase,protein:120,carbs:200,fat:60,ts:d.getTime()});
-  }
-  return out;
-}
+const TODAY=new Date(2026,7,15); // 15. August 2026 (Samstag)
 
-const TODAY=new Date(2026,7,15); // 15. August 2026, deckungsgleich mit forecast-engine.test.js' Referenzdatum
+/* ================= ZENTRALES ZEITRAUMSYSTEM ================= */
 
-/* ================= KOERPERGEWICHT ================= */
-
-console.log("========== GEWICHT: 1 Messung in 1W ==========");
+console.log("========== statGranularityFor: feste Kalender-Granularitaet je Zeitraum ==========");
 {
-  const start=new Date(TODAY);start.setDate(start.getDate()-6);
-  const pts=dailyWeightSeries(TODAY,1);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","1 Messung in 1W: Granularitaet bleibt 'day'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,1,"1 Messung in 1W: genau 1 Punkt");
-  assert(!series[0].isAgg,"1 Messung in 1W: nicht als aggregiert markiert");
-  assertNoNaNInfinity(series,"1 Messung in 1W: keine NaN/Infinity");
+  assertEq(CR.statGranularityFor("1W",new Date(2026,7,9),new Date(2026,7,15)),"day","1W -> day");
+  assertEq(CR.statGranularityFor("1M",new Date(2026,6,17),new Date(2026,7,15)),"day","1M -> day");
+  assertEq(CR.statGranularityFor("3M",new Date(2026,4,15),new Date(2026,7,15)),"week","3M -> week (echte Kalenderwochen)");
+  assertEq(CR.statGranularityFor("6M",new Date(2026,1,15),new Date(2026,7,15)),"week","6M -> week (echte Kalenderwochen)");
+  assertEq(CR.statGranularityFor("12M",new Date(2025,7,15),new Date(2026,7,15)),"month","12M -> month");
+  // "Max" hat keinen festen Zeitraum -> delegiert an pickMaxGranularity (Historienlaenge)
+  assertEq(CR.statGranularityFor("Max",new Date(2026,6,1),new Date(2026,7,15)),"week","Max mit kurzer Historie -> wie pickMaxGranularity");
 }
 
-console.log("========== GEWICHT: taeglich in 1W (7 Messungen) ==========");
+console.log("========== pickMaxGranularity: dynamisch nach tatsaechlicher Historienlaenge ==========");
 {
-  const pts=dailyWeightSeries(TODAY,7);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","Taeglich in 1W: Granularitaet 'day'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,7,"Taeglich in 1W: alle 7 echten Tage sichtbar");
-  assertNoNaNInfinity(series,"Taeglich in 1W: keine NaN/Infinity");
+  assertEq(CR.pickMaxGranularity(new Date(2026,5,1),TODAY),"week","~76 Tage Historie -> week");
+  assertEq(CR.pickMaxGranularity(new Date(2025,3,1),TODAY),"month","~1,4 Jahre Historie -> month");
+  assertEq(CR.pickMaxGranularity(new Date(2020,7,15),TODAY),"quarter","6 Jahre Historie -> quarter");
+  assertEq(CR.pickMaxGranularity(new Date(2008,7,15),TODAY),"year","18 Jahre Historie -> year");
+  // Schwellenwerte exakt treffen (120/730/2555 Tage) — keine Off-by-One-Fehler
+  const at120=new Date(TODAY);at120.setDate(at120.getDate()-119);
+  assertEq(CR.pickMaxGranularity(at120,TODAY),"week","genau 120 Tage Historie: noch 'week'");
+  const at121=new Date(TODAY);at121.setDate(at121.getDate()-120);
+  assertEq(CR.pickMaxGranularity(at121,TODAY),"month","121 Tage Historie: bereits 'month'");
+  const at730=new Date(TODAY);at730.setDate(at730.getDate()-729);
+  assertEq(CR.pickMaxGranularity(at730,TODAY),"month","genau 730 Tage Historie: noch 'month'");
+  const at731=new Date(TODAY);at731.setDate(at731.getDate()-730);
+  assertEq(CR.pickMaxGranularity(at731,TODAY),"quarter","731 Tage Historie: bereits 'quarter'");
+  assertEq(CR.pickMaxGranularity(TODAY,TODAY),"week","1 einziger Tag Historie: kein Crash, 'week'");
 }
 
-console.log("========== GEWICHT: 5 Messungen in 1M (sparse) ==========");
+/* ================= ISO-KALENDERWOCHEN: BUCKET-GRENZEN ================= */
+
+console.log("========== Kalenderwoche ueber einen Monatswechsel hinweg ==========");
 {
-  const pts=sparseWeightSeries(TODAY,30,5);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","5 sparse Messungen in 1M: bleibt 'day' (keine unnoetige Glaettung)");
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,5,"5 sparse Messungen in 1M: alle 5 echten Punkte erhalten");
+  // Aug31,2026 ist ein Montag -> die Woche Mo 31.08.-So 06.09.2026 ueberspannt
+  // den Monatswechsel August/September.
+  const startFromAug31=CR.bucketStartOf(2026,7,31,"week");
+  const startFromSep2=CR.bucketStartOf(2026,8,2,"week");
+  assertEq(startFromAug31.y+"-"+startFromAug31.m+"-"+startFromAug31.d,"2026-7-31","Aug31 (Montag) ist bereits der Wochenstart");
+  assertEq(startFromSep2.y+"-"+startFromSep2.m+"-"+startFromSep2.d,"2026-7-31","Sep2 faellt in dieselbe Woche wie Aug31 (ueber den Monatswechsel hinweg)");
+  const end=CR.chartBucketEnd(2026,7,31,"week");
+  assertEq(end.y+"-"+end.m+"-"+end.d,"2026-8-6","Wochenende korrekt im Folgemonat: So 06.09.2026");
 }
 
-console.log("========== GEWICHT: taeglich in 1M (30 Messungen) ==========");
+console.log("========== Kalenderwoche ueber den Jahreswechsel hinweg (KW1 2026) ==========");
 {
-  const pts=dailyWeightSeries(TODAY,30);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","Taeglich in 1M (30 Punkte, Budget 30): bleibt 'day'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,30,"Taeglich in 1M: alle 30 Tage sichtbar");
-  assertLte(series.length,30,"Taeglich in 1M: Punktzahl im Budget");
-}
-
-console.log("========== GEWICHT: 10 Messungen in 3M (sparse) ==========");
-{
-  const pts=sparseWeightSeries(TODAY,90,10);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","10 sparse Messungen in 3M: bleibt 'day'");
-}
-
-console.log("========== GEWICHT: taeglich in 3M (90 Messungen) ==========");
-{
-  const pts=dailyWeightSeries(TODAY,90);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"week","Taeglich in 3M (90>30): eskaliert auf 'week'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertLte(series.length,30,"Taeglich in 3M: Punktzahl nach Verdichtung im Budget");
-  assert(series.every(p=>p.isAgg),"Taeglich in 3M: alle Punkte als aggregiert markiert");
-  assert(series.every(p=>p.count>=1),"Taeglich in 3M: jeder Bucket hat mindestens 1 echten Wert");
-  assertNoNaNInfinity(series,"Taeglich in 3M: keine NaN/Infinity nach Mittelung");
-}
-
-console.log("========== GEWICHT: taeglich in 6M (~180 Messungen) ==========");
-{
-  const pts=dailyWeightSeries(TODAY,180);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"week","Taeglich in 6M: 'week' (feiner als das alte hartcodierte 'month')");
-  const series=CR.buildWeightSeries(pts,g);
-  assertLte(series.length,30,"Taeglich in 6M: Punktzahl im Budget");
-}
-
-console.log("========== GEWICHT: taeglich in 12M (~365 Messungen) ==========");
-{
-  const pts=dailyWeightSeries(TODAY,365);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"biweek","Taeglich in 12M: 'biweek' (feiner als das alte hartcodierte 'month')");
-  const series=CR.buildWeightSeries(pts,g);
-  assertLte(series.length,30,"Taeglich in 12M: Punktzahl im Budget");
-  assertNoNaNInfinity(series,"Taeglich in 12M: keine NaN/Infinity");
-}
-
-console.log("========== GEWICHT: 2 Jahre taeglich (~730 Messungen) ==========");
-{
-  const pts=dailyWeightSeries(TODAY,730);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"month","2 Jahre taeglich: 'month'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertLte(series.length,30,"2 Jahre taeglich: Punktzahl im Budget");
-}
-
-console.log("========== GEWICHT: 5 Jahre taeglich (~1825 Messungen) ==========");
-{
-  const pts=dailyWeightSeries(TODAY,1825);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"quarter","5 Jahre taeglich: 'quarter'");
-  const series=CR.buildWeightSeries(pts,g);
-  assertLte(series.length,30,"5 Jahre taeglich: Punktzahl im Budget");
-  assertNoNaNInfinity(series,"5 Jahre taeglich: keine NaN/Infinity");
-}
-
-console.log("========== GEWICHT: 5 Jahre mit nur 20 Messungen (Kernfall) ==========");
-{
-  const pts=sparseWeightSeries(TODAY,1825,20);
-  const g=CR.pickGranularityByDensity(pts,"line");
-  assertEq(g,"day","5 Jahre / 20 Messungen: bleibt 'day' — KEINE unnoetige Glaettung trotz langer Zeitspanne");
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,20,"5 Jahre / 20 Messungen: alle 20 echten Punkte einzeln sichtbar");
-  assert(series.every(p=>!p.isAgg),"5 Jahre / 20 Messungen: kein Punkt faelschlich als aggregiert markiert");
-}
-
-console.log("========== GEWICHT: keine Messungen ==========");
-{
-  const g=CR.pickGranularityByDensity([],"line");
-  assertEq(g,"day","Keine Messungen: Fallback 'day' (kein Crash)");
-  const series=CR.buildWeightSeries([],g);
-  assertEq(series.length,0,"Keine Messungen: leere Punktliste, kein Fake-Punkt");
-}
-
-console.log("========== GEWICHT: X-Achsen-Ticks getrennt von Punktzahl ==========");
-{
-  const pts=dailyWeightSeries(TODAY,90);
-  const series=CR.buildWeightSeries(pts,CR.pickGranularityByDensity(pts,"line"));
-  const ticks=CR.pickTimeTicks(series,7);
-  assertLte(ticks.length,7,"Ticks: nie mehr als angefordert");
-  assert(ticks.length<series.length,"Ticks: deutlich weniger Labels als Datenpunkte bei dichten Serien");
-  const idxSet=new Set(ticks.map(t=>t.idx));
-  assertEq(idxSet.size,ticks.length,"Ticks: keine doppelten Indizes");
-  assert(ticks.some(t=>t.idx===0),"Ticks: erster Punkt ist immer dabei");
-  assert(ticks.some(t=>t.idx===series.length-1),"Ticks: letzter (aktuellster) Punkt ist immer dabei");
-}
-{
-  const pts=dailyWeightSeries(TODAY,5);
-  const ticks=CR.pickTimeTicks(pts,7);
-  assertEq(ticks.length,5,"Ticks: bei n<=maxCount werden ALLE Punkte beschriftet (keine Interpolation noetig)");
-}
-
-/* ================= ERNAEHRUNG ================= */
-
-console.log("========== ERNAEHRUNG: 1W (7 Slots) ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-6);
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  assertEq(g,"day","Ernaehrung 1W: 'day'");
-  const slots=CR.fixedBucketSlots(start,TODAY,g);
-  assertEq(slots.length,7,"Ernaehrung 1W: exakt 7 feste Slots (immer alle 7 Tage sichtbar)");
-}
-
-console.log("========== ERNAEHRUNG: 1M (30 Slots) ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-29);
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  assertEq(g,"day","Ernaehrung 1M (30 Slots, Budget 30): bleibt 'day'");
-  const slots=CR.fixedBucketSlots(start,TODAY,g);
-  assertEq(slots.length,30,"Ernaehrung 1M: 30 feste Tages-Slots");
-}
-
-console.log("========== ERNAEHRUNG: 3M (~90 Slots) ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-89);
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  assertEq(g,"week","Ernaehrung 3M: eskaliert auf 'week'");
-  const slots=CR.fixedBucketSlots(start,TODAY,g);
-  assertLte(slots.length,30,"Ernaehrung 3M: Slot-Anzahl im Budget");
-}
-
-console.log("========== ERNAEHRUNG: 6M (~180 Slots) ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-179);
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  assertEq(g,"week","Ernaehrung 6M: 'week' (feiner als das alte hartcodierte 'month')");
-}
-
-console.log("========== ERNAEHRUNG: 12M (~365 Slots) ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-364);
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  assertEq(g,"biweek","Ernaehrung 12M: 'biweek' (feiner als das alte hartcodierte 'month')");
-}
-
-console.log("========== ERNAEHRUNG: Buckets mitteln, keine Summe, keine Fake-0 ==========");
-{
-  const start=new Date(TODAY);start.setDate(start.getDate()-89); // 3M -> week
-  const g=CR.pickGranularityBySpan(start,TODAY,"bar");
-  // Nur an 2 von ~90 Tagen tatsaechlich geloggt — Rest bleibt "keine Daten"
-  const pts=[
-    {y:start.getFullYear(),m:start.getMonth(),d:start.getDate(),kcal:2000,protein:120,carbs:200,fat:60,ts:start.getTime()},
-    {y:TODAY.getFullYear(),m:TODAY.getMonth(),d:TODAY.getDate(),kcal:1800,protein:110,carbs:180,fat:55,ts:TODAY.getTime()},
-  ];
-  const slots=CR.fixedBucketSlots(start,TODAY,g);
-  const aggMap=CR.bucketNutritionPoints(pts,g);
-  const chartPoints=slots.map(s=>{
-    const agg=aggMap[s.key];
-    return {ts:s.ts,y:s.y,m:s.m,d:s.d,value:agg?agg.kcal:null,isAgg:g!=="day"};
-  });
-  const withValue=chartPoints.filter(p=>p.value!=null);
-  assertEq(withValue.length,2,"Nur die 2 tatsaechlich befuellten Buckets haben einen Wert");
-  assert(withValue.every(p=>p.value===2000||p.value===1800),"Bucket-Werte sind der reine Tageswert (Durchschnitt ueber 1 echten Tag), keine Summe");
-  const withoutValue=chartPoints.filter(p=>p.value==null);
-  assert(withoutValue.length>0,"Leere Buckets bleiben 'Keine Daten' (null), nicht 0");
-  assertNoNaNInfinity(chartPoints,"Ernaehrung-Buckets: keine NaN/Infinity");
-}
-
-console.log("========== ERNAEHRUNG: Durchschnitt statt Summe bei mehreren Tagen im selben Bucket ==========");
-{
-  const g="week";
-  const wsA=weekStartDate(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate());
-  const d1=new Date(wsA), d2=new Date(wsA); d2.setDate(d2.getDate()+1);
-  const pts=[
-    {y:d1.getFullYear(),m:d1.getMonth(),d:d1.getDate(),kcal:2000,protein:100,carbs:200,fat:60,ts:d1.getTime()},
-    {y:d2.getFullYear(),m:d2.getMonth(),d:d2.getDate(),kcal:3000,protein:150,carbs:300,fat:90,ts:d2.getTime()},
-  ];
-  const aggMap=CR.bucketNutritionPoints(pts,g);
-  const key=CR.bucketKeyOf(d1.getFullYear(),d1.getMonth(),d1.getDate(),g);
-  assertEq(aggMap[key].kcal,2500,"2 Tage im selben Wochen-Bucket: Durchschnitt (2500), nicht Summe (5000)");
-  assertEq(aggMap[key].count,2,"Bucket kennt die Anzahl echter Tage (fuer 'Ø'-Kennzeichnung)");
-}
-
-console.log("========== MONATS-/JAHRESWECHSEL ==========");
-{
-  // Bucket ueber einen Jahreswechsel hinweg (29. Dez 2025 - 4. Jan 2026)
-  const pts=[
+  // Jan1,2026 ist ein Donnerstag -> ISO-KW1 2026 = Mo 29.12.2025 - So 04.01.2026.
+  assertEq(isoWeek(2025,11,29),1,"29.12.2025 gehoert bereits zu ISO-KW1 des Jahres 2026");
+  const startFromDec29=CR.bucketStartOf(2025,11,29,"week");
+  const startFromJan2=CR.bucketStartOf(2026,0,2,"week");
+  assertEq(startFromDec29.y+"-"+startFromDec29.m+"-"+startFromDec29.d,"2025-11-29","29.12.2025 (Montag) ist der Start von KW1 2026");
+  assertEq(startFromJan2.y+"-"+startFromJan2.m+"-"+startFromJan2.d,"2025-11-29","02.01.2026 faellt in dieselbe Woche (KW1 2026), obwohl im neuen Kalenderjahr");
+  const series=CR.buildWeightSeries([
     {y:2025,m:11,d:29,w:80,ts:new Date(2025,11,29).getTime()},
     {y:2026,m:0,d:2,w:79.5,ts:new Date(2026,0,2).getTime()},
-  ];
-  const g="week";
-  const series=CR.buildWeightSeries(pts,g);
-  assertEq(series.length,1,"Jahreswechsel: beide Tage fallen korrekt in denselben Wochen-Bucket");
-  assertEq(series[0].value,79.75,"Jahreswechsel: Durchschnitt korrekt berechnet");
-  // Monatswechsel: Bucket-Ende innerhalb eines Monats darf nicht ueberlaufen
-  const endFeb=CR.chartBucketEnd(2026,1,1,"month"); // Februar 2026 (kein Schaltjahr)
-  assertEq(endFeb.d,28,"Monatsende Februar 2026 (kein Schaltjahr) korrekt: 28");
+  ],"week");
+  assertEq(series.length,1,"Beide Tage werden zu EINEM Wochen-Bucket zusammengefasst (echtes KW1, nicht zwei getrennte Jahres-Buckets)");
+  assertEq(series[0].value,79.75,"Durchschnitt ueber den Jahreswechsel hinweg korrekt berechnet");
+}
+
+console.log("========== KW52 (letzte volle Kalenderwoche eines 52-Wochen-Jahres) ==========");
+{
+  // 2025 hat nur 52 ISO-Wochen (Jan1,2025 = Mittwoch, kein Schaltjahr) ->
+  // KW52 = Mo 22.12.2025 - So 28.12.2025 (danach beginnt bereits KW1 2026).
+  assertEq(isoWeek(2025,11,22),52,"22.12.2025 ist KW52 2025");
+  const start=CR.bucketStartOf(2025,11,24,"week");
+  assertEq(start.y+"-"+start.m+"-"+start.d,"2025-11-22","24.12.2025 faellt in den KW52-Bucket (Start Mo 22.12.2025)");
+}
+
+console.log("========== KW53 (Jahr MIT 53. Kalenderwoche) ueber den Jahreswechsel ==========");
+{
+  // 2026 hat 53 ISO-Wochen (Jan1,2026 = Donnerstag) -> KW53 2026 = Mo
+  // 28.12.2026 - So 03.01.2027, obwohl der Donnerstag dieser Woche
+  // (31.12.2026) noch in 2026 liegt.
+  assertEq(isoWeek(2026,11,28),53,"28.12.2026 ist bereits KW53 (nicht KW1 2027)");
+  const startFromDec28=CR.bucketStartOf(2026,11,28,"week");
+  const startFromJan3=CR.bucketStartOf(2027,0,3,"week");
+  assertEq(startFromDec28.y+"-"+startFromDec28.m+"-"+startFromDec28.d,"2026-11-28","28.12.2026 (Montag) ist der Start von KW53 2026");
+  assertEq(startFromJan3.y+"-"+startFromJan3.m+"-"+startFromJan3.d,"2026-11-28","03.01.2027 (Sonntag) faellt noch in denselben KW53-Bucket");
+  assertEq(isoWeek(2027,0,4),1,"Der naechste Tag (04.01.2027, Montag) ist bereits KW1 2027 — kein Off-by-One an der Grenze");
+}
+
+console.log("========== Monatsende: 28/29/30/31 Tage (Schaltjahr-Februar inklusive) ==========");
+{
+  const endFeb2026=CR.chartBucketEnd(2026,1,1,"month");
+  assertEq(endFeb2026.d,28,"Februar 2026 (kein Schaltjahr): 28 Tage");
   const endFeb2028=CR.chartBucketEnd(2028,1,1,"month");
-  assertEq(endFeb2028.d,29,"Monatsende Februar 2028 (Schaltjahr) korrekt: 29");
-  // Quartalsende darf nicht ins naechste Jahr rollen (Q4 endet im selben Jahr)
+  assertEq(endFeb2028.d,29,"Februar 2028 (Schaltjahr): 29 Tage");
+  const endApr=CR.chartBucketEnd(2026,3,1,"month");
+  assertEq(endApr.d,30,"April 2026: 30 Tage");
+  const endAug=CR.chartBucketEnd(2026,7,1,"month");
+  assertEq(endAug.d,31,"August 2026: 31 Tage");
   const endQ4=CR.chartBucketEnd(2026,9,1,"quarter");
-  assertEq(endQ4.y,2026,"Quartalsende Q4: bleibt im selben Jahr");
-  assertEq(endQ4.m,11,"Quartalsende Q4: letzter Monat ist Dezember");
-  assertEq(endQ4.d,31,"Quartalsende Q4: 31. Dezember");
+  assertEq(endQ4.y+"-"+endQ4.m+"-"+endQ4.d,"2026-11-31","Quartalsende Q4 rollt nicht ins naechste Jahr: 31.12.2026");
+}
+
+console.log("========== 12M: Monats-Buckets ueber einen Jahreswechsel (z.B. Sep 2025 - Sep 2026) ==========");
+{
+  const start=new Date(2025,8,3), end=new Date(2026,8,2); // rollierendes 12M-Beispiel (365 Tage bis "heute" 02.09.2026)
+  const slots=CR.fixedBucketSlots(start,end,"month");
+  assertEq(slots.length,13,"Rollierendes 12M-Fenster (Sep2025-Sep2026, beide Enden angeschnitten) ergibt 13 Monats-Buckets (September existiert als zwei verschiedene Jahres-Buckets)");
+  assertEq(slots[0].y+"-"+slots[0].m,"2025-8","Erster Bucket: September 2025");
+  assertEq(slots[12].y+"-"+slots[12].m,"2026-8","Letzter Bucket: September 2026");
+  // Voller Kalenderjahr-Zeitraum (01.01.-31.12.) ergibt exakt 12 Buckets
+  const yearSlots=CR.fixedBucketSlots(new Date(2025,0,1),new Date(2025,11,31),"month");
+  assertEq(yearSlots.length,12,"Volles Kalenderjahr 2025: exakt 12 Monats-Buckets");
+}
+
+/* ================= ERNAEHRUNG: FEHLENDE/LEERE TAGE, WOCHEN, MONATE ================= */
+
+console.log("========== Ernaehrung: fehlende Messungen INNERHALB einer Kalenderwoche ==========");
+{
+  const monday=weekStartDate(2026,7,10); // Kalenderwoche, in der TODAY (15.08.) liegt
+  const wed=new Date(monday);wed.setDate(wed.getDate()+2);
+  const fri=new Date(monday);fri.setDate(fri.getDate()+4);
+  // Nur Mittwoch + Freitag geloggt, die uebrigen 5 Tage der Woche fehlen.
+  const pts=[
+    {y:wed.getFullYear(),m:wed.getMonth(),d:wed.getDate(),kcal:2000,protein:120,carbs:200,fat:60,ts:wed.getTime()},
+    {y:fri.getFullYear(),m:fri.getMonth(),d:fri.getDate(),kcal:1800,protein:110,carbs:180,fat:55,ts:fri.getTime()},
+  ];
+  const agg=CR.bucketNutritionPoints(pts,"week");
+  const key=CR.bucketKeyOf(monday.getFullYear(),monday.getMonth(),monday.getDate(),"week");
+  assertEq(agg[key].count,2,"Nur die 2 tatsaechlich geloggten Tage fliessen in den Durchschnitt ein");
+  assertEq(agg[key].kcal,1900,"Durchschnitt ueber genau die 2 echten Tage (1900), NICHT durch 7 geteilt");
+}
+
+console.log("========== Ernaehrung: komplette Kalenderwoche OHNE jede Messung ==========");
+{
+  const monday=weekStartDate(2026,7,10);
+  const nextMonday=new Date(monday);nextMonday.setDate(nextMonday.getDate()+7);
+  const slots=CR.fixedBucketSlots(monday,nextMonday,"week");
+  assertEq(slots.length,2,"Zeitraum ueber 2 Kalenderwochen ergibt 2 feste Wochen-Slots");
+  const agg=CR.bucketNutritionPoints([],"week"); // keine einzige Messung im ganzen Zeitraum
+  const chartPoints=slots.map(s=>({ts:s.ts,value:agg[s.key]?agg[s.key].kcal:null}));
+  assert(chartPoints.every(p=>p.value==null),"Beide Wochen-Slots bleiben 'Keine Daten' (null) statt 0 — Positionen bleiben trotzdem erhalten");
+}
+
+console.log("========== Koerpergewicht: kompletter Monat OHNE jede Messung ==========");
+{
+  // Messungen nur im Juli, August komplett ohne Eintrag.
+  const pts=[{y:2026,m:6,d:15,w:80,ts:new Date(2026,6,15).getTime()}];
+  const series=CR.buildWeightSeries(pts,"month");
+  assertEq(series.length,1,"Nur EIN Monats-Bucket entsteht (Juli) — fuer August ohne Messung wird kein Fake-Punkt erzeugt");
+  assertEq(series[0].m,6,"Der einzige Bucket ist tatsaechlich Juli (Monat 6), nicht August");
+  assertNoNaNInfinity(series,"Kein NaN/Infinity trotz Monat ohne Daten");
+}
+
+/* ================= X-ACHSEN-TICKS ================= */
+
+console.log("========== pickTimeTicks: Ausduennung getrennt von der Punktzahl (3M/6M-KW-Beispiel) ==========");
+{
+  // ~13 Kalenderwochen (3M) -> bei maxCount 7 automatisch auf 7 Labels ausgeduennt,
+  // alle 13 Wochen bleiben aber echte, anwaehlbare Datenpunkte.
+  const weeks=[];
+  let ws=weekStartDate(2026,4,15);
+  for(let i=0;i<13;i++){const d=new Date(ws);d.setDate(d.getDate()+i*7);weeks.push({ts:d.getTime(),y:d.getFullYear(),m:d.getMonth(),d:d.getDate()});}
+  const ticks=CR.pickTimeTicks(weeks,7);
+  assertEq(weeks.length,13,"3M-Beispiel: 13 echte Wochen-Datenpunkte bleiben vollstaendig vorhanden");
+  assertEq(ticks.length,7,"Aber nur 7 davon werden als X-Achsen-Label ausgewaehlt");
+  assert(ticks.some(t=>t.idx===0)&&ticks.some(t=>t.idx===12),"Erste und letzte Kalenderwoche sind immer dabei");
+}
+{
+  // 12M: bis zu 13 Monats-Buckets sollen NIE ausgeduennt werden (siehe StatDetailPage/maxTickCount=13)
+  const months=[];
+  for(let i=0;i<13;i++)months.push({ts:i,y:2025,m:i%12,d:1});
+  const ticks=CR.pickTimeTicks(months,13);
+  assertEq(ticks.length,13,"12M mit maxTickCount=13: ALLE Monats-Buckets werden beschriftet, keine Ausduennung");
 }
 
 console.log("========== pickWeekAnchoredDayTicks (1M: Starttag + Montage) ==========");

@@ -1,8 +1,8 @@
-/* chart-resolution.js — zentrale, adaptive Aggregations-/Aufloesungs-Engine
-   fuer die Statistik-Detailcharts (Koerpergewicht + Ernaehrung). Physisch
-   analog zu den bestehenden *-engine.js-Dateien ausgelagert: reine, DOM-/
-   React-unabhaengige Funktionen, per normalem <script src="chart-
-   resolution.js"> nach weight-engine.js/nutrition-engine.js und vor dem
+/* chart-resolution.js — zentrale Zeitraum-/Aggregations-Engine fuer die
+   Statistik-Detailcharts (Koerpergewicht + Ernaehrung). Physisch analog zu
+   den bestehenden *-engine.js-Dateien ausgelagert: reine, DOM-/React-
+   unabhaengige Funktionen, per normalem <script src="chart-resolution.js">
+   nach weight-engine.js/nutrition-engine.js und vor dem
    <script type="text/babel">-App-Code geladen. bucketDateLabel() und
    selDetailDateLabel() nutzen zur Laufzeit die globalen Konstanten MN/DS/
    WD_FULL sowie die Funktion detailDateRangeLabel() aus index.html — die
@@ -11,85 +11,47 @@
    (identisches, bereits etabliertes Muster wie in weight-engine.js/
    NOW/MN).
 
-   WARUM eine eigene, zentrale Engine statt sechs hartcodierter Regeln
-   ("1W=Tag, 3M=Woche, 6M=Monat, 12M=Monat, ..."): die sichtbare
-   Granularitaet haengt nicht NUR vom gewaehlten Zeitraum ab, sondern von
-   Zeitraum + tatsaechlicher Datendichte + Metrik-Art (Balken mit festen
-   Slots vs. Linie mit ausschliesslich echten Messpunkten) + verfuegbarer
-   Chartbreite gemeinsam. Ein 5-Jahres-Zeitraum mit nur 20 Messungen soll
-   weiterhin ALLE 20 echten Punkte einzeln zeigen (keine unnoetige
-   Glaettung), waehrend taegliches Logging ueber 12 Monate sinnvoll
-   verdichtet werden muss, um lesbar zu bleiben. Siehe getChartGranularity-
-   Doku unten fuer die genaue Herleitung des Punktebudgets.
+   ZENTRALES ZEITRAUMSYSTEM: jede Zeitspanne (1W/1M/3M/6M/12M) nutzt eine
+   FESTE, natuerliche Kalender-Granularitaet statt einer pro Metrik/Dichte
+   adaptiven Wahl — dadurch repraesentiert z.B. "KW 32" bei Koerpergewicht
+   UND allen vier Ernaehrungswerten immer exakt denselben Zeitraum (siehe
+   statGranularityFor() unten, von StatDetailPage fuer alle fuenf Metriken
+   gleichermassen aufgerufen):
+     1W/1M -> Tag (jeder Kalendertag ein eigener Slot/Datenpunkt)
+     3M/6M -> Woche (echte ISO-Kalenderwochen, Montag = Wochenbeginn)
+     12M   -> Monat (jeder Kalendermonat ein eigener Slot)
+     Max   -> siehe pickMaxGranularity(): einzige verbleibende Stelle, an
+              der die Granularitaet von der tatsaechlichen Historienlaenge
+              abhaengt (nicht vom gewaehlten Zeitraum, den es bei "Max"
+              nicht gibt) — "Max" hat keine feste Groessenordnung.
+   Datenpunkte/Zeit-Slots (welche Positionen ueberhaupt existieren),
+   sichtbare X-Achsen-Beschriftungen (welche davon einen Text bekommen,
+   siehe pickTimeTicks/pickWeekAnchoredDayTicks) und die Aggregation der
+   Werte (bucketNutritionPoints/buildWeightSeries) bleiben bewusst getrennte
+   Zustaendigkeiten.
 
    Oeffentliche API:
-     CHART_GRANULARITY_LADDER
-     chartPointBudget(chartType)
-     biweekStartDate(y,m,d)
      bucketStartOf(y,m,d,granularity)
      bucketKeyOf(y,m,d,granularity)
      chartBucketEnd(y,m,d,granularity)
      fixedBucketSlots(startDate,endDate,granularity)
      bucketNutritionPoints(points,granularity)
-     countDistinctRealBuckets(points,granularity)
-     pickGranularityByDensity(points,chartType)
-     pickGranularityBySpan(startDate,endDate,chartType)
+     statGranularityFor(range,effStart,effEnd)
+     pickMaxGranularity(effStart,effEnd)
      buildWeightSeries(points,granularity)
      pickTimeTicks(points,maxCount)
      pickWeekAnchoredDayTicks(points)
      bucketDateLabel(y,m,d,granularity)
      selDetailDateLabel(p,granularity,isWeight) */
 
-/* Granularitaets-Leiter von fein nach grob. "day" ist bewusst die feinste
-   Stufe (nicht ein gesondertes "raw") — die Speicherung erlaubt ohnehin nur
-   einen Gewichtswert pro Kalendertag (siehe saveWeightForDateRaw in
-   index.html: data[key].weight wird bei einem erneuten Eintrag am selben
-   Tag ueberschrieben, nie akkumuliert), eine separate "mehrere Messungen
-   pro Tag zu einem Tageswert verdichten"-Vorstufe ist dadurch strukturell
-   bereits ueberfluessig — "day" IST schon der repraesentative Tageswert. */
-const CHART_GRANULARITY_LADDER=["day","week","biweek","month","quarter","year"];
-
-/* Punktebudget: hergeleitet aus einer angenommenen Plot-Breite und einer
-   metrik-/darstellungsabhaengigen Mindestbreite pro Punkt, NICHT eine frei
-   erfundene Zahl. Balken brauchen mehr Platz pro Punkt als duenne
-   Linienpunkte (sichtbare Luecken zwischen Balken, siehe die bewusst
-   "massiven" Balken der Uebersichtskarten), daher ein hoeherer Mindestwert
-   fuer "bar". CHART_PLOT_WIDTH_PX orientiert sich an der bereits
-   bestehenden, geraeteunabhaengigen SVG-viewBox-Breite von StatDetailChart
-   (Plot-Flaeche ca. 300 Einheiten, die per CSS-Skalierung auf jede reale
-   Geraetebreite gestreckt wird) — das Budget ist deshalb bewusst NICHT von
-   der tatsaechlichen Geraetebreite abhaengig (die Charts sind ohnehin
-   ueberall gleich breit skaliert). Zusaetzlich hart gedeckelt auf 30
-   (oberes Ende des in der Aufgabenstellung genannten Zielkorridors
-   "12 bis 30 Datenpunkte"). */
-const CHART_PLOT_WIDTH_PX=300;
-const CHART_MIN_PX_PER_POINT={bar:10,line:9};
-const CHART_POINT_BUDGET_CAP=30;
-function chartPointBudget(chartType){
-  const minPx=CHART_MIN_PX_PER_POINT[chartType]||10;
-  return Math.min(CHART_POINT_BUDGET_CAP,Math.floor(CHART_PLOT_WIDTH_PX/minPx));
-}
-
-/* Fester Referenz-Montag fuer stabile 14-Tage-Buckets — ohne einen
-   gemeinsamen Anker wuerden sich Bucket-Grenzen verschieben, je nachdem
-   welches Datum man zuerst betrachtet. Das konkrete Datum ist beliebig,
-   muss nur immer dasselbe sein. */
-const BIWEEK_EPOCH=new Date(2020,0,6); // ein Montag
-function biweekStartDate(y,m,d){
-  const ws=weekStartDate(y,m,d);
-  const diffDays=Math.round((ws.getTime()-BIWEEK_EPOCH.getTime())/86400000);
-  const biIndex=Math.floor(diffDays/14);
-  const start=new Date(BIWEEK_EPOCH);
-  start.setDate(start.getDate()+biIndex*14);
-  return start;
-}
 /* Start-Datum des Buckets, der den Tag (y,m,d) enthaelt — gemeinsame Basis
    fuer fixedBucketSlots() (Ernaehrung, feste Slots) UND buildWeightSeries()
    (Gewicht, nur echte Messungen), damit beide exakt dieselbe Bucket-
-   Definition verwenden. */
+   Definition verwenden. "week" nutzt echte ISO-Kalenderwochen
+   (weekStartDate = Montag der Woche, aus date-utils.js) — KEINE eigene,
+   von einem beliebigen Epoch abhaengige "Alle-N-Tage"-Bucket-Logik. */
 function bucketStartOf(y,m,d,granularity){
   if(granularity==="week"){const ws=weekStartDate(y,m,d);return {y:ws.getFullYear(),m:ws.getMonth(),d:ws.getDate()};}
-  if(granularity==="biweek"){const bs=biweekStartDate(y,m,d);return {y:bs.getFullYear(),m:bs.getMonth(),d:bs.getDate()};}
   if(granularity==="month")return {y,m,d:1};
   if(granularity==="quarter")return {y,m:Math.floor(m/3)*3,d:1};
   if(granularity==="year")return {y,m:0,d:1};
@@ -105,18 +67,16 @@ function bucketKeyOf(y,m,d,granularity){
    selDetailDateLabel). */
 function chartBucketEnd(y,m,d,granularity){
   if(granularity==="week"){const e=new Date(y,m,d);e.setDate(e.getDate()+6);return {y:e.getFullYear(),m:e.getMonth(),d:e.getDate()};}
-  if(granularity==="biweek"){const e=new Date(y,m,d);e.setDate(e.getDate()+13);return {y:e.getFullYear(),m:e.getMonth(),d:e.getDate()};}
   if(granularity==="month")return {y,m,d:daysInMonthOf(y,m)};
   if(granularity==="quarter"){const lastM=m+2;return {y,m:lastM,d:daysInMonthOf(y,lastM)};}
   if(granularity==="year")return {y,m:11,d:31};
   return {y,m,d};
 }
 /* Feste Bucket-Slots ueber den gesamten Anzeigezeitraum (taeglich/
-   woechentlich/zweiwoechentlich/monatlich/quartalsweise/jaehrlich je nach
-   Granularitaet) — jeder Zeitabschnitt bleibt an seiner festen Position,
-   auch ohne Daten (kein Balken statt verschobenem Balken). Wird sowohl fuer
-   die eigentliche Bucket-Erzeugung (Ernaehrung) als auch NUR zum Zaehlen
-   (siehe pickGranularityBySpan) verwendet. */
+   woechentlich/monatlich/quartalsweise/jaehrlich je nach Granularitaet) —
+   jeder Zeitabschnitt bleibt an seiner festen Position, auch ohne Daten
+   (kein Balken statt verschobenem Balken). Traegt die eigentliche Bucket-
+   Erzeugung fuer Ernaehrung (siehe StatDetailPage). */
 function fixedBucketSlots(startDate,endDate,granularity){
   const out=[];
   const seen=new Set();
@@ -153,41 +113,42 @@ function bucketNutritionPoints(points,granularity){
   });
   return out;
 }
-/* Anzahl UNTERSCHIEDLICHER Buckets, die tatsaechlich mindestens eine echte
-   Messung enthalten — die massgebliche Dichte-Kennzahl fuer Koerpergewicht
-   (dort gibt es KEINE festen Slots, jeder Punkt ist eine echte Messung).
-   Ein duenn befuellter langer Zeitraum bleibt dadurch fein aufgeloest. */
-function countDistinctRealBuckets(points,granularity){
-  const seen=new Set();
-  points.forEach(p=>seen.add(bucketKeyOf(p.y,p.m,p.d,granularity)));
-  return seen.size;
-}
-/* Waehlt die FEINSTE Granularitaet, bei der die Anzahl BUCKETS MIT
-   ECHTEN DATEN noch innerhalb des Punktebudgets liegt — fuer Metriken ohne
-   feste Slots (Koerpergewicht/Linie). Massgeblich ist die Datendichte,
-   nicht die Zeitspanne: 20 Messungen ueber 5 Jahre bleiben "day", taegliches
-   Logging ueber 12 Monate wird sinnvoll verdichtet. */
-function pickGranularityByDensity(points,chartType){
-  const budget=chartPointBudget(chartType);
-  for(const g of CHART_GRANULARITY_LADDER){
-    if(countDistinctRealBuckets(points,g)<=budget)return g;
+/* "Max" kennt keinen festen Zeitraum — die Granularitaet richtet sich hier
+   als einzige Ausnahme nach der TATSAECHLICHEN HISTORIENLAENGE (nicht nach
+   Datendichte oder Metrik-Art, siehe Aufgabenstellung: "so viel zeitliche
+   Information wie sinnvoll, aber keine unlesbare X-Achse"):
+     bis ~4 Monate  -> Woche
+     bis ~2 Jahre   -> Monat
+     bis ~7 Jahre   -> Quartal
+     darueber       -> Jahr
+   Bewusst kein "day": bei "Max" sollen laut Aufgabenstellung auch bei
+   kurzer Historie mindestens Wochen gezeigt werden, nie einzelne Tage
+   (das bleibt 1W/1M vorbehalten). */
+const MAX_GRANULARITY_THRESHOLDS=[
+  {maxDays:120,granularity:"week"},
+  {maxDays:730,granularity:"month"},
+  {maxDays:2555,granularity:"quarter"},
+];
+function pickMaxGranularity(effStart,effEnd){
+  const days=Math.round((effEnd.getTime()-effStart.getTime())/86400000)+1;
+  for(const t of MAX_GRANULARITY_THRESHOLDS){
+    if(days<=t.maxDays)return t.granularity;
   }
-  return CHART_GRANULARITY_LADDER[CHART_GRANULARITY_LADDER.length-1];
+  return "year";
 }
-/* Waehlt die FEINSTE Granularitaet, bei der die Anzahl FESTER SLOTS ueber
-   den sichtbaren Zeitraum noch innerhalb des Punktebudgets liegt — fuer
-   Metriken mit festen Positionsslots (Ernaehrung/Balken, jeder Tag/jede
-   Woche behaelt ihre Position, auch ohne Eintrag). Hier ist bewusst die
-   ZEITSPANNE massgeblich (nicht die Datendichte): die Slot-Anzahl ergibt
-   sich rein aus dem sichtbaren Fenster, unabhaengig davon, wie viele Slots
-   tatsaechlich befuellt sind — sonst wuerden bei duennem Logging ueber
-   einen langen Zeitraum trotzdem hunderte leere Tages-Slots entstehen. */
-function pickGranularityBySpan(startDate,endDate,chartType){
-  const budget=chartPointBudget(chartType);
-  for(const g of CHART_GRANULARITY_LADDER){
-    if(fixedBucketSlots(startDate,endDate,g).length<=budget)return g;
-  }
-  return CHART_GRANULARITY_LADDER[CHART_GRANULARITY_LADDER.length-1];
+/* Zentrale Granularitaets-Wahl fuer die Statistik-Detailcharts — von
+   StatDetailPage fuer Koerpergewicht UND alle vier Ernaehrungswerte
+   GLEICHERMASSEN aufgerufen, damit z.B. "KW 32" bei jeder Metrik exakt
+   denselben Zeitraum meint (statt wie frueher pro Metrik unabhaengig
+   ermittelt zu werden). Feste, natuerliche Kalenderstufe je Zeitraum statt
+   einer pro Datenlage adaptiven Wahl (siehe Aufgabenstellung: "das soll
+   sich wie echtes Zoomen durch die Zeit anfuehlen" — Tag -> Woche -> Monat
+   -> Jahr). */
+function statGranularityFor(range,effStart,effEnd){
+  if(range==="1W"||range==="1M")return "day";
+  if(range==="3M"||range==="6M")return "week";
+  if(range==="12M")return "month";
+  return pickMaxGranularity(effStart,effEnd);
 }
 /* Baut die tatsaechlich gezeichneten Gewichts-Punkte fuer die gewaehlte
    Granularitaet. Bei "day" 1:1 Durchreichung der echten Messungen (keine
@@ -264,33 +225,57 @@ function pickWeekAnchoredDayTicks(points){
   return out;
 }
 /* Kompakte X-Achsen-Beschriftung je Granularitaet — zweizeilig fuer Tag
-   (Wochentag/Datum) und Monat/Quartal/Jahr (Monat/Jahr), einzeilig fuer
-   Woche/2 Wochen (Datum des Bucket-Beginns). */
+   (Wochentag/Datum) und Monat/Quartal (Monat/Jahr), einzeilig fuer Woche
+   ("KW N", echte ISO-Kalenderwochennummer — siehe Aufgabenstellung: 3M/6M
+   sollen eindeutig wochenbasiert lesbar sein) und Jahr. */
 function bucketDateLabel(y,m,d,granularity){
   if(granularity==="day")return {l1:DS[(new Date(y,m,d).getDay()+6)%7],l2:String(d)};
-  if(granularity==="week"||granularity==="biweek")return {l1:d+". "+MN[m].slice(0,3),l2:""};
+  if(granularity==="week")return {l1:"KW "+isoWeek(y,m,d),l2:""};
   if(granularity==="year")return {l1:String(y),l2:""};
   return {l1:MN[m].slice(0,3),l2:String(y)};
 }
+/* "24. – 30. August" statt zweimal "August" (detailDateRangeLabel dedupliziert
+   nur das Jahr, nicht den Monat) — ausschliesslich fuer die kompakte
+   Wochen-Scrubbing-Zeile (selDetailDateLabel) gedacht, wo der Platz knapp
+   ist und der Monat bei einer einzelnen Kalenderwoche fast immer gleich
+   bleibt. Faellt bei einem Monats-/Jahreswechsel innerhalb der Woche auf
+   die vollstaendige Form zurueck (inkl. beider Monate bzw. beider Jahre). */
+function weekRangeCompactLabel(sy,sm,sd,ey,em,ed){
+  if(sy===ey&&sm===em)return sd+". – "+ed+". "+MN[sm];
+  if(sy===ey)return sd+". "+MN[sm]+" – "+ed+". "+MN[em];
+  return detailDateRangeLabel(sy,sm,sd,ey,em,ed);
+}
 /* Ausgeschriebene Datumsbeschriftung fuer den festen Scrubbing-Infobereich
    (StatDetailChart) — mit vollem Wochentag/Monatsnamen, passend zur
-   jeweils gewaehlten Granularitaet, damit z.B. bei einem Wochen-Bucket
-   nicht faelschlich ein einzelner Wochentag suggeriert wird. Ab Woche
-   zeigt sie den echten Datumsbereich des Buckets ("26. Aug – 1. Sep"),
-   ab Monat den Monatsnamen (niemand sagt "1.–31. August"). Fuer
-   Koerpergewicht bleibt der Tages-Fall bewusst ohne Wochentag (bereits
-   bestehende Konvention: "31. August 2026" statt "Montag, 31. August"). */
+   jeweils gewaehlten Granularitaet, damit der Nutzer sofort erkennt, ob er
+   gerade einen Tag, eine Kalenderwoche oder einen Monat betrachtet (siehe
+   Aufgabenstellung "Information beim Scrubbing"):
+     Tag     -> "Montag, 31. August" (Ernaehrung) bzw. "31. August 2026"
+                (Koerpergewicht, bereits bestehende Konvention ohne
+                Wochentag)
+     Woche   -> "KW 35 · 24. – 30. August" (KW-Nummer + Datumsbereich in
+                EINER Zeile, damit die bestehende zweizeilige Infobox aus
+                Label+Wert unveraendert bleibt)
+     Monat   -> "August 2026"
+     Quartal -> "Juli – September 2026" (nur bei "Max" erreichbar, sonst
+                nicht von Bedeutung — unterscheidet einen Quartals- klar
+                von einem Monats-Bucket)
+     Jahr    -> "2026" */
 function selDetailDateLabel(p,granularity,isWeight){
   if(granularity==="day"){
     if(isWeight)return p.d+". "+MN[p.m]+" "+p.y;
     const dt=new Date(p.y,p.m,p.d);
     return WD_FULL[(dt.getDay()+6)%7]+", "+p.d+". "+MN[p.m];
   }
-  if(granularity==="week"||granularity==="biweek"){
+  if(granularity==="week"){
     const end=chartBucketEnd(p.y,p.m,p.d,granularity);
-    return detailDateRangeLabel(p.y,p.m,p.d,end.y,end.m,end.d);
+    return "KW "+isoWeek(p.y,p.m,p.d)+" · "+weekRangeCompactLabel(p.y,p.m,p.d,end.y,end.m,end.d);
   }
-  if(granularity==="month"||granularity==="quarter")return MN[p.m]+" "+p.y;
+  if(granularity==="quarter"){
+    const end=chartBucketEnd(p.y,p.m,p.d,granularity);
+    return MN[p.m]+" – "+MN[end.m]+" "+p.y;
+  }
+  if(granularity==="month")return MN[p.m]+" "+p.y;
   return String(p.y);
 }
 
@@ -302,17 +287,13 @@ function selDetailDateLabel(p,granularity,isWeight){
    Suite (kompletter App-Code) abgedeckt. */
 if(typeof module!=="undefined" && module.exports){
   module.exports={
-    CHART_GRANULARITY_LADDER,
-    chartPointBudget,
-    biweekStartDate,
     bucketStartOf,
     bucketKeyOf,
     chartBucketEnd,
     fixedBucketSlots,
     bucketNutritionPoints,
-    countDistinctRealBuckets,
-    pickGranularityByDensity,
-    pickGranularityBySpan,
+    statGranularityFor,
+    pickMaxGranularity,
     buildWeightSeries,
     pickTimeTicks,
     pickWeekAnchoredDayTicks,
