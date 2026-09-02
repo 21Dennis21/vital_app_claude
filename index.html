@@ -4804,6 +4804,20 @@ function bucketDateLabel(y,m,d,unit){
   if(unit==="year")return {l1:String(y),l2:""};
   return {l1:MN[m].slice(0,3),l2:String(y)};
 }
+/* Ausgeschriebene Datumsbeschriftung fuer den festen Scrubbing-Infobereich
+   (StatDetailChart) — im Unterschied zu bucketDateLabel() (kompakte
+   X-Achsen-Beschriftung) hier mit vollem Wochentag/Monatsnamen und passend
+   zur jeweils bereits verwendeten Aggregationsstufe des Charts (Tag/Woche/
+   Monat/Quartal/Jahr), damit z.B. bei "3M" nicht faelschlich ein einzelner
+   Wochentag suggeriert wird. */
+function selDetailDateLabel(p,bucketUnit,isWeight){
+  if(isWeight)return p.d+". "+MN[p.m]+" "+p.y;
+  if(bucketUnit==="week")return "Woche vom "+p.d+". "+MN[p.m];
+  if(bucketUnit==="month"||bucketUnit==="quarter")return MN[p.m]+" "+p.y;
+  if(bucketUnit==="year")return String(p.y);
+  const dt=new Date(p.y,p.m,p.d);
+  return WD_FULL[(dt.getDay()+6)%7]+", "+p.d+". "+MN[p.m];
+}
 
 const STAT_DETAIL_CONFIG={
   weight:{title:"Körpergewicht",unit:"kg",color:"var(--good)",chartType:"line"},
@@ -4814,20 +4828,27 @@ const STAT_DETAIL_CONFIG={
 };
 
 /* Gemeinsame Chart-Komponente fuer Balken (Ernaehrung) UND Linie
-   (Koerpergewicht) — Y-Achse rechts mit dezenten gestrichelten Gridlines,
-   optionaler deutlicherer gestrichelter Ziellinie mit Flaggen-Symbol (nur
-   wenn target!=null — echte Unterscheidung zwischen "kein Ziel" und
-   "Ziel = 0"), Tap auf einen Balken/Punkt zeigt ein kompaktes Tooltip mit
-   Datum+Wert. "points" sind bereits die fertig aufbereiteten Chart-Punkte
-   (siehe StatDetailPage): bei Balken feste Slots (value=null -> kein
-   Balken, Position bleibt aber erhalten), bei Linie ausschliesslich echte
-   Messpunkte (zeitproportional positioniert, wie das bestehende
-   WeightTrendChart). Rein layoutbezogen (kein neues Feature): MR reduziert
-   gegenueber frueher, damit die Y-Achse weniger von der Plot-Breite
-   wegnimmt und der Chart die verfuegbare Breite besser ausnutzt. */
-function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,emptyText,unit,isWeight,selIdx,onSelect}){
-  const W=340,H=220,MR=28,PT=16,PB=6;
-  const plotW=W-MR,plotH=H-PT-PB;
+   (Koerpergewicht). Y-Achse RECHTS in einer eigenen, dynamisch nur so breit
+   wie fuer die laengste dargestellte Zahl noetig bemessenen Spalte — nie
+   abgeschnitten, nie ueber Balken/Gridlines liegend (statt eines pauschalen
+   festen Randes wie frueher). Volles Finger-Scrubbing (Ziehen ueber die
+   Plot-Flaeche waehlt IMMER den naechstgelegenen Datenpunkt, auch Slots
+   ohne Eintrag) mit leichtem Haptic-Tick ausschliesslich beim
+   tatsaechlichen Indexwechsel — identisches, bereits bewaehrtes Muster wie
+   WeightTrendChart (nearestIdx/selectIdx/lastHapticIdx/releasing). Datum+
+   Wert des ausgewaehlten Punktes erscheinen in einem FESTEN Infobereich
+   OBERHALB der Plot-Flaeche (Position bleibt beim Scrubbing stabil, nur der
+   Inhalt wechselt) statt als mitwandernder Tooltip im Chart. "points" sind
+   bereits die fertig aufbereiteten Chart-Punkte (siehe StatDetailPage): bei
+   Balken feste Slots (value=null -> kein Balken, Position UND
+   Anwaehlbarkeit bleiben erhalten -> "Keine Daten" statt 0), bei Linie
+   ausschliesslich echte Messpunkte (zeitproportional positioniert). */
+function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,emptyText,unit,isWeight}){
+  const svgRef=useRef(null);
+  const [selIdx,setSelIdx]=useState(null);
+  const [releasing,setReleasing]=useState(false);
+  const lastHapticIdx=useRef(null); // verhindert Dauer-Vibrieren waehrend des Ziehens
+  const W=340,H=220,PT=16,PB=6;
 
   if(!hasData){
     return(
@@ -4851,6 +4872,11 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
     lo=mn-span*0.3;hi=mx+span*0.3;
   }
   const ticks=niceTicks(lo,hi,6);
+  const tickLabels=ticks.map(t=>fmtNum(t,t%1?1:0));
+  const maxLabelLen=Math.max(...tickLabels.map(s=>s.length),1);
+  const GAP=6,PAD_RIGHT=6,CHAR_W=6.5;
+  const MR=Math.max(22,GAP+maxLabelLen*CHAR_W+PAD_RIGHT);
+  const plotW=W-MR,plotH=H-PT-PB;
   const yFor=v=>PT+plotH-((v-lo)/(hi-lo))*plotH;
 
   const n=points.length;
@@ -4880,38 +4906,66 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
   const path=chartType==="line"?points.map((p,i)=>(i===0?"M":"L")+xFor(p,i)+" "+yFor(p.value)).join(" "):"";
   const lastIdx=n-1;
 
-  const sel=selIdx!=null?points[selIdx]:null;
-  const selDate=sel?new Date(sel.y,sel.m,sel.d):null;
-  const selLine1=sel?(isWeight
-    ?(sel.d+". "+MN[sel.m]+" "+sel.y)
-    :(WD_FULL[(selDate.getDay()+6)%7]+", "+sel.d+". "+MN[sel.m])):"";
-  const selLine2=sel&&sel.value!=null?fmtNum(sel.value,isWeight?1:0)+" "+unit:"";
-
-  const onTapChart=e=>{
-    const rect=e.currentTarget.getBoundingClientRect();
-    const relX=(e.clientX-rect.left)/rect.width*W;
+  /* Scrubbing: identisches Muster wie WeightTrendChart — waehlt IMMER den
+     naechstgelegenen Datenpunkt (nie noetig, exakt einen schmalen Balken zu
+     treffen), auch Slots ohne Wert sind waehlbar (siehe "Keine Daten"
+     unten). Haptik ausschliesslich beim tatsaechlichen Indexwechsel. */
+  const nearestIdx=svgX=>{
     let best=0,bestDist=Infinity;
     points.forEach((p,i)=>{
-      if(chartType==="bar"&&p.value==null)return;
-      const dist=Math.abs(xFor(p,i)-relX);
+      const dist=Math.abs(xFor(p,i)-svgX);
       if(dist<bestDist){bestDist=dist;best=i;}
     });
-    onSelect(selIdx===best?null:best);
+    return best;
   };
+  const selectIdx=idx=>{
+    setSelIdx(idx);
+    if(idx!==lastHapticIdx.current){
+      tapH();
+      lastHapticIdx.current=idx;
+    }
+  };
+  const handleAt=clientX=>{
+    if(!svgRef.current)return;
+    setReleasing(false);
+    const rect=svgRef.current.getBoundingClientRect();
+    const relX=Math.min(1,Math.max(0,(clientX-rect.left)/rect.width));
+    selectIdx(nearestIdx(relX*W));
+  };
+  const endSelection=()=>{
+    setReleasing(true);
+    setTimeout(()=>{setSelIdx(null);setReleasing(false);lastHapticIdx.current=null;},160);
+  };
+  const onTouchStart=e=>handleAt(e.touches[0].clientX);
+  const onTouchMove=e=>{e.preventDefault();handleAt(e.touches[0].clientX);};
+  const onMouseDown=e=>handleAt(e.clientX);
+  const onMouseMove=e=>{if(e.buttons===1)handleAt(e.clientX);};
+
+  const sel=selIdx!=null?points[selIdx]:null;
+  const selLine1=sel?selDetailDateLabel(sel,bucketUnit,isWeight):"";
+  const selLine2=sel?(sel.value!=null?fmtNum(sel.value,isWeight?1:0)+" "+unit:"Keine Daten"):"";
 
   return(
-    <div style={{position:"relative"}}>
-      {sel&&(
-        <div style={{position:"absolute",top:0,left:0,background:"var(--card2)",borderRadius:10,padding:"6px 10px",fontSize:12,zIndex:2,pointerEvents:"none"}}>
-          <div style={{color:"var(--ink2)"}}>{selLine1}</div>
-          <div style={{fontWeight:700,color:"var(--ink)"}}>{selLine2}</div>
-        </div>
-      )}
-      <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",touchAction:"manipulation"}} onClick={onTapChart}>
+    <div>
+      {/* Fester Infobereich OBERHALB der Plot-Flaeche: Position bleibt beim
+         Scrubbing stabil, nur der Inhalt wechselt — kein mitwandernder
+         Tooltip im Chart selbst. Feste Mindesthoehe verhindert ein Springen
+         des Layouts beim ersten Beruehren. */}
+      <div style={{minHeight:36,opacity:releasing?0:1,transition:"opacity .16s ease-out"}}>
+        {sel&&(
+          <div key={selIdx} className="tooltip-fade">
+            <div style={{fontSize:12,color:"var(--ink2)",fontWeight:500}}>{selLine1}</div>
+            <div style={{fontSize:16,fontWeight:800,color:"var(--ink)",marginTop:1}}>{selLine2}</div>
+          </div>
+        )}
+      </div>
+      <svg ref={svgRef} viewBox={"0 0 "+W+" "+H} style={{width:"100%",display:"block",touchAction:"none"}}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={endSelection}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={endSelection} onMouseLeave={endSelection}>
         {ticks.map((t,i)=>(
           <React.Fragment key={i}>
             <line x1="0" y1={yFor(t)} x2={plotW} y2={yFor(t)} stroke="var(--line)" strokeWidth="1" strokeDasharray="4,4" opacity=".5"/>
-            <text x={plotW+8} y={yFor(t)+3} fontSize="10" fill="var(--ink3)">{fmtNum(t,t%1?1:0)}</text>
+            <text x={plotW+GAP} y={yFor(t)+3} fontSize="10" fill="var(--ink3)">{tickLabels[i]}</text>
           </React.Fragment>
         ))}
         {target!=null&&(
@@ -4936,6 +4990,13 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
                 strokeWidth={i===selIdx?2.6:1.6} style={{transition:"cx .25s ease, cy .25s ease"}}/>
             ))}
           </React.Fragment>
+        )}
+        {/* Sehr duenne, nicht dominante vertikale Guide-Line an der
+           X-Position des ausgewaehlten Punktes — zuletzt gezeichnet, damit
+           sie auch ueber Balken/Linie sichtbar bleibt. */}
+        {sel&&(
+          <line x1={xFor(sel,selIdx)} y1={PT} x2={xFor(sel,selIdx)} y2={PT+plotH} stroke="var(--ink3)" strokeWidth="1" strokeDasharray="2,3"
+            opacity={releasing?0:.5} style={{transition:"opacity .16s ease-out"}}/>
         )}
       </svg>
       <div style={{position:"relative",height:24,marginTop:4}}>
@@ -4983,9 +5044,7 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
   const todayStart=useMemo(()=>new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()),[]);
   const [range,setRange]=useState("1W");
   const [anchor,setAnchor]=useState(todayStart);
-  const [selIdx,setSelIdx]=useState(null);
-  useEffect(()=>{setAnchor(todayStart);setSelIdx(null);},[range]);
-  useEffect(()=>{setSelIdx(null);},[anchor]);
+  useEffect(()=>{setAnchor(todayStart);},[range]);
 
   const inRangeFn=useMemo(()=>weightDetailInRangeFn(range,anchor),[range,anchor]);
   const rangeStart=useMemo(()=>weightDetailRangeStart(range,anchor),[range,anchor]);
@@ -5064,7 +5123,7 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
         <div style={{marginTop:22}}>
           <StatDetailChart key={range+"-"+anchor.getTime()} chartType={cfg.chartType} color={cfg.color}
             points={chartPoints} bucketUnit={bucketUnit} target={target} hasData={hasData} emptyText={emptyText}
-            unit={cfg.unit} isWeight={isWeight} selIdx={selIdx} onSelect={setSelIdx}/>
+            unit={cfg.unit} isWeight={isWeight}/>
         </div>
 
         {hasData&&(
