@@ -36,6 +36,11 @@
      Detailcharts (Koerpergewicht + Ernaehrung) — reine, DOM-unabhaengige
      Logik, ausgelagert nach demselben Muster wie die uebrigen *-engine.js. -->
 <script src="chart-resolution.js"></script>
+<!-- Zeitraum-Navigations-Engine fuer die Statistik-Detailcharts: welches
+     Kalenderfenster ist sichtbar (rollierend vs. abgeschlossene
+     Kalenderperiode) — bewusst getrennt von chart-resolution.js (dort nur
+     die Aggregation INNERHALB des Fensters). -->
+<script src="period-nav.js"></script>
 <style>
 /* ===== DESIGN-TOKENS =====
    Alle Farben liegen in CSS-Variablen. Dark Mode tauscht nur die Variablen —
@@ -4855,6 +4860,27 @@ function detailDateRangeLabel(sy,sm,sd,ey,em,ed){
   const sameYear=sy===ey;
   return sd+". "+MN[sm]+(sameYear?"":" "+sy)+" – "+ed+". "+MN[em]+" "+ey;
 }
+/* Datumsueberschrift der Statistik-Detailansicht (StatDetailPage) — reagiert
+   auf den Fenster-Modus aus period-nav.js: waehrend des rollierenden
+   "bis heute"-Fensters (isCurrent) bleibt es beim bisherigen Tag-Genau-
+   Bereich (detailDateRangeLabel, unveraendert). Ab einer abgeschlossenen
+   Kalenderperiode (unit) zeigt sie stattdessen die dafuer natuerliche,
+   kuerzere Form: volle Kalenderwoche als Tagesbereich mit nur einmal
+   genanntem Monat (z.B. "17. – 23. Aug. 2026"), voller Monat als reiner
+   Monatsname ("August 2026"), Quartal/Halbjahr als Monatsbereich ohne Tage
+   ("April – Juni 2026"), Jahr als nackte Jahreszahl ("2025"). */
+function statPeriodRangeLabel(start,end,isCurrent,unit){
+  const sy=start.getFullYear(),sm=start.getMonth(),sd=start.getDate();
+  const ey=end.getFullYear(),em=end.getMonth(),ed=end.getDate();
+  if(isCurrent||!unit)return detailDateRangeLabel(sy,sm,sd,ey,em,ed);
+  if(unit==="week"){
+    if(sy===ey&&sm===em)return sd+". – "+ed+". "+MN[sm].slice(0,3)+". "+sy;
+    return detailDateRangeLabel(sy,sm,sd,ey,em,ed);
+  }
+  if(unit==="month")return MN[sm]+" "+sy;
+  if(unit==="quarter"||unit==="halfYear")return MN[sm]+" – "+MN[em]+" "+ey;
+  return String(sy);
+}
 const WD_FULL=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
 /* pickNutritionBucketUnit/bucketKeyOf/fixedBucketSlots/bucketNutritionPoints/
    pickLabelIndices/bucketDateLabel/selDetailDateLabel: siehe
@@ -5050,10 +5076,13 @@ function StatDetailChart({chartType,color,points,bucketUnit,target,hasData,empty
 }
 
 /* Vollbild-Detailseite fuer eine einzelne Statistik-Kachel (Tap auf die
-   jeweilige StatCard in ErnaehrungStatsView). "range" steuert Zeitraum +
-   Granularitaet, "anchor" das Ende des aktuell sichtbaren Fensters
-   (Navigation ueber die Pfeile ueber dem Chart, ausser bei "Max" — dort
-   gibt es per Definition kein "vorher"). Ziel-Werte nutzen dieselbe
+   jeweilige StatCard in ErnaehrungStatsView). "range" waehlt die Groessen-
+   ordnung (1W/1M/3M/6M/12M/Max), "periodOffset" (0 = rollierendes
+   "bis heute"-Fenster, >=1 = die periodOffset-te abgeschlossene
+   Kalenderperiode davor) steuert ueber period-nav.js/statPeriodWindow,
+   WELCHES Kalenderfenster sichtbar ist (Navigation ueber die Pfeile ueber
+   dem Chart, ausser bei "Max" — dort gibt es per Definition kein
+   "vorher"). Ziel-Werte nutzen dieselbe
    Berechnung wie die 7-Tage-Uebersicht (settingsOf/calcBMR/macroTargets
    bzw. aktives Gewichtsziel) — echtes null statt eines vermeintlichen
    0-Ziels, wenn nichts hinterlegt ist. Der Hauptwert nutzt ebenfalls
@@ -5065,19 +5094,27 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
   const isWeight=type==="weight";
   const todayStart=useMemo(()=>new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()),[]);
   const [range,setRange]=useState("1W");
-  const [anchor,setAnchor]=useState(todayStart);
-  useEffect(()=>{setAnchor(todayStart);},[range]);
+  const [periodOffset,setPeriodOffset]=useState(0);
+  useEffect(()=>{setPeriodOffset(0);},[range]);
 
-  const inRangeFn=useMemo(()=>weightDetailInRangeFn(range,anchor),[range,anchor]);
-  const rangeStart=useMemo(()=>weightDetailRangeStart(range,anchor),[range,anchor]);
+  /* periodOffset===0 -> rollierendes "bis heute"-Fenster, periodOffset>=1
+     -> abgeschlossene Kalenderperiode (siehe period-nav.js fuer die
+     zentrale Zeitraum-Navigations-Regel, identisch fuer Gewicht UND alle
+     vier Ernaehrungswerte). */
+  const win=useMemo(()=>statPeriodWindow(range,range==="Max"?0:periodOffset,todayStart),[range,periodOffset,todayStart]);
+  const inRangeFn=useMemo(()=>{
+    if(win.start==null)return ()=>true;
+    const startTs=win.start.getTime(),endTs=win.end.getTime();
+    return (y,m,d)=>{const ts=new Date(y,m,d).getTime();return ts>=startTs&&ts<=endTs;};
+  },[win]);
 
   const weightPtsRaw=useMemo(()=>isWeight?collectWeightPointsInRange(data,inRangeFn):[],[data,inRangeFn,isWeight]);
   const nutriPtsRaw=useMemo(()=>!isWeight?collectNutritionPointsInRange(data,inRangeFn):[],[data,inRangeFn,isWeight]);
 
-  const effStart=rangeStart||(isWeight
+  const effStart=win.start||(isWeight
     ?(weightPtsRaw.length?new Date(weightPtsRaw[0].y,weightPtsRaw[0].m,weightPtsRaw[0].d):todayStart)
     :(nutriPtsRaw.length?new Date(nutriPtsRaw[0].y,nutriPtsRaw[0].m,nutriPtsRaw[0].d):todayStart));
-  const effEnd=anchor;
+  const effEnd=win.end;
 
   const y0=NOW.getFullYear(),m0=NOW.getMonth();
   const st=settingsOf(mSet,y0,m0);
@@ -5116,15 +5153,17 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
     ?(hasData?weightPtsRaw[weightPtsRaw.length-1].w:null)
     :(hasData?realValues.reduce((a,b)=>a+b,0)/realValues.length:null);
 
+  /* ‹ geht IMMER eine volle Periode weiter zurueck (periodOffset+1), egal
+     ob dort Daten liegen (siehe Aufgabenstellung: kein daten-abhaengiges
+     Blockieren, ein leerer Zeitraum wird korrekt mit "Keine Daten"
+     angezeigt statt automatisch uebersprungen zu werden). › geht eine
+     Periode nach vorne und landet bei periodOffset 0 wieder im
+     rollierenden "bis heute"-Fenster — von dort ist › gesperrt, da es nie
+     in die Zukunft gehen darf. */
   const canNavPrev=range!=="Max";
-  const canNavNext=range!=="Max"&&effEnd.getTime()<todayStart.getTime();
-  const navBy=WEIGHT_DETAIL_RANGE_DAYS[range]||30;
-  const navPrev=()=>{if(!canNavPrev)return;const d=new Date(anchor);d.setDate(d.getDate()-navBy);setAnchor(d);};
-  const navNext=()=>{
-    if(!canNavNext)return;
-    const d=new Date(anchor);d.setDate(d.getDate()+navBy);
-    setAnchor(d.getTime()>todayStart.getTime()?todayStart:d);
-  };
+  const canNavNext=range!=="Max"&&periodOffset>0;
+  const navPrev=()=>{if(canNavPrev)setPeriodOffset(o=>o+1);};
+  const navNext=()=>{if(canNavNext)setPeriodOffset(o=>Math.max(0,o-1));};
 
   const emptyText=isWeight?"Keine Gewichtseinträge in diesem Zeitraum.":"Trage Mahlzeiten ein, um deine Entwicklung zu sehen.";
 
@@ -5140,7 +5179,7 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
             {mainValue!=null?fmtNum(mainValue,isWeight?1:0)+" "+cfg.unit:"–"}
           </div>
           <div className="sub" style={{fontSize:13,marginTop:2}}>
-            {detailDateRangeLabel(effStart.getFullYear(),effStart.getMonth(),effStart.getDate(),effEnd.getFullYear(),effEnd.getMonth(),effEnd.getDate())}
+            {statPeriodRangeLabel(effStart,effEnd,range==="Max"||win.isCurrent,win.unit)}
           </div>
         </div>
 
@@ -5152,7 +5191,7 @@ function StatDetailPage({type,data,mSet,goals,onBack}){
         )}
 
         <div style={{marginTop:22}}>
-          <StatDetailChart key={range+"-"+anchor.getTime()} chartType={cfg.chartType} color={cfg.color}
+          <StatDetailChart key={range+"-"+periodOffset} chartType={cfg.chartType} color={cfg.color}
             points={chartPoints} bucketUnit={bucketUnit} target={target} hasData={hasData} emptyText={emptyText}
             unit={cfg.unit} isWeight={isWeight}/>
         </div>
