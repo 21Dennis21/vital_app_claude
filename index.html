@@ -4227,23 +4227,34 @@ function last7CalendarDays(now){
    der Ernaehrungs-Statistik-Karten. */
 function fmtInt(n){return Math.round(n||0).toLocaleString("de-DE");}
 /* Gemeinsame Tagesbeschriftung (Wochentag + Datum) unter jedem Statistik-
-   Diagramm — sieben gleich breite Spalten, keine Y-Achsen-Randreservierung
-   noetig (die Charts haben bewusst keine sichtbare Skala). Wochentag
-   etwas heller/mittelgrau, Datum kleiner/dunkler — der heutige Tag hebt
-   sich zusaetzlich durch einen noch helleren, fetten Wochentag ab (sehr
-   subtil, keine Auswahlflaeche/Pill). */
-function ChartDayLabels({days}){
+   Diagramm. "mlPct"/"mrPct" (optional, in %) spiegeln die linke Y-Achsen-
+   Randreservierung bzw. die rechte Zielbeschriftungs-Spalte des jeweiligen
+   SVG-Charts als leere Randspalten, damit die 7 Tagesspalten exakt unter
+   ihrem Balken/Punkt liegen (Balkendiagramme reservieren beide Raender,
+   das Koerpergewicht-Liniendiagramm keinen — dort bleiben beide 0).
+   Alle Tage in dezentem Grau, der heutige Tag hebt sich durch weissen
+   Wochentag+Datum PLUS einen kleinen Punkt in der jeweiligen
+   Statistikfarbe ab (sehr subtil, keine Auswahlflaeche/Pill). */
+function ChartDayLabels({days,mlPct=0,mrPct=0,accentColor="var(--accent)"}){
   return(
-    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:6}}>
-      {days.map((d,i)=>{
-        const isToday=d.y===NOW.getFullYear()&&d.m===NOW.getMonth()&&d.d===NOW.getDate();
-        return(
-          <div key={i} style={{textAlign:"center"}}>
-            <div style={{fontSize:10,color:isToday?"var(--ink)":"var(--ink2)",fontWeight:isToday?700:500}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
-            <div className="sub" style={{fontSize:9,marginTop:1}}>{d.d}</div>
-          </div>
-        );
-      })}
+    <div style={{display:"flex",marginTop:8}}>
+      {mlPct>0&&<div style={{flex:"0 0 "+mlPct+"%"}}/>}
+      <div style={{flex:"1 1 0%",display:"grid",gridTemplateColumns:"repeat(7,1fr)",minWidth:0}}>
+        {days.map((d,i)=>{
+          const isToday=d.y===NOW.getFullYear()&&d.m===NOW.getMonth()&&d.d===NOW.getDate();
+          const c=isToday?"var(--ink)":"var(--ink3)";
+          return(
+            <div key={i} style={{textAlign:"center"}}>
+              <div style={{fontSize:10,color:c,fontWeight:isToday?700:500}}>{DS[(new Date(d.y,d.m,d.d).getDay()+6)%7]}</div>
+              <div style={{fontSize:9,marginTop:1,color:c,fontWeight:isToday?600:400}}>{d.d}</div>
+              <div style={{height:6,marginTop:2}}>
+                {isToday&&<div style={{width:4,height:4,borderRadius:99,background:accentColor,margin:"0 auto"}}/>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {mrPct>0&&<div style={{flex:"0 0 "+mrPct+"%"}}/>}
     </div>
   );
 }
@@ -4374,40 +4385,47 @@ function LockedStatisticState({title,text,ctaLabel,onCta,colorKey="kcal"}){
 
 /* Balkendiagramm fuer Kalorien/Proteine/Kohlenhydrate/Fette — eine
    gemeinsame Komponente statt vier fast identischer Implementierungen.
-   Bewusst OHNE sichtbare Y-Achse/Zahlen/zusaetzliche Gridlines (die Karte
-   soll clean bleiben) — stattdessen genau zwei horizontale Linien:
-   1) eine sehr dezente graue gestrichelte Baseline direkt ueber den
-      Tagesbeschriftungen (rein visuelle Chart-Basis) und
-   2) bei einem echten Ziel (target>0, dieselbe Bedingung wie schon bei
-      der Ø/Ziel-Kopfzeile) eine deutlichere, farblich zur Statistik
-      passende gestrichelte Ziellinie MIT kleinem Textlabel ("Ziel X")
-      am rechten Rand statt eines Flaggen-Icons. PT reserviert oben Platz
-      fuer dieses Label, damit es nie abgeschnitten wird. Kein Ziel
-      vorhanden -> keine Linie/kein Label (target=0 aus den bestehenden
-      Fallback-Objekten wird dadurch nie als vermeintliches Ziel gezeigt). */
+   Jetzt mit sichtbarer, dynamisch aus den echten Werten/dem echten Ziel
+   berechneter Y-Skala links (niceTicks, dieselbe "schoene Rundung" wie
+   in der Detailansicht) und einer rechts fest reservierten Spalte (MR)
+   AUSSCHLIESSLICH fuer die Zielwert-Beschriftung — Balken-Plotflaeche
+   endet technisch VOR dieser Spalte, ein Balken kann die Beschriftung
+   dadurch nie ueberdecken, selbst wenn er das Ziel deutlich
+   ueberschreitet. Die Ziellinie wird bewusst NACH den Balken gezeichnet
+   (spaeter im SVG = optisch obendrauf), bleibt also auch dann sichtbar,
+   wenn ein Balken sie durchlaeuft. Kein Ziel vorhanden (target<=0,
+   dieselbe Bedingung wie schon bei der Ø/Ziel-Kopfzeile) -> weder Linie
+   noch Beschriftung, kein vermeintliches "0"-Ziel. */
 function NutritionBarChart({days,values,target,unit,color}){
-  const W=300,PT=16,H=78,colW=W/7;
-  const maxVal=Math.max(...values,target||0,1)*1.15;
-  const yFor=v=>PT+H-(v/maxVal)*H;
+  const W=320,ML=34,MR=64,H=118,colW=(W-ML-MR)/7;
   const hasTarget=target>0;
+  const domainTop=Math.max(...values,target||0,1)*1.15;
+  const ticks=niceTicks(0,domainTop,5);
+  const maxVal=Math.max(ticks[ticks.length-1],domainTop);
+  const yFor=v=>H-(v/maxVal)*H;
   return(
     <div>
-      <svg viewBox={"0 0 "+W+" "+(PT+H+8)} style={{width:"100%",display:"block"}}>
-        {hasTarget&&(
-          <React.Fragment>
-            <text x={W} y={yFor(target)-6} textAnchor="end" fontSize="9" fontWeight="600" fill="var(--ink3)">{"Ziel "+fmtInt(target)+" "+unit}</text>
-            <line x1="0" y1={yFor(target)} x2={W} y2={yFor(target)} stroke={color} strokeWidth="1.3" strokeDasharray="4,3" opacity=".6"/>
+      <svg viewBox={"0 0 "+W+" "+(H+6)} style={{width:"100%",display:"block"}}>
+        {ticks.map((t,i)=>(
+          <React.Fragment key={i}>
+            <line x1={ML} y1={yFor(t)} x2={W-MR} y2={yFor(t)} stroke="var(--line)" strokeWidth="1" strokeDasharray="3,3" opacity=".35"/>
+            <text x={ML-6} y={yFor(t)+3} textAnchor="end" fontSize="9" fill="var(--ink3)">{fmtInt(t)}</text>
           </React.Fragment>
-        )}
+        ))}
         {values.map((v,i)=>{
           const bw=colW*0.46;
-          const x=colW*i+colW/2-bw/2;
+          const x=ML+colW*i+colW/2-bw/2;
           const h=v>0?Math.max(3,(v/maxVal)*H):0;
-          return <rect key={i} x={x} y={PT+H-h} width={bw} height={h} rx="3" fill={color}/>;
+          return <rect key={i} x={x} y={H-h} width={bw} height={h} rx="3" fill={color}/>;
         })}
-        <line x1="0" y1={PT+H} x2={W} y2={PT+H} stroke="var(--line)" strokeWidth="1" strokeDasharray="3,3" opacity=".4"/>
+        {hasTarget&&(
+          <React.Fragment>
+            <line x1={ML} y1={yFor(target)} x2={W-MR} y2={yFor(target)} stroke={color} strokeWidth="1.4" strokeDasharray="4,3" opacity=".9"/>
+            <text x={W} y={yFor(target)+3} textAnchor="end" fontSize="10" fontWeight="700" fill={color}>{fmtInt(target)+" "+unit}</text>
+          </React.Fragment>
+        )}
       </svg>
-      <ChartDayLabels days={days}/>
+      <ChartDayLabels days={days} mlPct={ML/W*100} mrPct={MR/W*100} accentColor={color}/>
     </div>
   );
 }
@@ -4450,7 +4468,7 @@ function WeightStatChart({days,points,targetWeight}){
         ))}
         <line x1="0" y1={PADTOP+H} x2={W} y2={PADTOP+H} stroke="var(--line)" strokeWidth="1" strokeDasharray="3,3" opacity=".4"/>
       </svg>
-      <ChartDayLabels days={days}/>
+      <ChartDayLabels days={days} accentColor="var(--good)"/>
     </div>
   );
 }
