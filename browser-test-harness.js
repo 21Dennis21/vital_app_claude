@@ -52,8 +52,8 @@ function createApp(seedFn, opts){
   if(seedFn) seedFn(window);
 
   /* Spiegelt ALLE <script src="...">-Tags aus index.html VOR dem Babel-
-     App-Code (date-utils.js bis training-storage.js): in echten Browsern
-     laufen diese
+     App-Code (date-utils.js bis training-profile-engine.js): in echten
+     Browsern laufen diese
      als normale globale Skripte VOR dem Babel-App-Code (siehe Phase 1/2A
      des Migrationsplans) und teilen sich dort mit allen anderen <script>-
      Elementen der Seite EINE gemeinsame globale Umgebung — auch fuer
@@ -67,7 +67,7 @@ function createApp(seedFn, opts){
      werden alle Vor-Skripte + der App-Code hier zu EINEM einzigen
      eval()-Aufruf zusammengefuegt, in exakt derselben Reihenfolge wie die
      <script>-Tags in index.html. */
-  const preScripts = ["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js"]
+  const preScripts = ["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js","training-profile-engine.js"]
     .map(file=>fs.readFileSync(path.join(__dirname,file),"utf-8"));
   const combinedSource = [...preScripts, appSource].join("\n;\n");
 

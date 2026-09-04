@@ -42,6 +42,7 @@ const ENGINE_TESTS=[
   "period-nav.test.js",
   "training-domain.test.js",
   "training-storage.test.js",
+  "training-profile-engine.test.js",
 ];
 const BROWSER_TESTS=[
   "browser-scenarios-1to4.test.js",
@@ -56,6 +57,7 @@ const BROWSER_TESTS=[
   "browser-live-prognose-real-datapath.test.js",
   "browser-forecast-diagnostic-sheet.test.js",
   "browser-calendar-monthview-ux.test.js",
+  "browser-training-onboarding.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}
@@ -152,8 +154,8 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
 });
 
 // ========== 2b. Syntax-Check ausgelagerte Utility-/Engine-Skripte ==========
-section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js / period-nav.js / training-domain.js / training-storage.js");
-["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js"].forEach(file=>{
+section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js / period-nav.js / training-domain.js / training-storage.js / training-profile-engine.js");
+["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js","training-profile-engine.js"].forEach(file=>{
   runStep(file+": Syntax ok (node --check)", ()=>{
     execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
   });

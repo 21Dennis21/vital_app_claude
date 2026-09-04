@@ -129,7 +129,7 @@ const ENTITY_CASES=[
   {name:"User",factory:TD.createUser,input:{id:"u1",created_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","created_at"]},
   {name:"UserTrainingProfile",factory:TD.createUserTrainingProfile,input:{user_id:"u1",goal:"HYPERTROPHY",experience_self:"SOME",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2},expectedKeys:["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","priority_muscles","preferred_split","training_weekdays","weekday_location_map","uses_rir","rest_preference","sex","age","experience_level_eligible","experience_level","user_skill_level","rir_reliability_tier_by_exercise","session_adherence_rate","actual_session_duration_factor"]},
   {name:"BodyweightEvent",factory:TD.createBodyweightEvent,input:{event_id:"bwe1",user_id:"u1",bodyweight_kg:80,effective_at:"2026-08-15T00:00:00Z",recorded_at:"2026-08-15T00:00:00Z",source:"USER_ENTRY"},expectedKeys:["event_id","user_id","bodyweight_kg","effective_at","recorded_at","source","corrects_event_id","idempotency_key"]},
-  {name:"TrainingLocation",factory:TD.createTrainingLocation,input:{id:"loc1",user_id:"u1",name:"Home Gym",type:"HOME"},expectedKeys:["id","user_id","name","type","current_equipment_profile_version_id","is_default_for_weekdays"]},
+  {name:"TrainingLocation",factory:TD.createTrainingLocation,input:{id:"loc1",user_id:"u1",name:"Home Gym",type:"HOME_GYM"},expectedKeys:["id","user_id","name","type","current_equipment_profile_version_id","is_default_for_weekdays"]},
   {name:"AvailabilityEvent",factory:TD.createAvailabilityEvent,input:{id:"ave1",equipment_instance_id:"ei1",state:"AVAILABLE",starts_at:"2026-08-15T00:00:00Z",reason:"restocked",recorded_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","equipment_instance_id","session_instance_id","state","starts_at","expires_at","reason","recorded_at"]},
   {name:"LocationInventoryEvent",factory:TD.createLocationInventoryEvent,input:{id:"lie1",location_id:"loc1",from_state:"NOT_PRESENT",to_state:"PRESENT",source:"USER_ENTRY",effective_at:"2026-08-15T00:00:00Z",recorded_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","location_id","equipment_instance_id","capability_key","from_state","to_state","source","effective_at","recorded_at"]},
   {name:"ExercisePreference",factory:TD.createExercisePreference,input:{user_id:"u1",exercise_id:"ex1",stage:"LIKED",set_by:"USER",reason_code:"MANUAL",created_at:"2026-08-15T00:00:00Z",decay_score:1},expectedKeys:["user_id","exercise_id","stage","set_by","reason_code","note","created_at","expires_at","evidence_events","decay_score"]},
@@ -210,6 +210,49 @@ console.log("========== Kanonische Enums/Registry-IDs (Korrektur nach STEP-01-Re
   TD.registerMovementPatternId("HORIZONTAL_PUSH");
   assert(TD.isRegisteredMovementPatternId("HORIZONTAL_PUSH"),"registerMovementPatternId() befuellt die Registry nachtraeglich");
   assert(!TD.isRegisteredMovementSubpatternId("ANY_SUBPATTERN"),"MovementSubpattern-Registry ist ebenfalls zu Beginn leer");
+}
+
+console.log("========== Paket 02: UserTrainingProfile §1.2 REQUIRED/OPTIONAL-Regeln ==========");
+{
+  // Minimalprofil mit ausschliesslich den 7 REQUIRED-Feldern + den DERIVED-
+  // Snapshot-Feldern (die die Fabrik technisch als Struktur-Pflichtfelder
+  // fuehrt, siehe Kommentar in createUserTrainingProfile) — KEINE der
+  // OPTIONAL-Angaben wird mitgegeben.
+  const minimal={user_id:"u1",goal:"HYPERTROPHY",experience_self:"NEW",training_days_per_week:3,session_time_budget_min:45,primary_location_id:"loc1",bodyweight_kg:82,experience_level_eligible:"BEGINNER",experience_level:"BEGINNER",user_skill_level:2};
+  const profile=TD.createUserTrainingProfile(minimal);
+  assertEq(profile.preferred_split,null,"Default preferred_split = null (§1.2 OPTIONAL), OHNE dass die Angabe den Abschluss blockiert");
+  assertEq(profile.uses_rir,false,"Default uses_rir = false");
+  assertEq(profile.rest_preference,"STANDARD","Default rest_preference = STANDARD");
+  assertEq(profile.priority_muscles,[],"Default priority_muscles = []");
+
+  // Wertebereiche (§1.2 REQUIRED-Tabelle): training_days_per_week 2-6,
+  // session_time_budget_min 20-120, bodyweight_kg 30-250.
+  assert(!!TD.createUserTrainingProfile({...minimal,training_days_per_week:2}),"training_days_per_week=2 (Untergrenze) wird akzeptiert");
+  assert(!!TD.createUserTrainingProfile({...minimal,training_days_per_week:6}),"training_days_per_week=6 (Obergrenze) wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,training_days_per_week:1}),"training_days_per_week=1 (unterhalb 2) wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,training_days_per_week:7}),"training_days_per_week=7 (oberhalb 6) wird abgelehnt");
+  assert(!!TD.createUserTrainingProfile({...minimal,session_time_budget_min:20}),"session_time_budget_min=20 (Untergrenze) wird akzeptiert");
+  assert(!!TD.createUserTrainingProfile({...minimal,session_time_budget_min:120}),"session_time_budget_min=120 (Obergrenze) wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,session_time_budget_min:19}),"session_time_budget_min=19 (unterhalb 20) wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,session_time_budget_min:121}),"session_time_budget_min=121 (oberhalb 120) wird abgelehnt");
+  assert(!!TD.createUserTrainingProfile({...minimal,bodyweight_kg:30}),"bodyweight_kg=30 (Untergrenze) wird akzeptiert");
+  assert(!!TD.createUserTrainingProfile({...minimal,bodyweight_kg:250}),"bodyweight_kg=250 (Obergrenze) wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,bodyweight_kg:29}),"bodyweight_kg=29 (unterhalb 30) wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,bodyweight_kg:251}),"bodyweight_kg=251 (oberhalb 250) wird abgelehnt");
+
+  // §4.5: maximal 2 Prioritaetsmuskeln.
+  assert(!!TD.createUserTrainingProfile({...minimal,priority_muscles:["CHEST","LATS"]}),"genau 2 priority_muscles werden akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,priority_muscles:["CHEST","LATS","BICEPS"]}),"mehr als 2 priority_muscles werden abgelehnt (§4.5)");
+
+  // preferred_split/rest_preference: kanonische Werte aus §3.1/§1.2.
+  assert(!!TD.createUserTrainingProfile({...minimal,preferred_split:"PPL_UL_HYBRID"}),"kanonischer preferred_split-Wert wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,preferred_split:"NOT_A_SPLIT"}),"ungueltiger preferred_split-Wert wird abgelehnt");
+  assert(!!TD.createUserTrainingProfile({...minimal,rest_preference:"LONG"}),"kanonischer rest_preference-Wert wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...minimal,rest_preference:"MEDIUM"}),"ungueltiger rest_preference-Wert wird abgelehnt (nur SHORT|STANDARD|LONG)");
+
+  // TrainingLocation.type (§1.4).
+  assert(!!TD.createTrainingLocation({id:"loc1",user_id:"u1",name:"Zuhause",type:"BODYWEIGHT_ONLY"}),"kanonischer TrainingLocation.type-Wert wird akzeptiert");
+  assertThrows(()=>TD.createTrainingLocation({id:"loc1",user_id:"u1",name:"Zuhause",type:"GARAGE"}),"ungueltiger TrainingLocation.type-Wert wird abgelehnt");
 }
 
 console.log("========== WorkoutLog: immutable:true fest verdrahtet ==========");

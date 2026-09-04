@@ -48,6 +48,11 @@
      Persistenz, keine Engine-Logik (siehe Datei-Kopfkommentare). -->
 <script src="training-domain.js"></script>
 <script src="training-storage.js"></script>
+<!-- TRAINING SYSTEM v1.4.1, Implementation Pack 02/14: User Profile/
+     Onboarding/Split-Praeferenz-UX — reine Experience-/Skill-Ableitung
+     (§1.3) und Onboarding-Vollstaendigkeitspruefung (§1.2), aufbauend auf
+     der Pack-01-Foundation. Keine Engine-Logik (siehe Datei-Kopfkommentar). -->
+<script src="training-profile-engine.js"></script>
 <style>
 /* ===== DESIGN-TOKENS =====
    Alle Farben liegen in CSS-Variablen. Dark Mode tauscht nur die Variablen —
@@ -3003,18 +3008,391 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openMeal,openMealDeta
   );
 }
 
-/* ===== TAB 3: TRAINING — enthaelt bisher ausschliesslich den aus dem
-   Ernaehrungs-Tab hierher verschobenen "Aktivitäten"-Bereich (unveraendert
-   uebernommen: gleiche Komponente/Datenlogik/Navigation wie zuvor, nur der
-   Ort innerhalb der App-Struktur hat sich geaendert). Noch keine weiteren
-   Trainingsplan-/Workout-Funktionen — die werden spaeter separat ergaenzt. ===== */
+/* ===== TRAINING SYSTEM v1.4.1, Implementation Pack 02/14: User Profile/
+   Onboarding/Split-Praeferenz-UX — UI-Schicht. Nutzt ausschliesslich die
+   bereits per <script> geladenen globalen Funktionen/Enums aus training-
+   domain.js/training-storage.js/training-profile-engine.js; keine eigene
+   Fachlogik hier (nur Anzeige-/Interaktions-Uebersetzung). ===== */
+const TRAINING_GOAL_LABELS={HYPERTROPHY:"Muskelaufbau",STRENGTH:"Kraft",GENERAL_FITNESS:"Allgemeine Fitness"};
+const EXPERIENCE_SELF_LABELS={NEW:"Neu (< 6 Monate)",SOME:"Etwas Erfahrung (6–24 Monate)",EXPERIENCED:"Erfahren (> 24 Monate)"};
+const TRAINING_LOCATION_TYPE_LABELS={COMMERCIAL_GYM:"Fitnessstudio",HOME_GYM:"Home-Gym",HOTEL_TRAVEL:"Hotel / Unterwegs",BODYWEIGHT_ONLY:"Nur Körpergewicht",OTHER:"Sonstiges"};
+const PREFERRED_SPLIT_LABELS={AUTOMATIC:"Automatisch",FULL_BODY:"Ganzkörper",UPPER_LOWER:"Oberkörper / Unterkörper",UPPER_LOWER_FULL:"Oberkörper/Unterkörper + Ganzkörper",PUSH_PULL:"Push / Pull",PPL:"Push / Pull / Legs",PPL_X2:"Push / Pull / Legs ×2",PPL_UL_HYBRID:"PPL + Oberkörper/Unterkörper (Hybrid)",UPPER_LOWER_X3:"Oberkörper / Unterkörper ×3",BODY_PART_SPLIT:"Muskelgruppen-Split"};
+const REST_PREFERENCE_LABELS={SHORT:"Kurz",STANDARD:"Standard",LONG:"Lang"};
+const VOLUME_MUSCLE_LABELS={CHEST:"Brust",FRONT_DELT:"Vord. Schulter",SIDE_DELT:"Seitl. Schulter",REAR_DELT:"Hint. Schulter",LATS:"Latissimus",UPPER_BACK:"Oberer Rücken",LOWER_BACK:"Unterer Rücken",BICEPS:"Bizeps",TRICEPS:"Trizeps",FOREARM:"Unterarm",QUADS:"Quadrizeps",HAMSTRINGS:"Beinbeuger",GLUTES:"Gesäß",ADDUCTORS:"Adduktoren",ABDUCTORS:"Abduktoren",CALVES:"Waden",ABS:"Bauch",OBLIQUES:"Seitl. Bauch"};
+
+/* Minimal-Set fuer Onboarding-Equipment-Presets (Paket 02) — bewusst KEIN
+   Ersatz fuer den vollstaendigen TEIL-29-Katalog (spaeteres Pack): reine
+   editierbare Startschaetzungen. Stabile IDs, damit wiederholtes Speichern
+   idempotent bleibt statt bei jedem Onboarding-Durchlauf neue Definitionen
+   anzulegen. */
+const TRAINING_EQUIPMENT_PRESETS=[
+  {id:"eqdef_barbell_plates",name:"Langhantel + Scheiben",family:"FREE_WEIGHT",subtype:"OLYMPIC_BAR"},
+  {id:"eqdef_dumbbells",name:"Kurzhanteln",family:"FREE_WEIGHT",subtype:"DUMBBELL"},
+  {id:"eqdef_bench",name:"Verstellbare Bank",family:"BENCH",subtype:"ADJUSTABLE"},
+  {id:"eqdef_rack",name:"Kraftstation / Rack",family:"RACK",subtype:"POWER_RACK"},
+  {id:"eqdef_cable_machine",name:"Kabelzug-Turm",family:"MACHINE",subtype:"CABLE"},
+  {id:"eqdef_pull_up_bar",name:"Klimmzugstange",family:"BODYWEIGHT_APPARATUS",subtype:"PULL_UP_BAR"},
+  {id:"eqdef_dip_station",name:"Dip-Station",family:"BODYWEIGHT_APPARATUS",subtype:"DIP_STATION"},
+  {id:"eqdef_rings",name:"Ringe",family:"BODYWEIGHT_APPARATUS",subtype:"RINGS"},
+  {id:"eqdef_suspension_trainer",name:"Schlingentrainer",family:"BODYWEIGHT_APPARATUS",subtype:"SUSPENSION_TRAINER"},
+  {id:"eqdef_resistance_bands",name:"Widerstandsbänder",family:"BAND",subtype:"RESISTANCE_BAND"},
+];
+
+/* "equipment_profile_confirmed" (§1.2 REQUIRED-Feld 6, hier nicht als
+   UserTrainingProfile-Feld gefuehrt, siehe §1.4: Equipment lebt in
+   TrainingLocation/EquipmentProfileVersion/EquipmentInstance) gilt als
+   erfuellt, sobald fuer den gewaehlten Ort mindestens eine
+   EquipmentProfileVersion existiert — auch eine leere fuer
+   BODYWEIGHT_ONLY (siehe finishOnboarding). */
+function trainingLocationHasConfirmedEquipmentProfile(locationId){
+  if(!locationId)return false;
+  return loadEquipmentProfileVersions().some(v=>v.location_id===locationId);
+}
+
+function nowEvaluationContext(){
+  return createEvaluationContext({evaluation_at:new Date(),user_timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,config_version:1,catalog_version:1,source_event_revision:1});
+}
+
+/* Rekonstruiert den Bearbeitungs-Entwurf aus bereits gespeicherten Daten
+   (Bearbeiten eines bestehenden Profils) — niemals aus erfundenen
+   Defaults, ausschliesslich aus echten geladenen Werten. */
+function buildOnboardingDraftFromExisting(profile,location){
+  const equipmentSelectedIds=location
+    ?loadEquipmentInstances().filter(i=>i.location_id===location.id&&i.inventory_state==="PRESENT"&&TRAINING_EQUIPMENT_PRESETS.some(p=>p.id===i.equipment_definition_version_id)).map(i=>i.equipment_definition_version_id)
+    :[];
+  return {
+    goal:profile.goal,experience_self:profile.experience_self,
+    training_days_per_week:profile.training_days_per_week,session_time_budget_min:profile.session_time_budget_min,
+    locationId:location?location.id:genTrainingId("loc"),
+    locationName:location?location.name:"",locationType:location?location.type:null,
+    equipmentSelectedIds,equipmentConfirmed:!!location,
+    bodyweight_kg:String(profile.bodyweight_kg),
+    priority_muscles:profile.priority_muscles||[],preferred_split:profile.preferred_split,
+    uses_rir:!!profile.uses_rir,rest_preference:profile.rest_preference||REST_PREFERENCE.STANDARD,
+  };
+}
+
+/* Persistiert das Ergebnis des Onboarding-/Bearbeiten-Flows: TrainingLocation
+   + EquipmentProfileVersion/-Instances (§1.4), optional ein neues
+   BodyweightEvent (Bodyweight-Replay-Contract, 23.4) und das
+   UserTrainingProfile (§1.2/§1.3). Fasst NUR bereits bestehende STEP-01-
+   Foundation-Funktionen zusammen, keine neue Fachlogik. */
+function finishOnboarding(draft,existingProfile,existingLocation){
+  const userId=getOrCreateLocalTrainingUserId();
+  const isBWOnly=isBodyweightOnlyLocationType(draft.locationType);
+
+  const locationDraft=createTrainingLocation({
+    id:draft.locationId,user_id:userId,name:draft.locationName.trim(),type:draft.locationType,
+    current_equipment_profile_version_id:null,
+    is_default_for_weekdays:existingLocation?existingLocation.is_default_for_weekdays:[],
+  });
+
+  /* Equipment: BODYWEIGHT_ONLY bekommt NIEMALS Instanzen vorbelegt (§1.4-
+     Guard) — der Flow zeigt fuer diesen Location-Typ ueberhaupt keinen
+     Auswahlschritt, equipmentSelectedIds ist dafuer strukturell immer []. */
+  const selectedIds=isBWOnly?[]:draft.equipmentSelectedIds;
+  const existingInstances=loadEquipmentInstances().filter(i=>i.location_id===draft.locationId);
+  const presentInstanceIds=[];
+  selectedIds.forEach(defId=>{
+    const preset=TRAINING_EQUIPMENT_PRESETS.find(p=>p.id===defId);
+    if(!preset)return;
+    upsertEquipmentDefinitionVersion(createEquipmentDefinitionVersion({id:preset.id,version:1,canonical_name:preset.name,family:preset.family,subtype:preset.subtype,status:"ACTIVE"}));
+    const existingInstance=existingInstances.find(i=>i.equipment_definition_version_id===defId);
+    const instance=createEquipmentInstance({
+      id:existingInstance?existingInstance.id:genTrainingId("eqi"),
+      location_id:draft.locationId,equipment_definition_version_id:defId,inventory_state:"PRESENT",
+    });
+    upsertEquipmentInstance(instance);
+    presentInstanceIds.push(instance.id);
+  });
+  /* Abgewaehlte, zuvor vorhandene Instanzen: inventory_state wird auf
+     NOT_PRESENT gesetzt (persistente Achse, §1.4) statt die Instanz zu
+     loeschen — Inventory/Availability/Praeferenz bleiben getrennt. */
+  existingInstances.filter(i=>selectedIds.indexOf(i.equipment_definition_version_id)===-1&&i.inventory_state!=="NOT_PRESENT").forEach(i=>{
+    upsertEquipmentInstance(createEquipmentInstance({...i,inventory_state:"NOT_PRESENT"}));
+  });
+
+  const priorVersions=loadEquipmentProfileVersions().filter(v=>v.location_id===draft.locationId);
+  const equipmentProfile=createEquipmentProfileVersion({
+    id:genTrainingId("eqpv"),location_id:draft.locationId,
+    version:priorVersions.length?Math.max.apply(null,priorVersions.map(v=>v.version))+1:1,
+    equipment_instance_ids:presentInstanceIds,created_at:new Date().toISOString(),
+  });
+  upsertEquipmentProfileVersion(equipmentProfile);
+  upsertTrainingLocation(createTrainingLocation({...locationDraft,current_equipment_profile_version_id:equipmentProfile.id}));
+
+  /* Bodyweight: nur ein neues BodyweightEvent anhaengen, wenn sich der Wert
+     tatsaechlich vom zuletzt aufgeloesten Wert unterscheidet — kein
+     identisches Event bei jedem erneuten Speichern (append-only!). */
+  const bodyweightKg=parseFloat(String(draft.bodyweight_kg).replace(",","."));
+  const nowIso=new Date().toISOString();
+  const currentBw=resolveBodyweightAtPerformedAt(loadBodyweightEvents(),nowIso);
+  if(!currentBw||currentBw.bodyweight_kg!==bodyweightKg){
+    appendBodyweightEvent(createBodyweightEvent({
+      event_id:genTrainingId("bwe"),user_id:userId,bodyweight_kg:bodyweightKg,
+      effective_at:nowIso,recorded_at:nowIso,source:BODYWEIGHT_EVENT_SOURCE.USER_ENTRY,
+    }));
+  }
+
+  /* Experience/Skill (§1.3): experience_level_eligible wird bei jeder
+     Profilspeicherung frisch berechnet; experience_level (der planwirksame
+     Snapshot) und user_skill_level werden bei einem BESTEHENDEN Profil
+     NIE hier neu ueberschrieben (INVARIANT P-EX1 / P-2) — nur bei der
+     allerersten Einrichtung initialisiert, wenn es noch nichts zu
+     schuetzen gibt. */
+  const stats=computeTrainingStats(loadWorkoutLogs(),loadWorkoutLogCorrections(),nowEvaluationContext());
+  const eligibility=resolveExperienceEligibility({loggedSessionsTotal:stats.loggedSessionsTotal,monthsSinceFirstSession:stats.monthsSinceFirstSession,experienceSelf:draft.experience_self});
+  const experienceLevel=existingProfile?existingProfile.experience_level:snapshotExperienceLevel(eligibility.level);
+  const userSkillLevel=existingProfile?existingProfile.user_skill_level:initialSkillLevel(draft.experience_self);
+
+  const profile=createUserTrainingProfile({
+    user_id:userId,goal:draft.goal,experience_self:draft.experience_self,
+    training_days_per_week:draft.training_days_per_week,session_time_budget_min:draft.session_time_budget_min,
+    primary_location_id:draft.locationId,bodyweight_kg:bodyweightKg,
+    priority_muscles:draft.priority_muscles,preferred_split:draft.preferred_split,
+    uses_rir:draft.uses_rir,rest_preference:draft.rest_preference,
+    experience_level_eligible:eligibility.level,experience_level:experienceLevel,user_skill_level:userSkillLevel,
+    sex:existingProfile?existingProfile.sex:null,age:existingProfile?existingProfile.age:null,
+    training_weekdays:existingProfile?existingProfile.training_weekdays:[],
+    weekday_location_map:existingProfile?existingProfile.weekday_location_map:{},
+    rir_reliability_tier_by_exercise:existingProfile?existingProfile.rir_reliability_tier_by_exercise:{},
+    session_adherence_rate:existingProfile?existingProfile.session_adherence_rate:null,
+    actual_session_duration_factor:existingProfile?existingProfile.actual_session_duration_factor:null,
+  });
+  saveUserTrainingProfile(profile);
+  return profile;
+}
+
+/* Einfache Ein-Feld-Auswahlliste im bestehenden "optbtn"-Stil. */
+function ChoiceList({options,value,onChange,labels}){
+  return(
+    <div>
+      {options.map(opt=>(
+        <button key={opt} className={"optbtn"+(value===opt?" on":"")} onClick={()=>{tapH();onChange(opt);}}>
+          {labels[opt]||opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+/* Mehrfachauswahl als kompakte Chips (Equipment-Presets, Prioritaetsmuskeln). */
+function ChipMultiSelect({options,value,onToggle,labels,maxSelected}){
+  return(
+    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+      {options.map(opt=>{
+        const on=value.indexOf(opt)!==-1;
+        const disabledByMax=!on&&maxSelected!=null&&value.length>=maxSelected;
+        return(
+          <button key={opt} disabled={disabledByMax} onClick={()=>{tapH();onToggle(opt);}}
+            style={{padding:"8px 14px",borderRadius:99,border:on?"1.5px solid var(--accent)":"1.5px solid transparent",
+              background:on?"var(--accent-soft)":"var(--card2)",color:on?"var(--accent)":"var(--ink)",
+              fontSize:13,fontWeight:600,opacity:disabledByMax?.4:1,cursor:disabledByMax?"default":"pointer"}}>
+            {labels[opt]||opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+/* Numerischer Stepper mit −/+ statt Freitext, fuer die beiden Onboarding-
+   Ganzzahlfelder mit engem, festem Wertebereich (§1.2). */
+function Stepper({value,onChange,min,max,step,suffix}){
+  return(
+    <div className="row" style={{gap:14,padding:"6px 0"}}>
+      <button className="btn btn2" style={{width:48,height:48,fontSize:20,padding:0,opacity:value<=min?.4:1}}
+        disabled={value<=min} onClick={()=>{tapH();onChange(Math.max(min,value-step));}}>−</button>
+      <div style={{flex:1,textAlign:"center",fontSize:26,fontWeight:700}} className="num">{value}
+        {suffix?<span style={{fontSize:13,fontWeight:500,color:"var(--ink2)"}}> {suffix}</span>:null}</div>
+      <button className="btn btn2" style={{width:48,height:48,fontSize:20,padding:0,opacity:value>=max?.4:1}}
+        disabled={value>=max} onClick={()=>{tapH();onChange(Math.min(max,value+step));}}>+</button>
+    </div>
+  );
+}
+
+/* Onboarding-/Bearbeiten-Flow: genau die 7 REQUIRED-Felder aus §1.2 auf den
+   ersten 7 Schritten (INVARIANT P-1 — kein achtes verstecktes Pflichtfeld),
+   danach ein einzelner optionaler Abschluss-Schritt, der den Abschluss
+   NICHT blockiert (er ist von Schritt 7 aus bereits erreichbar). Keine
+   Split-Bewertung, kein Plan-Generator — preferred_split wird hier nur
+   erfasst, nicht bewertet (folgt in STEP 03). */
+function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,onClose,onSaved}){
+  const [step,setStep]=useState(0);
+  const [draft,setDraft]=useState(()=>initialDraft||{
+    goal:null,experience_self:null,training_days_per_week:4,session_time_budget_min:60,
+    locationId:genTrainingId("loc"),locationName:"",locationType:null,
+    equipmentSelectedIds:[],equipmentConfirmed:false,
+    bodyweight_kg:"",priority_muscles:[],preferred_split:null,uses_rir:false,rest_preference:REST_PREFERENCE.STANDARD,
+  });
+  const [confirmExit,setConfirmExit]=useState(false);
+  const patch=p=>setDraft(dr=>({...dr,...p}));
+  const STEP_TITLES=["Trainingsziel","Erfahrung","Trainingstage","Zeitbudget","Trainingsort","Equipment","Körpergewicht","Weitere Einstellungen"];
+  const bounds=USER_TRAINING_PROFILE_FIELD_BOUNDS;
+  const isBWOnly=isBodyweightOnlyLocationType(draft.locationType);
+
+  function setLocationType(type){
+    if(isBodyweightOnlyLocationType(type))patch({locationType:type,equipmentSelectedIds:[],equipmentConfirmed:true});
+    else patch({locationType:type,equipmentConfirmed:draft.locationType===type?draft.equipmentConfirmed:false});
+  }
+  function stepValid(s){
+    switch(s){
+      case 0:return !!draft.goal;
+      case 1:return !!draft.experience_self;
+      case 4:return draft.locationName.trim().length>0&&!!draft.locationType;
+      case 5:return !!draft.equipmentConfirmed;
+      case 6:{
+        const bw=parseFloat(String(draft.bodyweight_kg).replace(",","."));
+        return !Number.isNaN(bw)&&bw>=bounds.bodyweight_kg[0]&&bw<=bounds.bodyweight_kg[1];
+      }
+      default:return true;
+    }
+  }
+  function requestClose(){if(step===0)onClose();else setConfirmExit(true);}
+  function handleNext(){
+    tapH();
+    if(step===7)onSaved(finishOnboarding(draft,existingProfile,existingLocation));
+    else setStep(step+1);
+  }
+
+  return(
+    <>
+    <Page onClose={requestClose} title={STEP_TITLES[step]}
+      footer={
+        <button className="btn" disabled={!stepValid(step)} style={{opacity:stepValid(step)?1:.5}} onClick={handleNext}>
+          {step===7?"Fertig":"Weiter"}
+        </button>
+      }>
+      {step===0&&<ChoiceList options={Object.values(TRAINING_GOAL)} value={draft.goal} onChange={v=>patch({goal:v})} labels={TRAINING_GOAL_LABELS}/>}
+      {step===1&&<ChoiceList options={Object.values(EXPERIENCE_SELF)} value={draft.experience_self} onChange={v=>patch({experience_self:v})} labels={EXPERIENCE_SELF_LABELS}/>}
+      {step===2&&(
+        <div>
+          <div className="sub" style={{marginBottom:10}}>Wie viele Tage pro Woche möchtest du trainieren?</div>
+          <Stepper value={draft.training_days_per_week} min={bounds.training_days_per_week[0]} max={bounds.training_days_per_week[1]} step={1} suffix="Tage/Woche" onChange={v=>patch({training_days_per_week:v})}/>
+        </div>
+      )}
+      {step===3&&(
+        <div>
+          <div className="sub" style={{marginBottom:10}}>Wie viel Zeit steht dir pro Trainingseinheit zur Verfügung?</div>
+          <Stepper value={draft.session_time_budget_min} min={bounds.session_time_budget_min[0]} max={bounds.session_time_budget_min[1]} step={5} suffix="Minuten" onChange={v=>patch({session_time_budget_min:v})}/>
+        </div>
+      )}
+      {step===4&&(
+        <div>
+          <div className="lbl" style={{marginBottom:5}}>Name des Orts</div>
+          <input type="text" placeholder="z.B. Zuhause" value={draft.locationName} onChange={e=>patch({locationName:e.target.value})} style={{marginBottom:14}}/>
+          <div className="lbl" style={{marginBottom:6}}>Art des Orts</div>
+          <ChoiceList options={Object.values(TRAINING_LOCATION_TYPE)} value={draft.locationType} onChange={setLocationType} labels={TRAINING_LOCATION_TYPE_LABELS}/>
+        </div>
+      )}
+      {step===5&&(
+        isBWOnly
+          ?<div className="sub" style={{padding:"12px 0"}}>„Nur Körpergewicht" bedeutet ausschließlich Boden- und Körpergewichtsübungen — es wird kein Equipment angenommen (auch keine Klimmzugstange, Dip-Station, Ringe oder Schlingentrainer). Du kannst das später jederzeit ändern.</div>
+          :<div>
+              <div className="sub" style={{marginBottom:10}}>Was steht dir an diesem Ort zur Verfügung? Das sind nur Startschätzungen — du kannst sie jederzeit anpassen.</div>
+              <ChipMultiSelect options={TRAINING_EQUIPMENT_PRESETS.map(p=>p.id)} value={draft.equipmentSelectedIds}
+                labels={Object.fromEntries(TRAINING_EQUIPMENT_PRESETS.map(p=>[p.id,p.name]))}
+                onToggle={id=>patch({equipmentSelectedIds:draft.equipmentSelectedIds.indexOf(id)!==-1?draft.equipmentSelectedIds.filter(x=>x!==id):draft.equipmentSelectedIds.concat([id]),equipmentConfirmed:true})}/>
+            </div>
+      )}
+      {step===6&&(
+        <div>
+          <div className="lbl" style={{marginBottom:5}}>Körpergewicht (kg)</div>
+          <NumField value={draft.bodyweight_kg} onChange={v=>patch({bodyweight_kg:v})} placeholder="z.B. 82" suffix="kg" autoFocus/>
+          <div className="sub" style={{marginTop:10}}>Wird zusätzlich als Gewichtseintrag gespeichert — dein Lastmodell für Körpergewichtsübungen basiert darauf.</div>
+        </div>
+      )}
+      {step===7&&(
+        <div>
+          <div className="lbl" style={{marginBottom:6}}>Prioritätsmuskeln (max. 2, optional)</div>
+          <ChipMultiSelect options={Object.values(CANONICAL_VOLUME_MUSCLE_ID)} value={draft.priority_muscles} labels={VOLUME_MUSCLE_LABELS} maxSelected={2}
+            onToggle={id=>patch({priority_muscles:draft.priority_muscles.indexOf(id)!==-1?draft.priority_muscles.filter(x=>x!==id):draft.priority_muscles.concat([id])})}/>
+
+          <div className="lbl" style={{margin:"20px 0 6px"}}>Split-Präferenz (optional)</div>
+          <ChoiceList options={["AUTOMATIC"].concat(Object.values(PREFERRED_SPLIT))} value={draft.preferred_split||"AUTOMATIC"}
+            onChange={v=>patch({preferred_split:v==="AUTOMATIC"?null:v})} labels={PREFERRED_SPLIT_LABELS}/>
+
+          <div className="lbl" style={{margin:"20px 0 6px"}}>Pausenlänge (optional)</div>
+          <ChoiceList options={Object.values(REST_PREFERENCE)} value={draft.rest_preference} onChange={v=>patch({rest_preference:v})} labels={REST_PREFERENCE_LABELS}/>
+
+          <div className="lbl" style={{margin:"20px 0 6px"}}>RIR-Eingabe statt 4-Band-Effort-Skala (optional)</div>
+          <ChoiceList options={["NO","YES"]} value={draft.uses_rir?"YES":"NO"} onChange={v=>patch({uses_rir:v==="YES"})} labels={{NO:"Nein (Effort-Skala)",YES:"Ja (RIR-Wert)"}}/>
+        </div>
+      )}
+    </Page>
+    {confirmExit&&<ConfirmDialog text="Einrichtung abbrechen? Deine bisherigen Eingaben in diesem Schritt gehen verloren." confirmLabel="Abbrechen" onConfirm={onClose} onCancel={()=>setConfirmExit(false)}/>}
+    </>
+  );
+}
+
+/* Split-Präferenz ist jederzeit separat änderbar (Produktanforderung Paket
+   02) — bleibt fachlich eine optionale Präferenz/Score-Bonus, kein Hard
+   Filter, und wird hier nur erfasst, nicht bewertet (STEP 03). */
+function SplitPreferenceSheet({profile,onClose,onSaved}){
+  const [value,setValue]=useState(profile.preferred_split||"AUTOMATIC");
+  function save(){
+    tapH();
+    const updated=createUserTrainingProfile({...profile,preferred_split:value==="AUTOMATIC"?null:value});
+    saveUserTrainingProfile(updated);
+    onSaved();
+  }
+  return(
+    <Sheet onClose={onClose} title="Split-Präferenz">
+      <div className="sub" style={{marginBottom:14}}>Deine Präferenz fließt später als Bonus in die Split-Wahl ein — sie ist keine feste Vorgabe. „Automatisch" lässt dem System freie Wahl.</div>
+      <ChoiceList options={["AUTOMATIC"].concat(Object.values(PREFERRED_SPLIT))} value={value} onChange={setValue} labels={PREFERRED_SPLIT_LABELS}/>
+      <button className="btn" style={{marginTop:10}} onClick={save}>Speichern</button>
+    </Sheet>
+  );
+}
+
+/* ===== TAB 3: TRAINING — enthaelt den aus dem Ernaehrungs-Tab hierher
+   verschobenen "Aktivitäten"-Bereich (unveraendert) sowie, seit Paket
+   02/14, das Trainingsprofil-/Onboarding-/Split-Praeferenz-UI. Noch keine
+   Plan-/Workout-Funktionen — die werden in spaeteren Packs ergaenzt. ===== */
 function TrainingView({data,openActivity}){
   const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
   const today=dayData(data,y,m,d);
   const todaySports=today.sports||[];
+  const [refreshTick,setRefreshTick]=useState(0);
+  const [showOnboarding,setShowOnboarding]=useState(false);
+  const [showSplitSheet,setShowSplitSheet]=useState(false);
+  const profile=useMemo(()=>loadUserTrainingProfile(),[refreshTick]);
+  const location=useMemo(()=>profile?loadTrainingLocations().find(l=>l.id===profile.primary_location_id)||null:null,[profile,refreshTick]);
+  const onboardingComplete=!!profile&&trainingLocationHasConfirmedEquipmentProfile(profile.primary_location_id);
   return(
     <div>
       <div className="h1" style={{marginBottom:18}}>Training</div>
+
+      <div style={{marginBottom:"var(--sp-3)"}}>
+        {!onboardingComplete&&(
+          <div className="card card-compact" onClick={()=>{tapH();setShowOnboarding(true);}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:44,height:44,borderRadius:14,background:"var(--accent-soft)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏋️</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:14}}>Trainingsprofil einrichten</div>
+                <div className="sub">Ziel, Erfahrung, Ort & Equipment — dauert etwa 2 Minuten</div>
+              </div>
+              <div style={{color:"var(--ink3)",fontSize:18}}>›</div>
+            </div>
+          </div>
+        )}
+        {onboardingComplete&&(
+          <div className="card card-compact">
+            <div className="row" style={{marginBottom:10}}>
+              <div style={{fontWeight:700,fontSize:14}}>Trainingsprofil</div>
+              <button style={{color:"var(--accent)",fontWeight:600,fontSize:13,background:"none",border:"none",padding:0}} onClick={()=>{tapH();setShowOnboarding(true);}}>Bearbeiten</button>
+            </div>
+            <div className="sub" style={{lineHeight:1.7}}>
+              {TRAINING_GOAL_LABELS[profile.goal]} · {EXPERIENCE_SELF_LABELS[profile.experience_self]}<br/>
+              {profile.training_days_per_week} Tage/Woche · {profile.session_time_budget_min} Min/Session<br/>
+              {location?location.name:"–"} · {profile.bodyweight_kg} kg
+            </div>
+            <button onClick={()=>{tapH();setShowSplitSheet(true);}}
+              style={{marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:"none",border:"none",borderTop:"1px solid var(--line)",padding:"10px 0 0",font:"inherit",color:"var(--ink)"}}>
+              <span>Split-Präferenz</span>
+              <span className="sub">{profile.preferred_split?PREFERRED_SPLIT_LABELS[profile.preferred_split]:"Automatisch"} ›</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <div>
         <div className="row" style={{marginBottom:"var(--sp-2)"}}>
@@ -3045,6 +3423,18 @@ function TrainingView({data,openActivity}){
           </div>
         </div>
       </div>
+
+      {showOnboarding&&(
+        <TrainingOnboardingFlow
+          initialDraft={profile?buildOnboardingDraftFromExisting(profile,location):null}
+          existingProfile={profile} existingLocation={location}
+          onClose={()=>setShowOnboarding(false)}
+          onSaved={()=>{setShowOnboarding(false);setRefreshTick(t=>t+1);}}/>
+      )}
+      {showSplitSheet&&profile&&(
+        <SplitPreferenceSheet profile={profile} onClose={()=>setShowSplitSheet(false)}
+          onSaved={()=>{setShowSplitSheet(false);setRefreshTick(t=>t+1);}}/>
+      )}
     </div>
   );
 }
