@@ -94,6 +94,12 @@ console.log("========== §9.1 load_axis_class ==========");
   assertEq(TD.loadAxisClass("BODYWEIGHT_OR_REP_ONLY",false),"BODYWEIGHT_REP_ONLY","BW/Rep-only OHNE variant_chain -> BODYWEIGHT_REP_ONLY");
   assertEq(TD.loadAxisClass("NO_EXTERNAL_LOAD"),"NON_REP","Kein externes Load -> NON_REP");
   assertEq(TD.loadAxisClass("UNKNOWN_MECHANISM"),"NON_REP","Unbekannter Mechanismus faellt sicher auf NON_REP zurueck");
+  // STEP-05-Korrektur: INSTANCE_DEFINED_MACHINE (in Pack 05s eigener
+  // Baseline Catalog B durchgaengig verwendet, aber im §9.1-Dependency-
+  // Exzerpt fehlend) ist jetzt Teil der Registry und loest als
+  // NUMERIC_EXTERNAL_LOAD auf (siehe training-domain.js-Kommentar).
+  assert(TD.LOAD_MECHANISM_REGISTRY.indexOf("INSTANCE_DEFINED_MACHINE")!==-1,"LOAD_MECHANISM_REGISTRY enthaelt INSTANCE_DEFINED_MACHINE (STEP-05-Korrektur)");
+  assertEq(TD.loadAxisClass("INSTANCE_DEFINED_MACHINE"),"NUMERIC_EXTERNAL_LOAD","INSTANCE_DEFINED_MACHINE -> NUMERIC_EXTERNAL_LOAD (dieselbe Semantik wie PLATE_LOADED_MACHINE)");
 }
 
 console.log("========== FailureResult ==========");

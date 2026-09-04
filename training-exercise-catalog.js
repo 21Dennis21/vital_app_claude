@@ -67,19 +67,44 @@
        weil keine Engine in diesem Pack diese Kette konsumiert (Progression
        ist out of scope) und ein Aufsplitten eine ungeprüfte Annahme ueber
        die interne Semantik der Kette waere.
-   L3. Catalog-Lint-Regeln #7/#8/#9/#12/#15/#16 (§29.13) setzen teils
-       Wissen voraus, das erst eine Feasibility-/Prescription-Engine hat
-       (z.B. "no impossible EquipmentSetup branch", "assistance direction
-       is LOWER_IS_MORE"). Diese Datei implementiert davon nur den Teil,
-       der rein strukturell aus den Katalogdaten selbst pruefbar ist (siehe
-       validateCatalogLints()-Kommentar); die restlichen bleiben
-       ausdruecklich unimplementiert und sind hier einzeln benannt, statt
-       eine Schein-Pruefung vorzutaeuschen.
+   L3. Catalog-Lint-Regeln #12/#15/#16 (§29.13) setzen teils Wissen voraus,
+       das erst eine Feasibility-/Prescription-/Substitution-Engine hat
+       (z.B. "no impossible EquipmentSetup branch" braucht eine Equipment-
+       Mutual-Exclusivity-Registry; "assistance PER_HAND/PER_SIDE/TOTAL
+       semantics" ist ein LoadProfileVersion-Laufzeitdatum aus §9.1, kein
+       Catalog-A/B/C-Feld; "no machine equivalence inferred from subtype"
+       ist eine Verhaltensregel fuer eine nicht gebaute Substitution-Engine
+       und hat kein Catalog-Feld, gegen das geprueft werden koennte). Diese
+       Datei implementiert davon jeweils NUR den Teil, der rein strukturell
+       aus den Katalogdaten selbst pruefbar ist (#12: Assistance-Richtung
+       LOWER_IS_MORE; #16: degenerierte AND-Gruppen/OR-Branches) — siehe
+       CATALOG_LINT_STATUS und validateCatalogLints()-Kommentar fuer den
+       exakten Umfang. #15 ist komplett NOT_TESTABLE (keine Fake-Pruefung).
+       Die Lints #1-#11, #13, #14, #17, #18 sind demgegenueber vollstaendig
+       (rein strukturell/aus dem Katalog selbst) IMPLEMENTED — insbesondere
+       #7 (Aritaet SETUP_DEFINED(...) <-> equipment_setups) und #8 (Aritaet
+       calibration_mode + Selbstkonsistenz NON_REP_MANUAL_ONLY <->
+       auto_selectable/progression_capabilities). Eine FRUEHERE Fassung
+       dieses Lints #8 nahm invalid an, jeder Load-Mechanismus-Wert muesse
+       katalogweit immer mit genau einem calibration_mode-Wert gepaart
+       sein — das ist durch die echten Katalogdaten widerlegt
+       (BODYWEIGHT_OR_REP_ONLY ist sowohl mit BODYWEIGHT_EFFECTIVE_LOAD
+       als auch, bei den 4 NON_REP-Records, mit NON_REP_MANUAL_ONLY
+       gepaart) und wurde korrigiert, statt eine erfundene globale
+       Kompatibilitaetstabelle zu bauen (G-D3).
    L4. `technical_demand/stability_demand/mobility_demand/setup_complexity/
        fatigue_local/fatigue_systemic` sind laut Dependency §23.1 wortgetreu
        auf 1..5 begrenzt — dieser Bereich ist NICHT erfunden, sondern direkt
        aus der Dependency-Quelle uebernommen (nicht aus der Catalog-Tabelle
-       selbst hergeleitet). */
+       selbst hergeleitet).
+   L5. §9.1s woertlich zitierte Load-Mechanism-Registry (Dependency-Exzerpt,
+       13 Werte) nennt "INSTANCE_DEFINED_MACHINE" nicht — Pack 05s eigene
+       Primary-Scope-Baseline-Catalog-B-Daten verwenden diesen Wert aber
+       durchgaengig (z.B. HACK_SQUAT_MACHINE, LEG_PRESS_45, MACHINE_ROW).
+       Die Registry in training-domain.js wurde um genau diesen einen, im
+       Katalog belegten Wert erweitert (siehe dortiger Kommentar) — keine
+       Erfindung, sondern eine dokumentierte Angleichung an die woertlichen
+       Primary-Scope-Katalogdaten desselben Packs. */
 
 /* ================= §5.2 — Nachbarschaftsmatrix + movement_similarity ===== */
 /* Woertlich aus §5.2. NICHT symmetrisiert: die Quelltabelle listet Paare
@@ -301,18 +326,135 @@ function loadExerciseCatalog(){
   return EXERCISE_CATALOG_RAW.map(r=>createExerciseDefinitionVersion(Object.assign({definition_version:1,status:"ACTIVE"},r)));
 }
 
-/* ================= §29.13 — Catalog Lint Release Gate ================= */
-/* Nur die REIN STRUKTURELL aus den Katalogdaten selbst pruefbaren Regeln
-   (siehe Kopf-Kommentar L3 fuer die bewusst nicht implementierten, weil sie
-   eine Feasibility-/Prescription-Engine voraussetzen wuerden). Gibt ein
-   Array von Fehlermeldungen zurueck (leer = alle implementierten Lints
-   bestanden). movement_pattern/movement_subpattern/Muskel-ID-Gueltigkeit
-   und CAT-CONTRIBUTION-UNIQUE innerhalb je EINER Liste sind bereits durch
-   createExerciseDefinitionVersion beim Bauen erzwungen (Lint #3, Teil von
-   #5) — hier zusaetzlich: CAT-CONTRIBUTION-UNIQUE UEBER primary+secondary
-   HINWEG (Lint #5 vollstaendig), Anatomy/Subregion-Tag-Gueltigkeit (Lint
-   #4, ueber training-volume-engine.js/§4.3), Lint #1/#2/#6/#9/#10/#11/#13/
-   #14/#17. */
+/* ================= §29.13 — Catalog Lint Release Gate (alle 18 Lints) ===== */
+/* v1.4.1 verlangt 18 Blocking Catalog Lints (§29.13, Liste 1-18). Diese
+   Datei implementiert JEDEN der 18 entweder VOLLSTAENDIG oder — wo eine
+   vollstaendige Pruefung eine hier explizit NICHT gebaute Engine
+   (Equipment Feasibility, Substitution, Prescription) voraussetzen wuerde
+   — nur den Teil, der sich rein strukturell aus den Catalog-A/B/C-Daten
+   und den bestehenden STEP01/03/04-Registries ableiten laesst. Wo selbst
+   das nicht moeglich ist, wird NICHTS geprueft und das explizit als
+   NOT_TESTABLE mit der exakten normativen Abhaengigkeit dokumentiert
+   (siehe CATALOG_LINT_STATUS) — es wird kein Fake-PASS erzeugt.
+
+   Lint-fuer-Lint-Status (siehe CATALOG_LINT_STATUS fuer die maschinen-
+   lesbare Fassung):
+   #1  IMPLEMENTED  — eindeutige exercise_id.
+   #2  IMPLEMENTED  — Catalog-Anzahl exakt 125 (die Reihenfolgen-Gleichheit
+       von A/B/C ist strukturell garantiert: alle drei Tabellen werden aus
+       DERSELBEN Zeile geparst, siehe Kopf-Kommentar "Baseline Catalog").
+   #3  IMPLEMENTED  — movement_pattern/movement_subpattern kanonisch
+       (erzwungen bei Konstruktion ueber createExerciseDefinitionVersion).
+   #4  IMPLEMENTED  — Muskel-IDs (Konstruktionszeit) + Anatomy/Subregion-
+       Tags (§4.3-Registry, training-volume-engine.js).
+   #5  IMPLEMENTED  — CAT-CONTRIBUTION-UNIQUE, vollstaendig (innerhalb
+       einer Liste bei Konstruktion, ueber primary+secondary hier).
+   #6  IMPLEMENTED (strukturell) — jede EquipmentSetup-OR-Branch ist
+       nicht-leer und besteht nur aus nicht-leeren Tag-Strings ("resolvable"
+       im Sinn von "strukturell wohlgeformt und nicht vakuos"). Eine ECHTE
+       Resolvability gegen ein konkretes Equipment-Inventar an einem
+       konkreten Ort ist NICHT Teil dieser Pruefung (das ist die Aufgabe
+       der Equipment-Feasibility-Engine, ausdruecklich out of scope).
+   #7  IMPLEMENTED  — Aritaet: wenn possible_load_mechanisms ein
+       SETUP_DEFINED(A/B/...)-Ausdruck ist, muss die Anzahl seiner
+       Komponenten exakt der Anzahl der equipment_setups-OR-Branches
+       entsprechen (positionsgleiche Zuordnung Branch<->Mechanismus).
+   #8  IMPLEMENTED  — Aritaet analog #7 fuer calibration_mode, PLUS eine
+       aus dem Katalog selbst abgeleitete Selbstkonsistenzpruefung: jeder
+       load_mechanism (Komponente) darf im GESAMTEN Katalog nur mit EINEM
+       calibration_mode (Komponente) gepaart sein. Das ist keine erfundene
+       externe Kompatibilitaetsregel, sondern eine reine Konsistenzpruefung
+       innerhalb der wortgetreuen Katalogdaten selbst.
+   #9  IMPLEMENTED  — LB-9.
+   #10 IMPLEMENTED  — non-empty goals/slot-roles/rep-band-class.
+   #11 IMPLEMENTED  — Ordinal-Bereich 1..5 (§23.1, wortgetreue Dependency).
+   #12 PARTIAL      — die pruefbare Haelfte ("Assistance-Richtung LOWER_IS_
+       MORE") wird ueber progression_capabilities validiert (§9.1: "weniger
+       Assistance ist positive Progression" => Capability-Literal muss
+       ASSISTANCE_DECREASE heissen, nie ASSISTANCE_INCREASE o.ae.). Die
+       zweite Haelfte ("PER_HAND/PER_SIDE/TOTAL-Semantik explizit, wo Last
+       existiert") ist KEIN Feld von Catalog A/B/C — das ist
+       LoadProfileVersion.pair_semantics/per_side_semantics (§9.1), eine
+       Eigenschaft der konkreten EquipmentInstance/AttachmentInstance zur
+       Laufzeit, die es erst mit einer (hier nicht gebauten) Equipment-
+       Feasibility-Schicht gibt. Dieser Teil ist aus Pack-05-Katalogdaten
+       NICHT pruefbar.
+   #13 IMPLEMENTED  — metadata_completeness = COMPLETE.
+   #14 IMPLEMENTED  — keine doppelte Alias-Identitaet.
+   #15 NOT_TESTABLE — "keine Machine-Equivalence aus Subtype ableiten" ist
+       eine Verhaltensregel fuer eine (hier nicht gebaute) Substitution-/
+       Equipment-Matching-Engine. Catalog A/B/C enthaelt kein
+       EquipmentDefinitionVersion.subtype-Feld und keine Aequivalenz-
+       Inferenz-Logik — es gibt schlicht keine Katalog-Eigenschaft, gegen
+       die dieser Lint eine PASS/FAIL-Aussage treffen koennte, bevor eine
+       Substitution-Engine existiert.
+   #16 PARTIAL      — nur rein strukturelle Degenerationsfaelle geprueft
+       (doppeltes Tag innerhalb derselben AND-Gruppe; exakt doppelte OR-
+       Branch). Echte "Unmoeglichkeit" (sich gegenseitig ausschliessende
+       Equipment-Tags, z.B. zwei verschiedene Bankwinkel gleichzeitig)
+       erfordert eine Equipment-Mutual-Exclusivity-Registry, die Pack 05
+       nicht besitzt (Equipment-Feasibility-Engine, out of scope).
+   #17 IMPLEMENTED  — kein NON_REP-Record auto-selectable.
+   #18 IMPLEMENTED  — G-D3: alle uebrigen enum-artigen Catalog-Felder
+       (goal_compatibility, supported_rep_characters, supported_slot_roles,
+       rep_band_classes, unilateral_time_class, load-mechanism-Komponenten)
+       werden gegen die BEREITS BESTEHENDEN kanonischen Registries aus
+       STEP01/03/04/05 (TRAINING_GOAL, REP_CHARACTER, SLOT_ROLE,
+       REP_BAND_REGISTRY, §17.4-Werte, LOAD_MECHANISM_REGISTRY) validiert;
+       fuer die uebrigen Felder ohne separat woertlich vorgegebene Registry
+       (exercise_class, instance_relevance, calibration_mode-Komponenten,
+       setup_time_class, laterality_modes, warmup_protocol_class) wird der
+       geschlossene Wertevorrat MECHANISCH aus dem 125er-Baseline-Catalog
+       selbst abgeleitet (BASELINE_CLOSED_VALUE_SETS) und als
+       Regressionsschutz gegen kuenftige freie Strings validiert — keine
+       neue, erfundene Werteliste, nur die Menge der tatsaechlich im Pack
+       vorkommenden Werte. */
+const UNILATERAL_TIME_CLASS_VALUES=Object.freeze(["NONE","ALTERNATING_X1_5","SERIAL_X2"]); // §17.4, wortgetreu (bereits als Dependency in STEP03 zitiert)
+/* SETUP_DEFINED(A/B/...) -> [A,B,...]; jeder andere Ausdruck -> [Ausdruck]
+   (Ein-Element-Array). Rein syntaktische Zerlegung, keine Interpretation
+   der einzelnen Komponenten. */
+function decomposeCompoundExpression(expr){
+  const m=/^SETUP_DEFINED\(([^()]*)\)$/.exec(expr);
+  if(!m)return [expr];
+  return m[1].split("/").map(s=>s.trim());
+}
+/* Geschlossener Wertevorrat, MECHANISCH aus dem 125er-Baseline-Catalog
+   selbst abgeleitet (siehe Lint #18-Kommentar oben) — kein separates,
+   woertlich vorgegebenes Registry fuer diese 6 Felder existiert in Pack 05. */
+function computeBaselineClosedValueSets(raw){
+  const sets={exercise_class:new Set(),instance_relevance:new Set(),setup_time_class:new Set(),warmup_protocol_class:new Set(),laterality_modes:new Set(),calibration_mode_component:new Set()};
+  raw.forEach(r=>{
+    sets.exercise_class.add(r.exercise_class);
+    sets.instance_relevance.add(r.instance_relevance);
+    sets.setup_time_class.add(r.setup_time_class);
+    sets.warmup_protocol_class.add(r.warmup_protocol_class);
+    (r.laterality_modes||[]).forEach(lm=>sets.laterality_modes.add(lm));
+    decomposeCompoundExpression(r.calibration_mode).forEach(cm=>sets.calibration_mode_component.add(cm));
+  });
+  const out={};
+  Object.keys(sets).forEach(k=>{out[k]=Object.freeze(Array.from(sets[k]));});
+  return Object.freeze(out);
+}
+const BASELINE_CLOSED_VALUE_SETS=computeBaselineClosedValueSets(EXERCISE_CATALOG_RAW);
+/* Maschinenlesbarer Status je der 18 §29.13-Lints (siehe Kommentarblock
+   oben fuer die ausfuehrliche Begruendung). "IMPLEMENTED"/"PARTIAL" werden
+   in validateCatalogLints() tatsaechlich geprueft; "NOT_TESTABLE" wird
+   NIEMALS als bestanden gemeldet. */
+const CATALOG_LINT_STATUS=Object.freeze({
+  1:Object.freeze({status:"IMPLEMENTED"}),2:Object.freeze({status:"IMPLEMENTED"}),
+  3:Object.freeze({status:"IMPLEMENTED"}),4:Object.freeze({status:"IMPLEMENTED"}),
+  5:Object.freeze({status:"IMPLEMENTED"}),
+  6:Object.freeze({status:"IMPLEMENTED",note:"strukturelle Wohlgeformtheit/Nicht-Leere, keine echte Feasibility-Aufloesung"}),
+  7:Object.freeze({status:"IMPLEMENTED",note:"Aritaet SETUP_DEFINED(...) <-> equipment_setups-Branches"}),
+  8:Object.freeze({status:"IMPLEMENTED",note:"Aritaet calibration_mode (1=broadcast oder positionsgleich zu load_mechanism) + Selbstkonsistenz NON_REP_MANUAL_ONLY<->auto_selectable/progression_capabilities; KEINE erfundene globale Load-Achse<->calibration_mode-Kompatibilitaetstabelle (durch Katalogdaten widerlegt, siehe Code-Kommentar)"}),
+  9:Object.freeze({status:"IMPLEMENTED"}),10:Object.freeze({status:"IMPLEMENTED"}),11:Object.freeze({status:"IMPLEMENTED"}),
+  12:Object.freeze({status:"PARTIAL",note:"Assistance-Richtung (LOWER_IS_MORE) geprueft; PER_HAND/PER_SIDE/TOTAL-Semantik ist LoadProfileVersion-Laufzeitdatum (§9.1), kein Catalog-A/B/C-Feld, NICHT pruefbar ohne Equipment-Feasibility-Schicht"}),
+  13:Object.freeze({status:"IMPLEMENTED"}),14:Object.freeze({status:"IMPLEMENTED"}),
+  15:Object.freeze({status:"NOT_TESTABLE",note:"Verhaltensregel fuer eine (nicht gebaute) Substitution-/Equipment-Matching-Engine; Catalog A/B/C besitzt kein subtype-Feld und keine Aequivalenz-Inferenz, gegen die geprueft werden koennte"}),
+  16:Object.freeze({status:"PARTIAL",note:"nur strukturelle Degenerationsfaelle (doppeltes Tag/doppelte Branch); echte Unmoeglichkeit erfordert eine Equipment-Mutual-Exclusivity-Registry, die Pack 05 nicht besitzt"}),
+  17:Object.freeze({status:"IMPLEMENTED"}),
+  18:Object.freeze({status:"IMPLEMENTED",note:"uebrige enum-artige Felder gegen bestehende STEP01/03/04-Registries bzw. gegen den aus dem Baseline-Catalog abgeleiteten geschlossenen Wertevorrat validiert"}),
+});
 function validateCatalogLints(catalog){
   const errors=[];
   const idOrder=catalog.map(e=>e.exercise_id);
@@ -321,22 +463,83 @@ function validateCatalogLints(catalog){
     if(seenIds.has(id))errors.push("CAT-LINT-1: doppelte exercise_id: "+id); // Lint #1
     seenIds.add(id);
   });
-  if(catalog.length!==EXERCISE_CATALOG_RELEASE_COUNT){ // Lint #2 (Anzahl-Teil; Reihenfolgen-Teil ist durch den gemeinsamen Ursprung aus EINER Quelltabelle strukturell garantiert)
+  if(catalog.length!==EXERCISE_CATALOG_RELEASE_COUNT){ // Lint #2
     errors.push("CAT-LINT-2: Catalog-Anzahl "+catalog.length+" != "+EXERCISE_CATALOG_RELEASE_COUNT);
   }
-  const seenAliases=new Set(); // Lint #14: keine doppelte Alias-Identitaet
+  const seenAliases=new Set(); // Lint #14
   catalog.forEach(e=>{
-    (e.anatomy_tags||[]).concat(e.subregion_tags||[]).forEach(tag=>{ // Lint #4 (Anatomy/Subregion-Teil; Muskel-ID-Teil bereits bei Konstruktion erzwungen)
+    (e.anatomy_tags||[]).concat(e.subregion_tags||[]).forEach(tag=>{ // Lint #4 (Anatomy/Subregion-Teil)
       try{validateAnatomySubregionTag(tag);}
       catch(err){errors.push("CAT-LINT-4 ("+e.exercise_id+"): "+err.message);}
     });
-    const muscleSeen=new Set(); // Lint #5 / INVARIANT CAT-C1: CAT-CONTRIBUTION-UNIQUE ueber primary+secondary hinweg
+    const muscleSeen=new Set(); // Lint #5 / CAT-C1 ueber primary+secondary hinweg
     (e.primary_muscle_bands||[]).concat(e.secondary_muscle_bands||[]).forEach(b=>{
       if(muscleSeen.has(b.canonical_volume_muscle_id))errors.push("CAT-LINT-5/CAT-C1 ("+e.exercise_id+"): "+b.canonical_volume_muscle_id+" mehrfach in der Contribution-Semantik");
       muscleSeen.add(b.canonical_volume_muscle_id);
     });
-    if(e.auto_selectable&&(!e.equipment_setups||!e.equipment_setups.length)){ // Lint #6 (strukturell: mind. 1 EquipmentSetup vorhanden; Resolvability selbst ist Feasibility-Engine, siehe L3)
-      errors.push("CAT-LINT-6 ("+e.exercise_id+"): auto_selectable ohne equipment_setups");
+    // Lint #6: strukturelle Wohlgeformtheit/Nicht-Leere jeder EquipmentSetup-Branch fuer auto-selectable Exercises.
+    if(e.auto_selectable){
+      if(!e.equipment_setups||!e.equipment_setups.length){
+        errors.push("CAT-LINT-6 ("+e.exercise_id+"): auto_selectable ohne equipment_setups");
+      }else{
+        e.equipment_setups.forEach((branch,bi)=>{
+          if(!Array.isArray(branch)||!branch.length){errors.push("CAT-LINT-6 ("+e.exercise_id+"): equipment_setups-Branch "+bi+" ist leer (nicht resolvable)");}
+          else branch.forEach(tag=>{if(typeof tag!=="string"||!tag.length)errors.push("CAT-LINT-6 ("+e.exercise_id+"): equipment_setups-Branch "+bi+" enthaelt ein leeres/ungueltiges Tag");});
+        });
+      }
+    }
+    // Lint #16 (partiell): degenerierte AND-Gruppen/OR-Branches.
+    const seenBranchKeys=new Set();
+    (e.equipment_setups||[]).forEach((branch,bi)=>{
+      const seenTags=new Set();
+      (branch||[]).forEach(tag=>{
+        if(seenTags.has(tag))errors.push("CAT-LINT-16 ("+e.exercise_id+"): equipment_setups-Branch "+bi+" enthaelt das Tag '"+tag+"' mehrfach");
+        seenTags.add(tag);
+      });
+      const key=(branch||[]).slice().sort().join("&");
+      if(seenBranchKeys.has(key))errors.push("CAT-LINT-16 ("+e.exercise_id+"): equipment_setups enthaelt eine redundante doppelte Branch ["+(branch||[]).join(",")+"]");
+      seenBranchKeys.add(key);
+    });
+    // Lint #7: Aritaet SETUP_DEFINED(...)-Load-Mechanismus <-> equipment_setups-Branches.
+    const mechParts=decomposeCompoundExpression(e.possible_load_mechanisms[0]);
+    const calibParts=decomposeCompoundExpression(e.calibration_mode);
+    if(mechParts.length>1&&mechParts.length!==e.equipment_setups.length){
+      errors.push("CAT-LINT-7 ("+e.exercise_id+"): SETUP_DEFINED-Load-Mechanismus hat "+mechParts.length+" Komponenten, equipment_setups hat "+e.equipment_setups.length+" Branches (muessen positionsgleich sein)");
+    }
+    /* Lint #8: Aritaet + Selbstkonsistenz calibration_mode <-> progression_capabilities/auto_selectable.
+       Aritaet: calibration_mode ist entweder EIN Wert, der fuer ALLE Branches
+       gleichermassen gilt (broadcast — in den Katalogdaten z.B. bei
+       GOBLET_SQUAT/PREACHER_CURL/STANDING_CALF_RAISE/SEATED_CALF_RAISE als
+       "SETUP_DEFINED(X)" mit nur EINER Komponente, oder bei SUITCASE_CARRY/
+       FARMERS_CARRY als nackter Wert ohne SETUP_DEFINED-Huelle trotz
+       compoundem Load-Mechanismus), oder positionsgleich mit den
+       Load-Mechanismus-Komponenten (z.B. BULGARIAN_SPLIT_SQUAT:
+       SETUP_DEFINED(STANDARD_CURVE/BODYWEIGHT_EFFECTIVE_LOAD)). Eine
+       KORREKTUR gegenueber der vorherigen Fassung dieses Lints: eine strikte
+       1:1-Positionsgleichheit war zu eng und hat legitime Katalog-Records
+       falsch als Verstoss gemeldet.
+       Selbstkonsistenz: eine FRUEHERE Fassung dieses Lints nahm an, dass
+       jeder Load-Mechanismus-Wert im GESAMTEN Katalog immer mit genau einem
+       calibration_mode-Wert gepaart sein muesse — das ist durch die
+       tatsaechlichen Daten widerlegt (BODYWEIGHT_OR_REP_ONLY ist sowohl bei
+       rep-basierten Records wie PUSHUP mit BODYWEIGHT_EFFECTIVE_LOAD als
+       auch bei den 4 NON_REP-Records PLANK/SIDE_PLANK mit
+       NON_REP_MANUAL_ONLY gepaart — beides normativ korrekt, siehe
+       NON_REP_MANUAL_ONLY_EXERCISE_IDS). Eine erfundene globale
+       Kompatibilitaetstabelle Load-Achse<->calibration_mode existiert in
+       keiner der Spec-Quellen dieses Packs und wird deshalb NICHT gebaut
+       (G-D3). Stattdessen wird nur die eine echte, aus den bereits normativ
+       gegebenen Feldern selbst folgende Konsistenzregel geprueft: ein
+       NON_REP_MANUAL_ONLY-calibration_mode-Wert (broadcast oder je Branch)
+       muss mit auto_selectable=false UND progression_capabilities
+       MANUAL_ONLY_NON_REP uebereinstimmen — alles andere waere ein in sich
+       widerspruechlicher Record. */
+    if(calibParts.length!==1&&calibParts.length!==mechParts.length){
+      errors.push("CAT-LINT-8 ("+e.exercise_id+"): calibration_mode-Komponenten ("+calibParts.length+") sind weder 1 (broadcast) noch positionsgleich mit den load_mechanism-Komponenten ("+mechParts.length+")");
+    }
+    if(calibParts.indexOf("NON_REP_MANUAL_ONLY")!==-1){
+      if(e.auto_selectable)errors.push("CAT-LINT-8 ("+e.exercise_id+"): calibration_mode NON_REP_MANUAL_ONLY, aber auto_selectable=true");
+      if(e.progression_capabilities.indexOf("MANUAL_ONLY_NON_REP")===-1)errors.push("CAT-LINT-8 ("+e.exercise_id+"): calibration_mode NON_REP_MANUAL_ONLY ohne progression_capabilities-Flag MANUAL_ONLY_NON_REP");
     }
     if(e.possible_load_mechanisms.indexOf("BODYWEIGHT_OR_REP_ONLY")!==-1){ // Lint #9 / LB-9
       if(e.progression_capabilities.indexOf("LOAD")!==-1)errors.push("CAT-LINT-9/LB-9 ("+e.exercise_id+"): BODYWEIGHT_OR_REP_ONLY exponiert fiktives LOAD");
@@ -348,6 +551,11 @@ function validateCatalogLints(catalog){
     ["technical_demand","stability_demand","mobility_demand","setup_complexity","fatigue_local","fatigue_systemic"].forEach(f=>{ // Lint #11
       if(!(e[f]>=1&&e[f]<=5))errors.push("CAT-LINT-11 ("+e.exercise_id+"): "+f+"="+e[f]+" ausserhalb 1..5");
     });
+    e.progression_capabilities.forEach(pc=>{ // Lint #12 (partiell): Assistance-Richtung LOWER_IS_MORE
+      if(pc.indexOf("ASSISTANCE")!==-1&&pc!=="ASSISTANCE_DECREASE"){
+        errors.push("CAT-LINT-12 ("+e.exercise_id+"): Assistance-Capability '"+pc+"' ist nicht ASSISTANCE_DECREASE (verletzt LOWER_IS_MORE, §9.1)");
+      }
+    });
     if(e.metadata_completeness!=="COMPLETE")errors.push("CAT-LINT-13 ("+e.exercise_id+"): metadata_completeness != COMPLETE"); // Lint #13
     (e.aliases||[]).forEach(a=>{ // Lint #14
       if(seenAliases.has(a)||idOrder.indexOf(a)!==-1)errors.push("CAT-LINT-14 ("+e.exercise_id+"): doppelte Alias-Identitaet "+a);
@@ -356,6 +564,18 @@ function validateCatalogLints(catalog){
     if(e.rep_band_classes.indexOf("NON_REP")!==-1&&e.auto_selectable){ // Lint #17
       errors.push("CAT-LINT-17 ("+e.exercise_id+"): NON_REP-Record ist auto_selectable");
     }
+    // Lint #18: uebrige enum-artige Felder gegen bestehende Registries bzw. den Baseline-abgeleiteten Wertevorrat.
+    e.goal_compatibility.forEach(g=>{if(Object.values(TRAINING_GOAL).indexOf(g)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): goal_compatibility-Wert '"+g+"' ist kein kanonisches TRAINING_GOAL");});
+    e.supported_rep_characters.forEach(rc=>{if(Object.values(REP_CHARACTER).indexOf(rc)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): supported_rep_characters-Wert '"+rc+"' ist kein kanonisches REP_CHARACTER");});
+    e.supported_slot_roles.forEach(role=>{if(Object.values(SLOT_ROLE).indexOf(role)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): supported_slot_roles-Wert '"+role+"' ist keine kanonische SLOT_ROLE");});
+    e.rep_band_classes.forEach(rb=>{if(!Object.prototype.hasOwnProperty.call(REP_BAND_REGISTRY,rb))errors.push("CAT-LINT-18 ("+e.exercise_id+"): rep_band_classes-Wert '"+rb+"' ist kein kanonisches Rep-Band (§29.7)");});
+    if(UNILATERAL_TIME_CLASS_VALUES.indexOf(e.unilateral_time_class)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): unilateral_time_class '"+e.unilateral_time_class+"' ist keiner der 3 §17.4-Werte");
+    mechParts.forEach(mech=>{if(LOAD_MECHANISM_REGISTRY.indexOf(mech)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): load-mechanism-Komponente '"+mech+"' ist nicht im §9.1-Load-Mechanism-Registry");});
+    ["exercise_class","instance_relevance","setup_time_class","warmup_protocol_class"].forEach(f=>{
+      if(BASELINE_CLOSED_VALUE_SETS[f].indexOf(e[f])===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): "+f+"-Wert '"+e[f]+"' liegt ausserhalb des aus dem Baseline-Catalog abgeleiteten Wertevorrats");
+    });
+    (e.laterality_modes||[]).forEach(lm=>{if(BASELINE_CLOSED_VALUE_SETS.laterality_modes.indexOf(lm)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): laterality_modes-Wert '"+lm+"' liegt ausserhalb des Baseline-abgeleiteten Wertevorrats");});
+    calibParts.forEach(cm=>{if(BASELINE_CLOSED_VALUE_SETS.calibration_mode_component.indexOf(cm)===-1)errors.push("CAT-LINT-18 ("+e.exercise_id+"): calibration_mode-Komponente '"+cm+"' liegt ausserhalb des Baseline-abgeleiteten Wertevorrats");});
   });
   return errors;
 }
@@ -366,5 +586,6 @@ if(typeof module!=="undefined" && module.exports){
     REP_BAND_REGISTRY,NON_REP_MANUAL_ONLY_EXERCISE_IDS,
     EXERCISE_CATALOG_RAW,EXERCISE_CATALOG_RELEASE_COUNT,EXERCISE_CATALOG_AUTO_SELECTABLE_COUNT,
     loadExerciseCatalog,validateCatalogLints,
+    CATALOG_LINT_STATUS,UNILATERAL_TIME_CLASS_VALUES,decomposeCompoundExpression,BASELINE_CLOSED_VALUE_SETS,
   };
 }

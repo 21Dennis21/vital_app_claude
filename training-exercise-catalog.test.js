@@ -161,6 +161,112 @@ console.log("========== §29.13 Catalog-Lints: einzeln erzwungen (mit absichtlic
   const noEquip=catalog.map(e=>Object.assign({},e));
   noEquip[0]=Object.assign({},noEquip[0],{equipment_setups:[]});
   assert(EC.validateCatalogLints(noEquip).some(e=>e.indexOf("CAT-LINT-6")!==-1),"Lint #6 (mind. 1 EquipmentSetup fuer auto-selectable) schlaegt bei leerem equipment_setups an");
+
+  // Lint #2: Catalog-Anzahl (< 125 durch kuenstliches Entfernen eines Records).
+  assert(EC.validateCatalogLints(catalog.slice(1)).some(e=>e.indexOf("CAT-LINT-2")!==-1),"Lint #2 (Catalog-Anzahl exakt 125) schlaegt an, wenn ein Record kuenstlich entfernt wird");
+
+  /* Lint #3: kanonisches movement_pattern/movement_subpattern. Wird NICHT in
+     validateCatalogLints() erzwungen, sondern bereits eine Ebene tiefer beim
+     Konstruieren jeder ExerciseDefinitionVersion (createExerciseDefinitionVersion
+     -> TD.validateEnumValue gegen MOVEMENT_PATTERN_ID/MOVEMENT_SUBPATTERN_ID,
+     training-domain.js) — siehe auch den bereits bestehenden Test-Block "keine
+     freien Strings", der bestaetigt, dass ALLE 125 echten Records kanonisch
+     sind. Hier wird zusaetzlich bewiesen, dass ein NICHT-kanonischer Wert bei
+     der Konstruktion tatsaechlich abgelehnt wird (die eigentliche Lint-#3-
+     Durchsetzung). */
+  const rawTemplate=EC.EXERCISE_CATALOG_RAW.find(r=>r.exercise_id==="BULGARIAN_SPLIT_SQUAT");
+  assertThrows(()=>TD.createExerciseDefinitionVersion(Object.assign({definition_version:1,status:"ACTIVE"},rawTemplate,{movement_pattern:"NOT_A_CANONICAL_PATTERN"})),"Lint #3 (kanonisches movement_pattern) schlaegt bei Entity-Konstruktion mit ungueltigem Pattern an");
+  assertThrows(()=>TD.createExerciseDefinitionVersion(Object.assign({definition_version:1,status:"ACTIVE"},rawTemplate,{movement_subpattern:"NOT_A_CANONICAL_SUBPATTERN"})),"Lint #3 (kanonisches movement_subpattern) schlaegt bei Entity-Konstruktion mit ungueltigem Subpattern an");
+
+  /* Lint #4 (Muskel-Teil): canonical_volume_muscle_id wird ebenfalls bereits
+     bei der Entity-Konstruktion erzwungen (validateMuscleContributionBands ->
+     TD.validateEnumValue gegen CANONICAL_VOLUME_MUSCLE_ID). Der Tag-Teil
+     (anatomy_tags/subregion_tags) wird direkt in validateCatalogLints via
+     validateAnatomySubregionTag geprueft. */
+  assertThrows(()=>TD.createExerciseDefinitionVersion(Object.assign({definition_version:1,status:"ACTIVE"},rawTemplate,{primary_muscle_bands:[{canonical_volume_muscle_id:"NOT_A_MUSCLE",contribution_band:"PRIMARY_HIGH"}]})),"Lint #4 (Muskel-Teil: canonical_volume_muscle_id muss existieren) schlaegt bei Entity-Konstruktion mit unbekannter Muscle-ID an");
+  const badTag=catalog.map(e=>Object.assign({},e));
+  badTag[0]=Object.assign({},badTag[0],{anatomy_tags:["NOT_A_REGISTERED_TAG"]});
+  assert(EC.validateCatalogLints(badTag).some(e=>e.indexOf("CAT-LINT-4")!==-1),"Lint #4 (Tag-Teil: anatomy_tags/subregion_tags muessen im §4.3-Registry existieren) schlaegt bei unbekanntem Tag an");
+
+  // Lint #5 / CAT-CONTRIBUTION-UNIQUE: dieselbe Muscle-ID darf nicht gleichzeitig primary UND secondary sein.
+  const dupMuscle=catalog.map(e=>Object.assign({},e));
+  dupMuscle[0]=Object.assign({},dupMuscle[0],{
+    primary_muscle_bands:[{canonical_volume_muscle_id:"QUADS",contribution_band:"PRIMARY_HIGH"}],
+    secondary_muscle_bands:[{canonical_volume_muscle_id:"QUADS",contribution_band:"SECONDARY"}],
+  });
+  assert(EC.validateCatalogLints(dupMuscle).some(e=>e.indexOf("CAT-LINT-5")!==-1),"Lint #5 (CAT-CONTRIBUTION-UNIQUE) schlaegt an, wenn dieselbe Muscle-ID sowohl primary als auch secondary auftritt");
+
+  // Lint #7: SETUP_DEFINED(...)-Load-Mechanismus-Aritaet muss zu equipment_setups-Branches passen.
+  const bssIdx=catalog.findIndex(e=>e.exercise_id==="BULGARIAN_SPLIT_SQUAT");
+  const badArity7=catalog.map(e=>Object.assign({},e));
+  badArity7[bssIdx]=Object.assign({},badArity7[bssIdx],{equipment_setups:[["DUMBBELL_PAIR","BENCH_OR_BOX"]]}); // nur 1 Branch statt 2
+  assert(EC.validateCatalogLints(badArity7).some(e=>e.indexOf("CAT-LINT-7")!==-1),"Lint #7 (Aritaet Load-Mechanismus <-> equipment_setups) schlaegt an, wenn eine Branch kuenstlich entfernt wird");
+
+  // Lint #8 (Aritaet): calibration_mode-Komponenten weder 1 (broadcast) noch positionsgleich.
+  const badArity8=catalog.map(e=>Object.assign({},e));
+  badArity8[bssIdx]=Object.assign({},badArity8[bssIdx],{calibration_mode:"SETUP_DEFINED(STANDARD_CURVE/BODYWEIGHT_EFFECTIVE_LOAD/EXTRA_VALUE)"});
+  assert(EC.validateCatalogLints(badArity8).some(e=>e.indexOf("CAT-LINT-8")!==-1),"Lint #8 (Aritaet calibration_mode) schlaegt an, wenn eine dritte, ueberzaehlige Komponente hinzugefuegt wird");
+
+  // Lint #8 (Selbstkonsistenz): NON_REP_MANUAL_ONLY muss mit auto_selectable=false + MANUAL_ONLY_NON_REP-Flag uebereinstimmen.
+  const plankIdx8=catalog.findIndex(e=>e.exercise_id==="PLANK");
+  const badSelfConsist8=catalog.map(e=>Object.assign({},e));
+  badSelfConsist8[plankIdx8]=Object.assign({},badSelfConsist8[plankIdx8],{progression_capabilities:["DURATION","VARIANT"]}); // MANUAL_ONLY_NON_REP-Flag entfernt
+  assert(EC.validateCatalogLints(badSelfConsist8).some(e=>e.indexOf("CAT-LINT-8")!==-1),"Lint #8 (Selbstkonsistenz NON_REP_MANUAL_ONLY <-> progression_capabilities) schlaegt an, wenn das MANUAL_ONLY_NON_REP-Flag fehlt");
+
+  // Lint #9 / LB-9: BODYWEIGHT_OR_REP_ONLY darf kein fiktives LOAD/STANDARD_CURVE exponieren.
+  const pushupIdx=catalog.findIndex(e=>e.exercise_id==="PUSHUP");
+  const badLB9Load=catalog.map(e=>Object.assign({},e));
+  badLB9Load[pushupIdx]=Object.assign({},badLB9Load[pushupIdx],{progression_capabilities:["REPS","VARIANT","LOAD"]});
+  assert(EC.validateCatalogLints(badLB9Load).some(e=>e.indexOf("CAT-LINT-9")!==-1),"Lint #9/LB-9 (kein fiktives LOAD) schlaegt an, wenn ein BODYWEIGHT_OR_REP_ONLY-Record LOAD exponiert");
+  const badLB9Curve=catalog.map(e=>Object.assign({},e));
+  badLB9Curve[pushupIdx]=Object.assign({},badLB9Curve[pushupIdx],{calibration_mode:"STANDARD_CURVE"});
+  assert(EC.validateCatalogLints(badLB9Curve).some(e=>e.indexOf("CAT-LINT-9")!==-1),"Lint #9/LB-9 (kein STANDARD_CURVE) schlaegt an, wenn ein BODYWEIGHT_OR_REP_ONLY-Record STANDARD_CURVE nutzt");
+
+  // Lint #12 (partiell): Assistance-Capability muss LOWER_IS_MORE-Richtung (ASSISTANCE_DECREASE) sein.
+  const badAssist=catalog.map(e=>Object.assign({},e));
+  badAssist[0]=Object.assign({},badAssist[0],{progression_capabilities:badAssist[0].progression_capabilities.concat(["ASSISTANCE_INCREASE"])});
+  assert(EC.validateCatalogLints(badAssist).some(e=>e.indexOf("CAT-LINT-12")!==-1),"Lint #12 (Assistance-Richtung LOWER_IS_MORE) schlaegt an, wenn eine Capability 'ASSISTANCE_INCREASE' statt ASSISTANCE_DECREASE auftaucht");
+
+  // Lint #14: doppelte Alias-Identitaet (Alias kollidiert mit bestehender exercise_id oder einem anderen Alias).
+  const dupAlias=catalog.map(e=>Object.assign({},e));
+  dupAlias[0]=Object.assign({},dupAlias[0],{aliases:[dupAlias[1].exercise_id]});
+  assert(EC.validateCatalogLints(dupAlias).some(e=>e.indexOf("CAT-LINT-14")!==-1),"Lint #14 (keine doppelte Alias-Identitaet) schlaegt an, wenn ein Alias mit einer bestehenden exercise_id kollidiert");
+
+  // Lint #16 (partiell): strukturell degenerierte EquipmentSetups (doppeltes Tag / doppelte Branch).
+  const dupTagBranch=catalog.map(e=>Object.assign({},e));
+  dupTagBranch[0]=Object.assign({},dupTagBranch[0],{equipment_setups:[["BARBELL_LOADABLE","BARBELL_LOADABLE"]]});
+  assert(EC.validateCatalogLints(dupTagBranch).some(e=>e.indexOf("CAT-LINT-16")!==-1),"Lint #16 (keine degenerierte AND-Gruppe) schlaegt an, wenn ein Tag innerhalb einer Branch doppelt vorkommt");
+  const dupBranch=catalog.map(e=>Object.assign({},e));
+  dupBranch[0]=Object.assign({},dupBranch[0],{equipment_setups:[["BARBELL_LOADABLE"],["BARBELL_LOADABLE"]]});
+  assert(EC.validateCatalogLints(dupBranch).some(e=>e.indexOf("CAT-LINT-16")!==-1),"Lint #16 (keine redundante doppelte OR-Branch) schlaegt an, wenn zwei equipment_setups-Branches identisch sind");
+
+  // Lint #18: normative Identifier muessen durch bestehende Registries bzw. den Baseline-Wertevorrat aufloesen.
+  const badGoal=catalog.map(e=>Object.assign({},e));
+  badGoal[0]=Object.assign({},badGoal[0],{goal_compatibility:["NOT_A_GOAL"]});
+  assert(EC.validateCatalogLints(badGoal).some(e=>e.indexOf("CAT-LINT-18")!==-1),"Lint #18 (goal_compatibility gegen TRAINING_GOAL) schlaegt bei unbekanntem Goal an");
+  const badMech=catalog.map(e=>Object.assign({},e));
+  badMech[0]=Object.assign({},badMech[0],{possible_load_mechanisms:["NOT_A_LOAD_MECHANISM"]});
+  assert(EC.validateCatalogLints(badMech).some(e=>e.indexOf("CAT-LINT-18")!==-1),"Lint #18 (load-mechanism-Komponente gegen §9.1-Registry) schlaegt bei unbekanntem Mechanismus an");
+  const badUnilateral=catalog.map(e=>Object.assign({},e));
+  badUnilateral[0]=Object.assign({},badUnilateral[0],{unilateral_time_class:"NOT_A_CLASS"});
+  assert(EC.validateCatalogLints(badUnilateral).some(e=>e.indexOf("CAT-LINT-18")!==-1),"Lint #18 (unilateral_time_class gegen §17.4) schlaegt bei unbekanntem Wert an");
+  const badExClass=catalog.map(e=>Object.assign({},e));
+  badExClass[0]=Object.assign({},badExClass[0],{exercise_class:"NOT_A_CLASS"});
+  assert(EC.validateCatalogLints(badExClass).some(e=>e.indexOf("CAT-LINT-18")!==-1),"Lint #18 (exercise_class gegen den Baseline-abgeleiteten Wertevorrat) schlaegt bei unbekanntem Wert an");
+
+  // Alle 18 Lints sind maschinenlesbar im Status-Objekt vertreten und behaupten NIRGENDS einen unehrlichen vollen PASS.
+  for(let lintNo=1;lintNo<=18;lintNo++){
+    assert(!!EC.CATALOG_LINT_STATUS[lintNo],"CATALOG_LINT_STATUS enthaelt einen Eintrag fuer Lint #"+lintNo);
+    assert(["IMPLEMENTED","PARTIAL","NOT_TESTABLE"].indexOf(EC.CATALOG_LINT_STATUS[lintNo].status)!==-1,"Lint #"+lintNo+" hat einen der 3 zulaessigen Status-Werte");
+  }
+  assertEq(EC.CATALOG_LINT_STATUS[12].status,"PARTIAL","Lint #12 ist ehrlich als PARTIAL markiert (PER_HAND/PER_SIDE/TOTAL ist ein LoadProfileVersion-Laufzeitdatum, kein Catalog-Feld)");
+  assertEq(EC.CATALOG_LINT_STATUS[15].status,"NOT_TESTABLE","Lint #15 ist ehrlich als NOT_TESTABLE markiert (Substitution-/Equipment-Matching-Engine existiert nicht)");
+  assertEq(EC.CATALOG_LINT_STATUS[16].status,"PARTIAL","Lint #16 ist ehrlich als PARTIAL markiert (echte Unmoeglichkeit braucht eine Equipment-Mutual-Exclusivity-Registry)");
+  const fullyImplemented=[1,2,3,4,5,6,7,8,9,10,11,13,14,17,18];
+  fullyImplemented.forEach(n=>assertEq(EC.CATALOG_LINT_STATUS[n].status,"IMPLEMENTED","Lint #"+n+" ist als vollstaendig IMPLEMENTED markiert"));
+
+  // Die REALE, unveraenderte 125-Record-Baseline muss bei alledem 0 Lint-Fehler haben (kein Fake-PASS: die neue, strengere Logik darf keine echten Regressionen uebersehen ODER faelschlich melden).
+  assertEq(EC.validateCatalogLints(catalog),[],"die reale, unveraenderte 125-Record-Baseline besteht alle strukturell pruefbaren §29.13-Lints mit 0 Fehlern");
 }
 
 console.log("========== Rep-Band Registry (§29.7) ==========");
