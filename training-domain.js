@@ -232,6 +232,38 @@ const CANONICAL_VOLUME_MUSCLE_ID=Object.freeze({
   GLUTES:"GLUTES",ADDUCTORS:"ADDUCTORS",ABDUCTORS:"ABDUCTORS",CALVES:"CALVES",
   ABS:"ABS",OBLIQUES:"OBLIQUES",
 });
+
+/* ===== Pack 02 (User Profile/Onboarding): weitere kanonische Enums, die
+   erst in Paket 02 wortgetreu benannt werden (§1.2, §1.4, §3.1). Analog zur
+   STEP-01-Korrektur: geschlossene Enums statt dauerhaft freier Strings. ===== */
+const REST_PREFERENCE=Object.freeze({SHORT:"SHORT",STANDARD:"STANDARD",LONG:"LONG"});
+/* §3.1 Kandidatenraum — die 9 dort benannten Splits. preferred_split bleibt
+   fachlich OPTIONAL (Default null = "Automatisch") und wirkt laut §3 nur als
+   Score-Bonus, nie als Hard Filter (siehe UX-Vorgabe Paket 02) — die Split
+   Engine/Bewertung selbst folgt erst in STEP 03. */
+const PREFERRED_SPLIT=Object.freeze({
+  FULL_BODY:"FULL_BODY",UPPER_LOWER:"UPPER_LOWER",UPPER_LOWER_FULL:"UPPER_LOWER_FULL",
+  PUSH_PULL:"PUSH_PULL",PPL:"PPL",PPL_X2:"PPL_X2",PPL_UL_HYBRID:"PPL_UL_HYBRID",
+  UPPER_LOWER_X3:"UPPER_LOWER_X3",BODY_PART_SPLIT:"BODY_PART_SPLIT",
+});
+/* §1.4 TrainingLocation.type */
+const TRAINING_LOCATION_TYPE=Object.freeze({
+  COMMERCIAL_GYM:"COMMERCIAL_GYM",HOME_GYM:"HOME_GYM",HOTEL_TRAVEL:"HOTEL_TRAVEL",
+  BODYWEIGHT_ONLY:"BODYWEIGHT_ONLY",OTHER:"OTHER",
+});
+/* §1.2 REQUIRED-Tabelle: numerische Wertebereiche der Onboarding-Felder.
+   Einzige Quelle dieser Grenzen — UI und Domain-Validierung verwenden
+   ausschliesslich diese Konstante, keine zweite Kopie der Zahlen. */
+const USER_TRAINING_PROFILE_FIELD_BOUNDS=Object.freeze({
+  training_days_per_week:Object.freeze([2,6]),
+  session_time_budget_min:Object.freeze([20,120]),
+  bodyweight_kg:Object.freeze([30,250]),
+});
+function validateNumericRange(value,bounds,fieldLabel){
+  if(typeof value!=="number"||Number.isNaN(value)||value<bounds[0]||value>bounds[1]){
+    throw new Error("training-domain: "+fieldLabel+" ausserhalb des gueltigen Bereichs ["+bounds[0]+", "+bounds[1]+"]: "+JSON.stringify(value));
+  }
+}
 /* MovementPattern/MovementSubpattern: die vollstaendige geschlossene
    Registry (u.a. die "6 Grundmuster" aus Dependency §5.5) ist in Paket 01
    NICHT enthalten (nur die Feldnamen und die Anzahl "6" werden erwaehnt,
@@ -413,19 +445,36 @@ function createUser(f){
    Historie lebt in BodyweightEvent (append-only, siehe unten). */
 function createUserTrainingProfile(f){
   f=f||{};
-  requireFields({...f,__type__:"UserTrainingProfile"},["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","preferred_split","uses_rir","rest_preference","experience_level_eligible","experience_level","user_skill_level"]);
+  /* KORREKTUR (Paket 02): preferred_split/uses_rir/rest_preference sind laut
+     §1.2 OPTIONAL mit definiertem Default (null/false/STANDARD) — STEP 01
+     hatte sie faelschlich als Pflichtfelder in requireFields gelistet, was
+     "Default preferred_split = null" technisch unmoeglich gemacht haette.
+     Konflikt dokumentiert und gemaess v1.4.1 aufgeloest: nur die 7 in §1.2
+     als REQUIRED gefuehrten Felder plus die DERIVED-Snapshot-Felder sind
+     hier Pflicht; die drei OPTIONAL-Felder werden unten mit ihrem Default
+     belegt, wenn sie fehlen. */
+  requireFields({...f,__type__:"UserTrainingProfile"},["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","experience_level_eligible","experience_level","user_skill_level"]);
   validateEnumValue(f.goal,TRAINING_GOAL,"goal");
   validateEnumValue(f.experience_self,EXPERIENCE_SELF,"experience_self");
   validateEnumValue(f.experience_level_eligible,EXPERIENCE_LEVEL,"experience_level_eligible");
   validateEnumValue(f.experience_level,EXPERIENCE_LEVEL,"experience_level");
-  validateEnumArray(f.priority_muscles,CANONICAL_VOLUME_MUSCLE_ID,"priority_muscles");
+  validateNumericRange(f.training_days_per_week,USER_TRAINING_PROFILE_FIELD_BOUNDS.training_days_per_week,"training_days_per_week");
+  validateNumericRange(f.session_time_budget_min,USER_TRAINING_PROFILE_FIELD_BOUNDS.session_time_budget_min,"session_time_budget_min");
+  validateNumericRange(f.bodyweight_kg,USER_TRAINING_PROFILE_FIELD_BOUNDS.bodyweight_kg,"bodyweight_kg");
+  const priorityMuscles=f.priority_muscles||[];
+  if(priorityMuscles.length>2)throw new Error("training-domain: priority_muscles erlaubt maximal 2 Eintraege (§4.5), erhalten: "+priorityMuscles.length);
+  validateEnumArray(priorityMuscles,CANONICAL_VOLUME_MUSCLE_ID,"priority_muscles");
+  const preferredSplit=f.preferred_split!==undefined?f.preferred_split:null;
+  if(preferredSplit!==null)validateEnumValue(preferredSplit,PREFERRED_SPLIT,"preferred_split");
+  const restPreference=f.rest_preference!==undefined?f.rest_preference:REST_PREFERENCE.STANDARD;
+  validateEnumValue(restPreference,REST_PREFERENCE,"rest_preference");
   return {
     user_id:f.user_id,goal:f.goal,experience_self:f.experience_self,
     training_days_per_week:f.training_days_per_week,session_time_budget_min:f.session_time_budget_min,
     primary_location_id:f.primary_location_id,bodyweight_kg:f.bodyweight_kg,
-    priority_muscles:f.priority_muscles||[],preferred_split:f.preferred_split,
+    priority_muscles:priorityMuscles,preferred_split:preferredSplit,
     training_weekdays:f.training_weekdays||[],weekday_location_map:f.weekday_location_map||{},
-    uses_rir:!!f.uses_rir,rest_preference:f.rest_preference,
+    uses_rir:!!f.uses_rir,rest_preference:restPreference,
     sex:f.sex!==undefined?f.sex:null,age:f.age!==undefined?f.age:null,
     experience_level_eligible:f.experience_level_eligible,experience_level:f.experience_level,
     user_skill_level:f.user_skill_level,
@@ -446,6 +495,7 @@ function createBodyweightEvent(f){
 function createTrainingLocation(f){
   f=f||{};
   requireFields({...f,__type__:"TrainingLocation"},["id","user_id","name","type"]);
+  validateEnumValue(f.type,TRAINING_LOCATION_TYPE,"type");
   return {id:f.id,user_id:f.user_id,name:f.name,type:f.type,
     current_equipment_profile_version_id:f.current_equipment_profile_version_id!==undefined?f.current_equipment_profile_version_id:null,
     is_default_for_weekdays:f.is_default_for_weekdays||[]};
@@ -929,8 +979,9 @@ if(typeof module!=="undefined" && module.exports){
     CONFIDENCE_LEVELS,CONFIDENCE_ORDER,compareConfidence,
     roundVolumeToHalfSet,roundToAvailableSteps,roundTimeSpanMinutes,
     LOAD_MECHANISM_REGISTRY,LOAD_AXIS_CLASS,loadAxisClass,
-    validateEnumValue,validateEnumArray,
+    validateEnumValue,validateEnumArray,validateNumericRange,
     TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
+    REST_PREFERENCE,PREFERRED_SPLIT,TRAINING_LOCATION_TYPE,USER_TRAINING_PROFILE_FIELD_BOUNDS,
     MOVEMENT_PATTERN_REGISTRY,MOVEMENT_SUBPATTERN_REGISTRY,
     registerMovementPatternId,isRegisteredMovementPatternId,
     registerMovementSubpatternId,isRegisteredMovementSubpatternId,

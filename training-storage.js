@@ -79,6 +79,19 @@ function findInTrainingCollection(name,idField,idValue){
 function loadUserTrainingProfile(){return load(trainingKey("profile"),null);}
 function saveUserTrainingProfile(profile){save(trainingKey("profile"),profile);}
 
+/* Paket 02 (Onboarding) braucht einen stabilen user_id-Anker fuer
+   UserTrainingProfile/TrainingLocation/BodyweightEvent — diese Single-User-
+   App fuehrt bislang keinen Nutzer-Account. Statt dafuer eine neue Backend-
+   /Auth-Architektur einzufuehren, wird EINMALIG eine lokale, opake ID
+   erzeugt und dauerhaft unter einem eigenen Key gespeichert; danach immer
+   dieselbe ID zurueckgegeben. Rein technischer Anker, keine fachliche
+   Bedeutung. */
+function getOrCreateLocalTrainingUserId(){
+  let id=load(trainingKey("local_user_id"),null);
+  if(!id){id=genTrainingId("user");save(trainingKey("local_user_id"),id);}
+  return id;
+}
+
 /* BodyweightEvent: append-only (Bodyweight-Replay-Contract, 23.4). */
 function loadBodyweightEvents(){return loadTrainingCollection("bodyweight_events");}
 function appendBodyweightEvent(event){return appendToTrainingCollection("bodyweight_events",event,"event_id");}
@@ -306,7 +319,7 @@ if(typeof module!=="undefined" && module.exports){
   module.exports={
     TRAINING_STORAGE_PREFIX,trainingKey,
     loadTrainingCollection,saveTrainingCollection,appendToTrainingCollection,upsertInTrainingCollection,findInTrainingCollection,
-    loadUserTrainingProfile,saveUserTrainingProfile,
+    loadUserTrainingProfile,saveUserTrainingProfile,getOrCreateLocalTrainingUserId,
     loadBodyweightEvents,appendBodyweightEvent,
     loadTrainingLocations,upsertTrainingLocation,
     loadAvailabilityEvents,appendAvailabilityEvent,
