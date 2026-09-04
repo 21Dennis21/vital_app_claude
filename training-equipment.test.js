@@ -38,6 +38,9 @@ function inst(id,defId,state,opts){
   return TD.createEquipmentInstance(Object.assign({id,location_id:"loc1",equipment_definition_version_id:defId,inventory_state:state},opts));
 }
 function cap(namespace,value){return TD.createCapabilityPredicate({namespace,operator:"EQ",value});}
+function lp(id,pairSemantics,extra){
+  return TD.createLoadProfileVersion(Object.assign({id,equipment_instance_id:"n/a",version:1,load_unit:"KG",display_semantics:"PER_HAND",direction:"HIGHER_IS_MORE",pair_semantics:pairSemantics,per_side_semantics:"N_A",ratio_confidence:"MEDIUM",effective_load_unknown:false,microloading_available:false},extra||{}));
+}
 
 console.log("========== §29.1 Equipment Family/Subtype Registry: unknown ID rejected ==========");
 {
@@ -241,97 +244,141 @@ console.log("========== konkrete ResolvedSetupBinding (keine abstrakte Family, w
   assertEq(unsatisfiableResult,{status:"UNSATISFIABLE",binding:null},"UNSATISFIABLE-Ergebnis fuer eine unsatisfiable Branch, keine Bindung");
 }
 
-console.log("========== Single/Pair Quantity Semantics (§29.4: 'in der ANGEGEBENEN STUECKZAHL') ==========");
+console.log("========== Single/Pair Quantity Semantics (§29.4 + LoadProfileVersion.pair_semantics, KEINE Same-Definition-Heuristik) ==========");
 {
   const dbDef=def("d_db","FREE_WEIGHT","ADJUSTABLE_DUMBBELL");
   const kbDef=def("d_kb","FREE_WEIGHT","KETTLEBELL");
-  const otherDbDef=def("d_db2","FREE_WEIGHT","ADJUSTABLE_DUMBBELL");
 
-  // 1 DB -> SINGLE PASS, PAIR FAIL
+  // SINGLE-Profil -> SINGLE PASS.
   {
-    const view=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"})],[],[dbDef]);
+    const view=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_single"})],[],[dbDef],[lp("lp_single","SINGLE")]);
     const single=EQ.resolveSetupPredicate("DUMBBELL_SINGLE",view);
+    assertEq(single.satisfied,true,"SINGLE-Profil -> DUMBBELL_SINGLE PASS");
+    assertEq(single.equipmentInstanceIds,["db1"],"DUMBBELL_SINGLE bindet genau die eine konkrete Instanz");
+  }
+  // SINGLE-Profil allein -> PAIR FAIL (klar, kein needsInput: nur 1 Stueck vorhanden).
+  {
+    const view=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_single"})],[],[dbDef],[lp("lp_single","SINGLE")]);
     const pair=EQ.resolveSetupPredicate("DUMBBELL_PAIR",view);
-    assertEq(single.satisfied,true,"1 PRESENT Dumbbell -> DUMBBELL_SINGLE PASS");
-    assertEq(single.equipmentInstanceIds,["db1"],"DUMBBELL_SINGLE bindet genau 1 konkrete Instanz");
-    assertEq(pair.satisfied,false,"1 PRESENT Dumbbell -> DUMBBELL_PAIR FAIL (eine einzelne Instanz erfuellt keine PAIR-Anforderung)");
+    assertEq(pair.satisfied,false,"SINGLE-Profil allein -> DUMBBELL_PAIR FAIL");
+    assertEq(pair.needsInput,false,"eindeutig FAIL, kein needsInput (nur 1 Stueck kann keine Mehrdeutigkeit erzeugen)");
     assertEq(pair.equipmentInstanceIds,[],"DUMBBELL_PAIR ohne Erfuellung bindet keine Instanzen");
   }
-  // 2 kompatible DBs (gleiche equipment_definition_version_id) -> PAIR PASS
+  // Ausdruecklich PAIR_PER_HAND repraesentierte Ressource -> PAIR gemaess gespeicherter Semantik (EINE Instanz reicht, keine virtuelle zweite Hantel).
+  {
+    const view=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_pair"})],[],[dbDef],[lp("lp_pair","PAIR_PER_HAND")]);
+    const pair=EQ.resolveSetupPredicate("DUMBBELL_PAIR",view);
+    assertEq(pair.satisfied,true,"eine einzelne Instanz mit pair_semantics=PAIR_PER_HAND erfuellt PAIR direkt gemaess gespeicherter Semantik");
+    assertEq(pair.equipmentInstanceIds,["db1"],"PAIR bindet genau diese eine Instanz — keine virtuelle zweite Hantel wird erzeugt");
+    const single=EQ.resolveSetupPredicate("DUMBBELL_SINGLE",view);
+    assertEq(single.satisfied,false,"eine PAIR_PER_HAND-Instanz allein erfuellt NICHT automatisch auch SINGLE (kein erfundenes Zusatzrecht)");
+  }
+  // Zwei SINGLE-Ressourcen duerfen NICHT nur wegen gleicher Definition automatisch als kompatibles Paar gelten -> NEEDS_INPUT (weder PASS noch FAIL).
   {
     const view=EQ.buildLocationInventoryView("loc1",[
-      inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"}),
-      inst("db2","d_db","PRESENT",{load_profile_version_id:"lp1"}),
-    ],[],[dbDef]);
+      inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_s1"}),
+      inst("db2","d_db","PRESENT",{load_profile_version_id:"lp_s2"}),
+    ],[],[dbDef],[lp("lp_s1","SINGLE"),lp("lp_s2","SINGLE")]);
     const pair=EQ.resolveSetupPredicate("DUMBBELL_PAIR",view);
-    assertEq(pair.satisfied,true,"2 kompatible PRESENT Dumbbells -> DUMBBELL_PAIR PASS");
-    assertEq(pair.equipmentInstanceIds,["db1","db2"],"DUMBBELL_PAIR bindet beide konkreten Instanzen (keine virtuelle zweite Hantel)");
+    assertEq(pair.satisfied,false,"zwei SINGLE-Instanzen (selbst gleicher equipment_definition_version_id) gelten NICHT automatisch als kompatibles Paar -> nicht satisfied");
+    assertEq(pair.needsInput,true,"stattdessen needsInput=true: aus den vorhandenen normativen Daten ist Kompatibilitaet nicht bestimmbar (keine Heuristik)");
+    assertEq(pair.equipmentInstanceIds,[],"kein Binding ohne geklaerte Kompatibilitaet — keine virtuelle Ressource");
+    assert(pair.resolvable,"der Tag selbst bleibt ein gueltiges, resolvable Praedikat (needsInput ist kein 'impossible')");
   }
-  // NOT_PRESENT/UNKNOWN zweite DB -> PAIR FAIL
+  // Auch 3+ SINGLE-Instanzen ohne PAIR_PER_HAND bleiben needsInput (keine "ab N automatisch PASS"-Heuristik).
+  {
+    const view=EQ.buildLocationInventoryView("loc1",[
+      inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_s1"}),
+      inst("db2","d_db","PRESENT",{load_profile_version_id:"lp_s2"}),
+      inst("db3","d_db","PRESENT",{load_profile_version_id:"lp_s3"}),
+    ],[],[dbDef],[lp("lp_s1","SINGLE"),lp("lp_s2","SINGLE"),lp("lp_s3","SINGLE")]);
+    assertEq(EQ.resolveSetupPredicate("DUMBBELL_PAIR",view).needsInput,true,"auch bei 3 SINGLE-Instanzen bleibt die Paar-Kompatibilitaet unbestimmt -> needsInput");
+  }
+  // NOT_PRESENT/UNKNOWN zweite DB -> eindeutig FAIL (kein needsInput: die zweite Ressource ist gar nicht verfuegbar).
   {
     ["NOT_PRESENT","UNKNOWN"].forEach(state=>{
       const view=EQ.buildLocationInventoryView("loc1",[
-        inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"}),
-        inst("db2","d_db",state,{load_profile_version_id:"lp1"}),
-      ],[],[dbDef]);
+        inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_s1"}),
+        inst("db2","d_db",state,{load_profile_version_id:"lp_s2"}),
+      ],[],[dbDef],[lp("lp_s1","SINGLE"),lp("lp_s2","SINGLE")]);
       const pair=EQ.resolveSetupPredicate("DUMBBELL_PAIR",view);
       assertEq(pair.satisfied,false,"zweite Dumbbell-Instanz "+state+" -> DUMBBELL_PAIR FAIL (nur 1 tatsaechlich PRESENT)");
+      assertEq(pair.needsInput,false,"eindeutig FAIL, kein needsInput (nur 1 PRESENT Ressource vorhanden)");
     });
   }
-  // 2 PRESENT DBs, aber unterschiedliche equipment_definition_version_id -> nicht "kompatibel" genug fuer PAIR
+  // analog Kettlebell.
   {
-    const view=EQ.buildLocationInventoryView("loc1",[
-      inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"}),
-      inst("db2","d_db2","PRESENT",{load_profile_version_id:"lp1"}),
-    ],[],[dbDef,otherDbDef]);
-    const pair=EQ.resolveSetupPredicate("DUMBBELL_PAIR",view);
-    assertEq(pair.satisfied,false,"2 PRESENT Dumbbells verschiedener EquipmentDefinitionVersion sind keine 'kompatible' PAIR-Ressource (bestehende Identitaets-Dimension, keine erfundene Heuristik)");
+    const oneKb=EQ.buildLocationInventoryView("loc1",[inst("kb1","d_kb","PRESENT",{load_profile_version_id:"lp_k1"})],[],[kbDef],[lp("lp_k1","SINGLE")]);
+    assertEq(EQ.resolveSetupPredicate("KETTLEBELL_SINGLE",oneKb).satisfied,true,"SINGLE-Profil -> KETTLEBELL_SINGLE PASS");
+    const kbPairFail=EQ.resolveSetupPredicate("KETTLEBELL_PAIR",oneKb);
+    assertEq(kbPairFail.satisfied,false,"1 SINGLE-Kettlebell -> KETTLEBELL_PAIR FAIL");
+    assertEq(kbPairFail.needsInput,false,"eindeutig FAIL bei nur 1 Instanz");
+    const pairProfileView=EQ.buildLocationInventoryView("loc1",[inst("kb1","d_kb","PRESENT",{load_profile_version_id:"lp_kpair"})],[],[kbDef],[lp("lp_kpair","PAIR_PER_HAND")]);
+    const kbPairPass=EQ.resolveSetupPredicate("KETTLEBELL_PAIR",pairProfileView);
+    assertEq(kbPairPass.satisfied,true,"eine PAIR_PER_HAND-Kettlebell-Instanz erfuellt KETTLEBELL_PAIR allein");
+    assertEq(kbPairPass.equipmentInstanceIds,["kb1"],"KETTLEBELL_PAIR bindet genau diese eine Instanz");
+    const twoSingleKb=EQ.buildLocationInventoryView("loc1",[
+      inst("kb1","d_kb","PRESENT",{load_profile_version_id:"lp_k1"}),
+      inst("kb2","d_kb","PRESENT",{load_profile_version_id:"lp_k2"}),
+    ],[],[kbDef],[lp("lp_k1","SINGLE"),lp("lp_k2","SINGLE")]);
+    assertEq(EQ.resolveSetupPredicate("KETTLEBELL_PAIR",twoSingleKb).needsInput,true,"analog Dumbbell: zwei SINGLE-Kettlebells gelten nicht automatisch als kompatibles Paar -> needsInput");
   }
-  // analog Kettlebell
+  // SINGLE_OR_PAIR muss BEIDE legalen Darstellungen akzeptieren.
   {
-    const oneKb=EQ.buildLocationInventoryView("loc1",[inst("kb1","d_kb","PRESENT",{load_profile_version_id:"lp1"})],[],[kbDef]);
-    assertEq(EQ.resolveSetupPredicate("KETTLEBELL_SINGLE",oneKb).satisfied,true,"1 PRESENT Kettlebell -> KETTLEBELL_SINGLE PASS");
-    assertEq(EQ.resolveSetupPredicate("KETTLEBELL_PAIR",oneKb).satisfied,false,"1 PRESENT Kettlebell -> KETTLEBELL_PAIR FAIL");
-    const twoKb=EQ.buildLocationInventoryView("loc1",[
-      inst("kb1","d_kb","PRESENT",{load_profile_version_id:"lp1"}),
-      inst("kb2","d_kb","PRESENT",{load_profile_version_id:"lp1"}),
-    ],[],[kbDef]);
-    const kbPair=EQ.resolveSetupPredicate("KETTLEBELL_PAIR",twoKb);
-    assertEq(kbPair.satisfied,true,"2 kompatible PRESENT Kettlebells -> KETTLEBELL_PAIR PASS");
-    assertEq(kbPair.equipmentInstanceIds,["kb1","kb2"],"KETTLEBELL_PAIR bindet beide konkreten Instanzen");
+    const singleView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_single"})],[],[dbDef],[lp("lp_single","SINGLE")]);
+    const sopSingle=EQ.resolveSetupPredicate("DUMBBELL_SINGLE_OR_PAIR",singleView);
+    assertEq(sopSingle.satisfied,true,"SINGLE-Darstellung erfuellt DUMBBELL_SINGLE_OR_PAIR");
+    assertEq(sopSingle.equipmentInstanceIds,["db1"],"SINGLE_OR_PAIR bindet die SINGLE-Instanz");
+
+    const pairView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_pair"})],[],[dbDef],[lp("lp_pair","PAIR_PER_HAND")]);
+    const sopPair=EQ.resolveSetupPredicate("DUMBBELL_SINGLE_OR_PAIR",pairView);
+    assertEq(sopPair.satisfied,true,"PAIR_PER_HAND-Darstellung erfuellt DUMBBELL_SINGLE_OR_PAIR ebenfalls (beide legalen Darstellungen akzeptiert)");
+    assertEq(sopPair.equipmentInstanceIds,["db1"],"SINGLE_OR_PAIR bindet die PAIR_PER_HAND-Instanz");
+
+    const zeroView=EQ.buildLocationInventoryView("loc1",[],[],[dbDef],[]);
+    assertEq(EQ.resolveSetupPredicate("DUMBBELL_SINGLE_OR_PAIR",zeroView).satisfied,false,"0 PRESENT Dumbbells -> DUMBBELL_SINGLE_OR_PAIR FAIL");
   }
-  // SINGLE_OR_PAIR: Minimum ist 1 (eine Instantiierung reicht)
+  // N_A-Profil oder fehlendes LoadProfile zaehlt fuer keine der beiden Darstellungen (kein "diskretes LoadProfile" vorhanden).
   {
-    const oneDb=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"})],[],[dbDef]);
-    const sop=EQ.resolveSetupPredicate("DUMBBELL_SINGLE_OR_PAIR",oneDb);
-    assertEq(sop.satisfied,true,"1 PRESENT Dumbbell reicht fuer DUMBBELL_SINGLE_OR_PAIR (Minimum ist SINGLE)");
-    assertEq(sop.equipmentInstanceIds,["db1"],"DUMBBELL_SINGLE_OR_PAIR bindet genau 1 Instanz als Minimum");
-    const zeroDb=EQ.buildLocationInventoryView("loc1",[],[],[dbDef]);
-    assertEq(EQ.resolveSetupPredicate("DUMBBELL_SINGLE_OR_PAIR",zeroDb).satisfied,false,"0 PRESENT Dumbbells -> DUMBBELL_SINGLE_OR_PAIR FAIL");
+    const naView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_na"})],[],[dbDef],[lp("lp_na","N_A")]);
+    assertEq(EQ.resolveSetupPredicate("DUMBBELL_SINGLE",naView).satisfied,false,"pair_semantics=N_A erfuellt kein SINGLE");
+    assertEq(EQ.resolveSetupPredicate("DUMBBELL_PAIR",naView).satisfied,false,"pair_semantics=N_A erfuellt kein PAIR");
+    const noProfileView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT")],[],[dbDef],[]);
+    assertEq(EQ.resolveSetupPredicate("DUMBBELL_SINGLE",noProfileView).satisfied,false,"Instanz ganz ohne load_profile_version_id erfuellt kein SINGLE ('ein konkretes diskretes LoadProfile' fehlt)");
   }
-  // Ganze Branch-Satisfiability respektiert die Quantity ebenfalls (nicht nur die isolierte Predicate-Pruefung).
+  // Ganze Branch-Satisfiability respektiert die Quantity/needsInput-Semantik ebenfalls (nicht nur die isolierte Predicate-Pruefung).
   {
-    const oneDbView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp1"})],[],[dbDef]);
-    assertEq(EQ.resolveEquipmentSetupSatisfiability([["DUMBBELL_PAIR"]],oneDbView).satisfiable,false,"OR-of-AND-Ebene: Branch mit DUMBBELL_PAIR ist bei nur 1 PRESENT Dumbbell NICHT satisfiable");
+    const oneSingleView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_s1"})],[],[dbDef],[lp("lp_s1","SINGLE")]);
+    assertEq(EQ.resolveEquipmentSetupSatisfiability([["DUMBBELL_PAIR"]],oneSingleView).satisfiable,false,"OR-of-AND-Ebene: Branch mit DUMBBELL_PAIR ist bei nur 1 SINGLE-Instanz eindeutig NICHT satisfiable");
+    const pairProfileBranchView=EQ.buildLocationInventoryView("loc1",[inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_pair"})],[],[dbDef],[lp("lp_pair","PAIR_PER_HAND")]);
+    assertEq(EQ.resolveEquipmentSetupSatisfiability([["DUMBBELL_PAIR"]],pairProfileBranchView).satisfiable,true,"OR-of-AND-Ebene: Branch mit DUMBBELL_PAIR ist bei einer PAIR_PER_HAND-Instanz satisfiable");
+    const ambiguousView=EQ.buildLocationInventoryView("loc1",[
+      inst("db1","d_db","PRESENT",{load_profile_version_id:"lp_s1"}),
+      inst("db2","d_db","PRESENT",{load_profile_version_id:"lp_s2"}),
+    ],[],[dbDef],[lp("lp_s1","SINGLE"),lp("lp_s2","SINGLE")]);
+    const ambiguousResult=EQ.resolveEquipmentSetupSatisfiability([["DUMBBELL_PAIR"]],ambiguousView);
+    assertEq(ambiguousResult.satisfiable,false,"OR-of-AND-Ebene: bei mehrdeutiger Paar-Kompatibilitaet ist die Branch NICHT als satisfiable=true gemeldet");
+    assertEq(ambiguousResult.needsInput,true,"...sondern korrekt als needsInput=true gemeldet (weder falsches PASS noch falsches FAIL)");
   }
 }
 
-console.log("========== ResolvedSetupBinding-Auswahl: Prioritaetsregeln 1-6 (§6.2) ==========");
+console.log("========== ResolvedSetupBinding-Auswahl: Prioritaetsregeln 1-6 (§6.2), STRIKTE PRECEDENCE ==========");
 {
   const defs=[def("d_bar","FREE_WEIGHT","OLYMPIC_BARBELL"),def("d_db","FREE_WEIGHT","ADJUSTABLE_DUMBBELL")];
   const instances=[
     inst("i_bar","d_bar","PRESENT",{load_profile_version_id:"lp1"}),
     inst("i_db","d_db","PRESENT",{load_profile_version_id:"lp2"}),
   ];
-  const view=EQ.buildLocationInventoryView("loc1",instances,[],defs);
-  // 2 satisfiable Branches: Branch 0 = Barbell, Branch 1 = Dumbbell.
+  const view=EQ.buildLocationInventoryView("loc1",instances,[],defs,[lp("lp1","N_A"),lp("lp2","SINGLE")]);
+  // 2 satisfiable Branches: Branch 0 = "A" (Barbell), Branch 1 = "B" (Dumbbell).
   const setups=[["BARBELL_LOADABLE"],["DUMBBELL_SINGLE"]];
 
-  // Ohne jede Annotation und ohne allowLexicographicFallback: NEEDS_INPUT statt falscher Auswahl.
+  // Ohne jede Annotation und ohne allowLexicographicFallback: sofort NEEDS_INPUT bei Regel 1 (kein Weiterspringen).
   {
     const result=EQ.resolveDeterministicBinding(setups,view);
-    assertEq(result.status,"NEEDS_INPUT","ohne Annotationen und ohne allowLexicographicFallback: NEEDS_INPUT statt stillschweigender Regel-6-Entscheidung");
+    assertEq(result.status,"NEEDS_INPUT","ohne jede Annotation: NEEDS_INPUT statt stillschweigender Regel-6-Entscheidung");
     assertEq(result.remainingCandidates,[0,1],"beide Branches bleiben als offene Kandidaten gemeldet");
+    assert(result.trace.some(t=>t.indexOf("Regel 1")!==-1),"NEEDS_INPUT wird bereits bei Regel 1 ausgeloest (keine Annotation zu persistedBindingBranchIndex), nicht erst bei Regel 6");
   }
 
   // Regel 1: persistierte Bindung gewinnt, wenn weiterhin satisfiable.
@@ -341,72 +388,134 @@ console.log("========== ResolvedSetupBinding-Auswahl: Prioritaetsregeln 1-6 (§6
     assertEq(result.resolvedByRule,1,"Regel 1 hat entschieden");
     assertEq(result.binding.branchIndex,1,"die persistierte Branch (1) wird gewaehlt, nicht die lexikografisch erste");
   }
-  // Regel 1 mit nicht mehr satisfiabler persistierter Bindung faellt durch zur naechsten Regel.
+  // Regel 1 explizit "keine persistierte Bindung" (null) ist eine VOLLSTAENDIGE Antwort -> naechste Regel wird erreicht.
+  {
+    const result=EQ.resolveDeterministicBinding(setups,view,{persistedBindingBranchIndex:null,progressionLimitedByBranch:{0:false,1:true}});
+    assertEq(result.status,"RESOLVED","Regel 1 explizit null (kein persistiertes Binding) ist vollstaendig entschieden -> Regel 2 wird erreicht");
+    assertEq(result.resolvedByRule,2,"Regel 2 hat entschieden");
+    assertEq(result.binding.branchIndex,0,"Branch 0 (progressionLimited=false) wird gegenueber Branch 1 (=true) bevorzugt");
+  }
+  // Regel 1 mit einem Branch-Index, der nicht mehr satisfiable ist, ist ebenfalls eine vollstaendige Antwort -> naechste Regel.
   {
     const result=EQ.resolveDeterministicBinding(setups,view,{persistedBindingBranchIndex:5,progressionLimitedByBranch:{0:false,1:true}});
-    assertEq(result.status,"RESOLVED","Regel 1 nicht anwendbar (Branch 5 existiert nicht als Kandidat) -> Regel 2 entscheidet");
-    assertEq(result.resolvedByRule,2,"Regel 2 hat entschieden, nachdem Regel 1 nicht anwendbar war");
+    assertEq(result.status,"RESOLVED","Regel 1 (Branch 5 existiert nicht als Kandidat) ist vollstaendig entschieden -> Regel 2 entscheidet");
+    assertEq(result.resolvedByRule,2,"Regel 2 hat entschieden, nachdem Regel 1 vollstaendig (aber negativ) beantwortet war");
     assertEq(result.binding.branchIndex,0,"Branch 0 (progressionLimited=false) wird gegenueber Branch 1 (=true) bevorzugt");
   }
 
-  // Regel 2: legaler Progressionspfad ohne PROGRESSION_LIMITED.
+  // Regel 2: legaler Progressionspfad ohne PROGRESSION_LIMITED (Regel 1 muss zuerst explizit als 'kein Binding' beantwortet sein).
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{progressionLimitedByBranch:{0:true,1:false}});
+    const result=EQ.resolveDeterministicBinding(setups,view,{persistedBindingBranchIndex:null,progressionLimitedByBranch:{0:true,1:false}});
     assertEq(result.resolvedByRule,2,"Regel 2 entscheidet anhand PROGRESSION_LIMITED");
     assertEq(result.binding.branchIndex,1,"Branch 1 (nicht limitiert) gewinnt gegen Branch 0 (limitiert)");
   }
-  // Regel 2 unvollstaendig annotiert (nur ein Kandidat) -> uebersprungen, faellt durch.
+  // Regel 2 unvollstaendig annotiert (nur ein Kandidat) -> SOFORT NEEDS_INPUT, NICHT weiterspringen zu Regel 3+.
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{progressionLimitedByBranch:{0:false},allowLexicographicFallback:true,exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"}});
-    assert(result.trace.some(t=>t.indexOf("Regel 2")!==-1&&t.indexOf("uebersprungen")!==-1),"Regel 2 mit unvollstaendiger Annotation (nur Branch 0 annotiert) wird uebersprungen, nicht unfair angewendet");
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:null,
+      progressionLimitedByBranch:{0:false}, // Branch 1 fehlt
+      stepFinenessByBranch:{0:5,1:2.5}, // wuerde, wenn faelschlich erreicht, Branch 1 bevorzugen
+      allowLexicographicFallback:true,
+    });
+    assertEq(result.status,"NEEDS_INPUT","unvollstaendige Regel-2-Annotation fuehrt zu NEEDS_INPUT, nicht zu einer Regel-3-Entscheidung");
+    assert(result.trace.some(t=>t.indexOf("Regel 2")!==-1&&t.indexOf("NEEDS_INPUT")!==-1),"Trace zeigt, dass Regel 2 wegen unvollstaendiger Annotation zu NEEDS_INPUT fuehrte");
   }
 
-  // Regel 3: feinere Laststufung (kleinerer Score gewinnt).
+  // Regel 3: feinere Laststufung (kleinerer Score gewinnt) — nur erreichbar, wenn Regel 1+2 vollstaendig UND Regel 2 ein echter Tie ist.
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{stepFinenessByBranch:{0:2.5,1:5}});
-    assertEq(result.resolvedByRule,3,"Regel 3 entscheidet anhand Laststufung-Feinheit");
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:null,
+      progressionLimitedByBranch:{0:false,1:false}, // echter Tie
+      stepFinenessByBranch:{0:2.5,1:5},
+    });
+    assertEq(result.resolvedByRule,3,"Regel 3 entscheidet anhand Laststufung-Feinheit, nachdem Regel 1+2 vollstaendig UND getied waren");
     assertEq(result.binding.branchIndex,0,"Branch 0 (feiner, kleinerer Score) gewinnt");
   }
 
   // Regel 4: geringere Setup-/Transition-Kosten.
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{transitionCostByBranch:{0:10,1:3}});
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:null,
+      progressionLimitedByBranch:{0:false,1:false},
+      stepFinenessByBranch:{0:5,1:5},
+      transitionCostByBranch:{0:10,1:3},
+    });
     assertEq(result.resolvedByRule,4,"Regel 4 entscheidet anhand Transition-Kosten");
     assertEq(result.binding.branchIndex,1,"Branch 1 (geringere Kosten) gewinnt");
   }
 
   // Regel 5: vorhandene eigene Historie.
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{ownHistoryByBranch:{0:false,1:true}});
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:null,
+      progressionLimitedByBranch:{0:false,1:false},
+      stepFinenessByBranch:{0:5,1:5},
+      transitionCostByBranch:{0:3,1:3},
+      ownHistoryByBranch:{0:false,1:true},
+    });
     assertEq(result.resolvedByRule,5,"Regel 5 entscheidet anhand vorhandener eigener Historie");
     assertEq(result.binding.branchIndex,1,"Branch 1 (eigene Historie vorhanden) gewinnt");
   }
 
-  // Regel 6: NUR mit explizitem Opt-in, niemals automatisch.
+  // Regel 6: NUR mit explizitem Opt-in UND erst wenn Regeln 1-5 vollstaendig ausgewertet+getied sind.
+  const allTiedOptions={
+    persistedBindingBranchIndex:null,
+    progressionLimitedByBranch:{0:false,1:false},
+    stepFinenessByBranch:{0:5,1:5},
+    transitionCostByBranch:{0:3,1:3},
+    ownHistoryByBranch:{0:false,1:false},
+  };
   {
-    const withoutFlag=EQ.resolveDeterministicBinding(setups,view,{exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"}});
-    assertEq(withoutFlag.status,"NEEDS_INPUT","ohne allowLexicographicFallback bleibt es NEEDS_INPUT, auch wenn exerciseSetupIdsByBranch gesetzt ist");
-    const withFlag=EQ.resolveDeterministicBinding(setups,view,{exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"},allowLexicographicFallback:true});
+    const withoutFlag=EQ.resolveDeterministicBinding(setups,view,Object.assign({},allTiedOptions,{exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"}}));
+    assertEq(withoutFlag.status,"NEEDS_INPUT","ohne allowLexicographicFallback bleibt es NEEDS_INPUT, auch wenn Regeln 1-5 vollstaendig getied sind");
+    const withFlag=EQ.resolveDeterministicBinding(setups,view,Object.assign({},allTiedOptions,{exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"},allowLexicographicFallback:true}));
     assertEq(withFlag.status,"RESOLVED","mit allowLexicographicFallback=true wird Regel 6 als letzter Tie-Break verwendet");
     assertEq(withFlag.resolvedByRule,6,"Regel 6 hat entschieden");
     assertEq(withFlag.binding.branchIndex,1,"Branch 1 (exercise_setup_id='es_a', lexikografisch kleiner als 'es_b') gewinnt");
   }
   // Regel 6 ohne exerciseSetupIdsByBranch faellt auf equipment_instance_ids[] zurueck.
   {
-    const result=EQ.resolveDeterministicBinding(setups,view,{allowLexicographicFallback:true});
+    const result=EQ.resolveDeterministicBinding(setups,view,Object.assign({},allTiedOptions,{allowLexicographicFallback:true}));
     assertEq(result.resolvedByRule,6,"Regel 6 entscheidet auch ohne exerciseSetupIdsByBranch (Fallback auf equipment_instance_ids[])");
     assertEq(result.binding.branchIndex,0,"Branch 0 (equipmentInstanceIds=['i_bar'], lexikografisch kleiner als ['i_db']) gewinnt");
   }
 
-  // Kaskade: hoehere Regel gewinnt gegen niedrigere, wenn beide annotiert sind.
+  console.log("---- Woertliche Beispiele aus der Aufgabenstellung (A=Branch 0, B=Branch 1) ----");
+  // "A und B: rule2 unbekannt, rule3 bevorzugt A => NEEDS_INPUT, NICHT A"
   {
     const result=EQ.resolveDeterministicBinding(setups,view,{
-      progressionLimitedByBranch:{0:false,1:false}, // Regel 2: unentschieden (beide gleich gut)
-      stepFinenessByBranch:{0:5,1:2.5}, // Regel 3: Branch 1 gewinnt
-      ownHistoryByBranch:{0:true,1:false}, // Regel 5: wuerde Branch 0 bevorzugen — darf NICHT mehr greifen, Regel 3 hat schon entschieden
+      persistedBindingBranchIndex:null, // Regel 1 vollstaendig (kein Binding) -> Regel 2 erreicht
+      // progressionLimitedByBranch fehlt komplett -> Regel 2 unbekannt
+      stepFinenessByBranch:{0:2.5,1:5}, // wuerde A(=0) bevorzugen, wenn faelschlich erreicht
     });
-    assertEq(result.resolvedByRule,3,"Regel 3 entscheidet zuerst und verhindert, dass eine spaetere Regel (5) das Ergebnis noch aendert");
-    assertEq(result.binding.branchIndex,1,"Branch 1 (feiner) gewinnt trotz Regel-5-Vorteil fuer Branch 0");
+    assertEq(result.status,"NEEDS_INPUT","rule2 unbekannt -> NEEDS_INPUT, NICHT die von rule3 bevorzugte Branch A");
+    assert(result.binding===null,"kein Binding wird geliefert, obwohl rule3 A bevorzugt haette");
+  }
+  // "rule2 vollständig Tie, rule3 bevorzugt A => A"
+  {
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:null,
+      progressionLimitedByBranch:{0:false,1:false}, // vollstaendiger Tie
+      stepFinenessByBranch:{0:2.5,1:5}, // A(=0) gewinnt
+    });
+    assertEq(result.status,"RESOLVED","rule2 vollstaendig getied -> rule3 entscheidet");
+    assertEq(result.resolvedByRule,3,"rule3 hat entschieden");
+    assertEq(result.binding.branchIndex,0,"A (Branch 0) gewinnt, wie von rule3 bevorzugt");
+  }
+  // "rule1 entscheidet B => spätere Regeln irrelevant"
+  {
+    const result=EQ.resolveDeterministicBinding(setups,view,{
+      persistedBindingBranchIndex:1, // B
+      stepFinenessByBranch:{0:2.5,1:99}, // wuerde A bevorzugen, ist aber irrelevant
+    });
+    assertEq(result.resolvedByRule,1,"rule1 entscheidet direkt");
+    assertEq(result.binding.branchIndex,1,"B (Branch 1) gewinnt, spaetere Regeln (die A bevorzugt haetten) werden gar nicht ausgewertet");
+  }
+  // "alle 1–5 vollständig Tie => rule6 lexikografisch"
+  {
+    const result=EQ.resolveDeterministicBinding(setups,view,Object.assign({},allTiedOptions,{allowLexicographicFallback:true,exerciseSetupIdsByBranch:{0:"es_b",1:"es_a"}}));
+    assertEq(result.resolvedByRule,6,"alle Regeln 1-5 vollstaendig getied -> rule6 (lexikografisch) entscheidet");
+    assertEq(result.binding.branchIndex,1,"B (Branch 1, 'es_a' < 'es_b') gewinnt lexikografisch");
   }
 }
 
@@ -501,7 +610,7 @@ console.log("========== §29.11 Environment-Fixtures (Auszug, gegen den echten 1
   // "Dumbbells only": nur Kurzhanteln + Boden — kein Barbell, kein Rack, keine Machines.
   const dbDefs=[def("d_db","FREE_WEIGHT","FIXED_DUMBBELL"),def("d_floor","BODYWEIGHT","FLOOR")];
   const dbInstances=[inst("i_db","d_db","PRESENT",{load_profile_version_id:"lp1"}),inst("i_floor","d_floor","PRESENT")];
-  const dbView=EQ.buildLocationInventoryView("loc1",dbInstances,[],dbDefs);
+  const dbView=EQ.buildLocationInventoryView("loc1",dbInstances,[],dbDefs,[lp("lp1","SINGLE")]);
   const goblet=catalog.find(e=>e.exercise_id==="GOBLET_SQUAT");
   const barbellSquat=catalog.find(e=>e.exercise_id==="BARBELL_BACK_SQUAT");
   assert(EQ.resolveEquipmentSetupSatisfiability(goblet.equipment_setups,dbView).satisfiable,"'Dumbbells only': GOBLET_SQUAT (DUMBBELL_SINGLE-Branch) satisfiable");
@@ -534,7 +643,7 @@ console.log("========== §29.11 Environment-Fixtures (Auszug, gegen den echten 1
     inst("f_floor","d_floor3","PRESENT"),
     inst("f_legpress","d_legpress","PRESENT",{load_profile_version_id:"lp3"}),
   ];
-  const fullView=EQ.buildLocationInventoryView("loc1",fullInstances,[],fullDefs);
+  const fullView=EQ.buildLocationInventoryView("loc1",fullInstances,[],fullDefs,[lp("lp1","N_A"),lp("lp2","SINGLE"),lp("lp3","N_A")]);
   assert(EQ.resolveEquipmentSetupSatisfiability(barbellSquat.equipment_setups,fullView).satisfiable,"Full commercial gym: BARBELL_BACK_SQUAT satisfiable");
   assert(EQ.resolveEquipmentSetupSatisfiability(pullup.equipment_setups,fullView).satisfiable,"Full commercial gym: PULLUP satisfiable");
   const legPress=catalog.find(e=>e.exercise_id==="LEG_PRESS_45"||e.exercise_id==="LEG_PRESS");
@@ -574,13 +683,19 @@ console.log("========== STEP 05 Blocker Recheck: Catalog-Lints #12/#15/#16 sind 
      satisfiable gelten — gegen echte 125er-Catalog-Records geprueft. */
   const dbPairDef=TD.createEquipmentDefinitionVersion({id:"chk_db_def",version:1,canonical_name:"DB",family:"FREE_WEIGHT",subtype:"ADJUSTABLE_DUMBBELL",status:"ACTIVE"});
   const dbSplitSquat=catalog.find(e=>e.exercise_id==="DB_SPLIT_SQUAT");
-  const oneDbView=EQ.buildLocationInventoryView("loc1",[TD.createEquipmentInstance({id:"chk_db1",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp1"})],[],[dbPairDef]);
-  const twoDbView=EQ.buildLocationInventoryView("loc1",[
-    TD.createEquipmentInstance({id:"chk_db1",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp1"}),
-    TD.createEquipmentInstance({id:"chk_db2",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp1"}),
-  ],[],[dbPairDef]);
-  assert(!EQ.resolveEquipmentSetupSatisfiability(dbSplitSquat.equipment_setups,oneDbView).satisfiable,"#16-Recheck: DB_SPLIT_SQUAT (DUMBBELL_PAIR) ist bei nur 1 PRESENT Dumbbell-Instanz NICHT satisfiable — die Mengenanforderung ist physisch nicht erfuellbar");
-  assert(EQ.resolveEquipmentSetupSatisfiability(dbSplitSquat.equipment_setups,twoDbView).satisfiable,"#16-Recheck: DB_SPLIT_SQUAT (DUMBBELL_PAIR) ist bei 2 kompatiblen PRESENT Dumbbell-Instanzen satisfiable");
+  const oneDbView=EQ.buildLocationInventoryView("loc1",[TD.createEquipmentInstance({id:"chk_db1",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp_s1"})],[],[dbPairDef],[lp("lp_s1","SINGLE")]);
+  const twoSingleDbView=EQ.buildLocationInventoryView("loc1",[
+    TD.createEquipmentInstance({id:"chk_db1",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp_s1"}),
+    TD.createEquipmentInstance({id:"chk_db2",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp_s2"}),
+  ],[],[dbPairDef],[lp("lp_s1","SINGLE"),lp("lp_s2","SINGLE")]);
+  const pairProfileDbView=EQ.buildLocationInventoryView("loc1",[
+    TD.createEquipmentInstance({id:"chk_db3",location_id:"loc1",equipment_definition_version_id:"chk_db_def",inventory_state:"PRESENT",load_profile_version_id:"lp_pair"}),
+  ],[],[dbPairDef],[lp("lp_pair","PAIR_PER_HAND")]);
+  assert(!EQ.resolveEquipmentSetupSatisfiability(dbSplitSquat.equipment_setups,oneDbView).satisfiable,"#16-Recheck: DB_SPLIT_SQUAT (DUMBBELL_PAIR) ist bei nur 1 PRESENT SINGLE-Dumbbell-Instanz NICHT satisfiable — die Mengenanforderung ist physisch nicht erfuellbar");
+  const twoSingleResult=EQ.resolveEquipmentSetupSatisfiability(dbSplitSquat.equipment_setups,twoSingleDbView);
+  assert(!twoSingleResult.satisfiable,"#16-Recheck: DB_SPLIT_SQUAT (DUMBBELL_PAIR) ist bei 2 SINGLE-Dumbbell-Instanzen NICHT als satisfiable=true gemeldet (keine Same-Definition-Heuristik)");
+  assert(twoSingleResult.needsInput,"...sondern korrekt als needsInput=true (Kompatibilitaet der beiden SINGLE-Instanzen ist aus den Daten nicht bestimmbar)");
+  assert(EQ.resolveEquipmentSetupSatisfiability(dbSplitSquat.equipment_setups,pairProfileDbView).satisfiable,"#16-Recheck: DB_SPLIT_SQUAT (DUMBBELL_PAIR) ist bei einer PAIR_PER_HAND-Dumbbell-Instanz satisfiable (gemaess gespeicherter LoadProfile-Semantik)");
 }
 
 console.log("========== Bestehende STEP01-05 Registries bleiben unveraendert nutzbar (Regressionscheck) ==========");

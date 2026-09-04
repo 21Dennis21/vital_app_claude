@@ -55,20 +55,36 @@
      F1 (OR-of-AND EquipmentSetup-Satisfiability) ist hier gebaut. F2-F11
      brauchen Slot-Function/Session-State/Historie, die dieses Pack nicht
      einfuehrt.
-   - Bindungswahl-Reihenfolge (§6.2, 6 Regeln, KORRIGIERT): alle 6 Regeln
-     sind jetzt als reiner deterministischer Comparator implementiert
-     (resolveDeterministicBinding). Regeln 1-5 (persistierte Bindung,
-     Progressionspfad, Laststufung-Feinheit, Setup-/Transition-Kosten,
-     eigene Historie) benoetigen Informationen aus Engines, die dieses Pack
-     nicht baut (Plan-/Progression-/Session-/Historie-Engine) — diese
-     Informationen werden NICHT erfunden, sondern als explizite, optionale
-     `options`-Annotationen konsumiert; fehlt eine Annotation, wird die
-     jeweilige Regel uebersprungen. Regel 6 (lexikografisch) laeuft
-     NIEMALS automatisch, sondern nur mit explizitem
-     `options.allowLexicographicFallback=true`; ohne dieses Flag liefert
-     die Funktion bei verbleibender Mehrdeutigkeit ein strukturiertes
-     NEEDS_INPUT-Ergebnis statt einer falschen Produktionsauswahl — siehe
+   - Bindungswahl-Reihenfolge (§6.2, 6 Regeln, KORRIGIERT Runde 2): alle 6
+     Regeln sind als reiner deterministischer Comparator implementiert
+     (resolveDeterministicBinding), MIT STRIKTER PRECEDENCE: eine niedrigere
+     Regel wird nur erreicht, wenn ALLE hoeheren Regeln vollstaendig
+     ausgewertet wurden und dort ein ECHTER Gleichstand besteht. Regeln 1-5
+     (persistierte Bindung, Progressionspfad, Laststufung-Feinheit, Setup-/
+     Transition-Kosten, eigene Historie) benoetigen Informationen aus
+     Engines, die dieses Pack nicht baut — diese Informationen werden NICHT
+     erfunden, sondern als explizite, optionale `options`-Annotationen
+     konsumiert; fehlt eine Annotation (ganz oder teilweise), liefert die
+     Funktion SOFORT ein strukturiertes NEEDS_INPUT statt zur naechsten
+     Regel weiterzuspringen (fehlende Information wird NIE wie ein
+     Gleichstand behandelt). Regel 6 (lexikografisch) laeuft NIEMALS
+     automatisch, sondern nur wenn Regeln 1-5 vollstaendig ausgewertet
+     wurden UND der Aufrufer sie via
+     `options.allowLexicographicFallback=true` explizit anfordert — siehe
      Kommentar an resolveDeterministicBinding.
+   - Single/Pair-Mengensemantik (§29.4, KORRIGIERT Runde 2): DUMBBELL_
+     SINGLE/DUMBBELL_PAIR/DUMBBELL_SINGLE_OR_PAIR/KETTLEBELL_SINGLE/
+     KETTLEBELL_PAIR werten jetzt ausschliesslich das normativ gegebene
+     `LoadProfileVersion.pair_semantics` (§9.1: SINGLE|PAIR_PER_HAND|N_A)
+     aus, NICHT mehr eine selbst erfundene "gleiche equipment_definition_
+     version_id"-Heuristik (die v1.4.1 nirgends definiert). Eine einzelne
+     Instanz mit pair_semantics=PAIR_PER_HAND erfuellt PAIR allein (das
+     gespeicherte LoadProfile repraesentiert die Pair-Semantik bereits
+     explizit); zwei SINGLE-Instanzen gelten NICHT automatisch als
+     kompatibles Paar — liegen genau 2+ SINGLE-Instanzen ohne PAIR_PER_HAND-
+     Instanz vor, ist die Kompatibilitaet aus den vorhandenen normativen
+     Daten nicht bestimmbar und resolveSetupPredicate liefert needsInput
+     statt einer erfundenen Heuristik-Entscheidung.
    - Vollstaendige §11.8 Migration-Tier-KONSEQUENZEN (Calibration/Performance/
      Progression-Spalten) — nur die Tier-KLASSIFIKATION selbst.
    - Support-State-BERECHNUNG aus einem echten Plan (braucht Slot Generation/
@@ -81,14 +97,23 @@
    Location-Type oder Equipment-Family (INVARIANT: "physische Ausfuehrbarkeit
    niemals aus Geraetename/Location-Type/Family/Marketingname/Subtype
    allein"). */
-function buildLocationInventoryView(locationId,equipmentInstances,attachmentInstances,equipmentDefinitionVersions){
+/* KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit Runde 2, Abschnitt 1):
+   buildLocationInventoryView() nimmt jetzt zusaetzlich die geladenen
+   LoadProfileVersion-Objekte entgegen (indiziert nach id), damit die
+   Setup-Predicate-Aufloesung `pair_semantics` (§9.1) tatsaechlich
+   auswerten kann statt nur die blosse Existenz eines load_profile_
+   version_id-Verweises zu pruefen. */
+function buildLocationInventoryView(locationId,equipmentInstances,attachmentInstances,equipmentDefinitionVersions,loadProfileVersions){
   const definitionsById={};
   (equipmentDefinitionVersions||[]).forEach(d=>{definitionsById[d.id]=d;});
+  const loadProfilesById={};
+  (loadProfileVersions||[]).forEach(lp=>{loadProfilesById[lp.id]=lp;});
   return {
     location_id:locationId,
     equipmentInstances:(equipmentInstances||[]).filter(i=>i.location_id===locationId),
     attachmentInstances:(attachmentInstances||[]).filter(i=>i.location_id===locationId),
     definitionsById,
+    loadProfilesById,
   };
 }
 function presentEquipmentInstances(view){
@@ -99,6 +124,9 @@ function presentAttachmentInstances(view){
 }
 function definitionOf(view,instance){
   return view.definitionsById[instance.equipment_definition_version_id]||null;
+}
+function loadProfileOf(view,instance){
+  return instance.load_profile_version_id!=null?(view.loadProfilesById[instance.load_profile_version_id]||null):null;
 }
 function instanceHasCapability(instance,namespace,value){
   return (instance.capability_values||[]).some(cp=>cp.namespace===namespace&&cp.value===value);
@@ -201,29 +229,51 @@ function resolveBarOrPlates(view,subtypes){
 }
 const DUMBBELL_SUBTYPES=Object.freeze(["FIXED_DUMBBELL","ADJUSTABLE_DUMBBELL","LOADABLE_DUMBBELL"]);
 const KETTLEBELL_SUBTYPES=Object.freeze(["KETTLEBELL"]);
-/* §29.4: "ein konkretes diskretes LoadProfile in der ANGEGEBENEN
-   STUECKZAHL". Zwei EquipmentInstances gelten hier als "kompatible
-   Ressourcen" fuer eine PAIR-Anforderung, wenn sie DIESELBE
-   equipment_definition_version_id teilen (die bereits bestehende
-   Identitaets-Dimension des Datenmodells — keine neu erfundene
-   Kompatibilitaets-Heuristik). Waehlt deterministisch die lexikografisch
-   kleinste definition_version_id-Gruppe, die die geforderte Mindestanzahl
-   `count` erreicht, und daraus die `count` lexikografisch kleinsten
-   Instanz-IDs. Liefert null, wenn KEINE Gruppe `count` Mitglieder hat —
-   eine einzelne reale EquipmentInstance kann damit strukturell NIE eine
-   PAIR-Anforderung (count=2) erfuellen. */
-function selectCompatibleQuantityGroup(view,subtypes,familyFilter,count){
-  const matching=matchSubtypeWithLoadProfile(view,subtypes,familyFilter);
-  const groups={};
-  matching.forEach(i=>{(groups[i.equipment_definition_version_id]=groups[i.equipment_definition_version_id]||[]).push(i);});
-  const eligibleDefIds=Object.keys(groups).filter(defId=>groups[defId].length>=count).sort();
-  if(!eligibleDefIds.length)return null;
-  return sortById(groups[eligibleDefIds[0]]).slice(0,count);
+/* KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit Runde 2, Abschnitt 1):
+   die vorherige Fassung erfand eine eigene Pair-Kompatibilitaetsregel
+   ("zwei Instanzen mit gleicher equipment_definition_version_id gelten
+   als kompatibles Paar") — v1.4.1 definiert diese Gleichheit NICHT.
+   Normativ vorhanden ist ausschliesslich `LoadProfileVersion.
+   pair_semantics: SINGLE | PAIR_PER_HAND | N_A` (§9.1) und "Dumbbell-Last
+   wird PER_HAND gespeichert" (§29.5). Die Aufloesung nutzt jetzt
+   AUSSCHLIESSLICH dieses gespeicherte Feld:
+   - Eine PRESENT Instanz, deren LoadProfileVersion.pair_semantics=
+     PAIR_PER_HAND ist, repraesentiert das gespeicherte Laststufen-Datum
+     bereits als Paar — sie erfuellt PAIR ALLEIN (keine zweite Instanz
+     noetig, keine virtuelle Ressource).
+   - Eine PRESENT Instanz mit pair_semantics=SINGLE repraesentiert genau
+     EIN Stueck und erfuellt SINGLE.
+   - Zwei SINGLE-Instanzen zusammen NICHT automatisch als kompatibles Paar
+     werten (keine erfundene Heuristik): liegen >=2 PRESENT SINGLE-
+     Instanzen vor und keine PAIR_PER_HAND-Instanz, ist aus den
+     vorhandenen normativen Daten NICHT eindeutig bestimmbar, ob zwei
+     davon ein kompatibles Paar bilden -> needsInput statt Annahme.
+     Liegt nur GENAU 1 SINGLE-Instanz vor, ist die Mengenanforderung fuer
+     PAIR eindeutig NICHT erfuellbar (kein needsInput, klares FAIL). */
+function matchDiscreteLoadProfileInstances(view,subtypes,familyFilter,pairSemanticsValue){
+  return matchSubtype(view,subtypes,familyFilter).filter(i=>{
+    const lp=loadProfileOf(view,i);
+    return lp&&lp.pair_semantics===pairSemanticsValue;
+  });
 }
-function resolveDiscreteQuantityPredicate(view,subtypes,count){
-  const chosen=selectCompatibleQuantityGroup(view,subtypes,"FREE_WEIGHT",count);
-  if(!chosen)return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
-  return {resolvable:true,satisfied:true,equipmentInstanceIds:chosen.map(i=>i.id).sort(),attachmentInstanceIds:[]};
+function resolveDumbbellOrKettlebellQuantity(view,subtypes,mode){
+  const pairInstances=matchDiscreteLoadProfileInstances(view,subtypes,"FREE_WEIGHT","PAIR_PER_HAND");
+  const singleInstances=matchDiscreteLoadProfileInstances(view,subtypes,"FREE_WEIGHT","SINGLE");
+  if(mode==="SINGLE"){
+    if(singleInstances.length)return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(singleInstances)[0].id],attachmentInstanceIds:[]};
+    return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  }
+  if(mode==="SINGLE_OR_PAIR"){
+    /* Beide legalen Darstellungen akzeptieren: entweder repraesentation
+       reicht als Minimum. */
+    if(singleInstances.length)return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(singleInstances)[0].id],attachmentInstanceIds:[]};
+    if(pairInstances.length)return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(pairInstances)[0].id],attachmentInstanceIds:[]};
+    return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  }
+  // mode === "PAIR"
+  if(pairInstances.length)return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(pairInstances)[0].id],attachmentInstanceIds:[]};
+  if(singleInstances.length>=2)return {resolvable:true,satisfied:false,needsInput:true,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
 }
 
 /* Rueckwaertsindex: jeder als §29.1-Subtype registrierte Wert (ueber alle
@@ -240,7 +290,7 @@ function allRegisteredSubtypes(){
   return out;
 }
 
-/* resolveSetupPredicate(tag, view) -> {resolvable, satisfied,
+/* resolveSetupPredicate(tag, view) -> {resolvable, satisfied, needsInput,
    equipmentInstanceIds[], attachmentInstanceIds[]}. `resolvable=false`
    bedeutet: der Tag entspricht KEINEM in §29.4 benannten Shorthand und
    KEINEM registrierten §29.1-Subtype — ein solcher Tag kann durch KEINE
@@ -248,8 +298,23 @@ function allRegisteredSubtypes(){
    impossible EquipmentSetup branch"). Bei satisfied=true enthalten
    equipmentInstanceIds/attachmentInstanceIds die TATSAECHLICH zur
    Erfuellung herangezogenen, konkreten Ressourcen (deterministisch
-   lexikografisch gewaehlt) — nie eine abstrakte Family. */
+   lexikografisch gewaehlt) — nie eine abstrakte Family. `needsInput=true`
+   (nur satisfied=false) bedeutet: aus den vorhandenen normativen Daten
+   ist NICHT eindeutig bestimmbar, ob die Anforderung erfuellt ist (z.B.
+   >=2 SINGLE-Dumbbell-Instanzen ohne erkennbare Paar-Kompatibilitaet) —
+   das ist bewusst KEIN "false" (das waere eine erfundene Annahme) und
+   KEIN "true" (das waere eine andere erfundene Annahme). */
 function resolveSetupPredicate(tag,view){
+  const raw=resolveSetupPredicateRaw(tag,view);
+  return {
+    resolvable:raw.resolvable,
+    satisfied:!!raw.satisfied,
+    needsInput:!!raw.needsInput,
+    equipmentInstanceIds:raw.equipmentInstanceIds||[],
+    attachmentInstanceIds:raw.attachmentInstanceIds||[],
+  };
+}
+function resolveSetupPredicateRaw(tag,view){
   const machineMatch=/^MACHINE\(([A-Z0-9_]+)\)$/.exec(tag);
   if(machineMatch){
     const subtype=machineMatch[1];
@@ -263,13 +328,11 @@ function resolveSetupPredicate(tag,view){
     case "BARBELL_LOADABLE": return resolveBarOrPlates(view,["OLYMPIC_BARBELL","STANDARD_BARBELL"]);
     case "EZ_BAR_LOADABLE": return resolveBarOrPlates(view,["EZ_CURL_BAR"]);
     case "TRAP_BAR_LOADABLE": return resolveBarOrPlates(view,["TRAP_BAR"]);
-    case "DUMBBELL_SINGLE": case "DUMBBELL_SINGLE_OR_PAIR":
-      /* SINGLE_OR_PAIR: die Mindestanforderung fuer JEDE Instantiierung
-         (einhaendig ODER beidhaendig) ist 1 Stueck — genau wie SINGLE. */
-      return resolveDiscreteQuantityPredicate(view,DUMBBELL_SUBTYPES,1);
-    case "DUMBBELL_PAIR": return resolveDiscreteQuantityPredicate(view,DUMBBELL_SUBTYPES,2);
-    case "KETTLEBELL_SINGLE": return resolveDiscreteQuantityPredicate(view,KETTLEBELL_SUBTYPES,1);
-    case "KETTLEBELL_PAIR": return resolveDiscreteQuantityPredicate(view,KETTLEBELL_SUBTYPES,2);
+    case "DUMBBELL_SINGLE": return resolveDumbbellOrKettlebellQuantity(view,DUMBBELL_SUBTYPES,"SINGLE");
+    case "DUMBBELL_SINGLE_OR_PAIR": return resolveDumbbellOrKettlebellQuantity(view,DUMBBELL_SUBTYPES,"SINGLE_OR_PAIR");
+    case "DUMBBELL_PAIR": return resolveDumbbellOrKettlebellQuantity(view,DUMBBELL_SUBTYPES,"PAIR");
+    case "KETTLEBELL_SINGLE": return resolveDumbbellOrKettlebellQuantity(view,KETTLEBELL_SUBTYPES,"SINGLE");
+    case "KETTLEBELL_PAIR": return resolveDumbbellOrKettlebellQuantity(view,KETTLEBELL_SUBTYPES,"PAIR");
     case "BENCH_FLAT": return resultFromMatches(matchCapability(view,"BENCH",["FLAT"],"SUPPORT"));
     case "BENCH_INCLINE": return resultFromMatches(matchCapability(view,"BENCH",["INCLINE_ADJUSTABLE"],"SUPPORT"));
     case "BENCH_BACK_SUPPORT": return resultFromMatches(matchCapability(view,"SUPPORT",["BACK_SUPPORTED"],"SUPPORT"));
@@ -330,55 +393,75 @@ function resolveSetupPredicate(tag,view){
 /* Branch = AND, equipment_setups[] = OR (wortgetreu). Ein Tag, der zu
    keinem Praedikat aufloest (resolvable=false), macht die Branch fuer JEDE
    denkbare Inventur unerfuellbar — das ist exakt Catalog-Lint #16 ("no
-   impossible EquipmentSetup branch"). */
+   impossible EquipmentSetup branch"). Drei-Wege-Status pro Branch:
+   satisfied (alle Tags eindeutig erfuellt), needsInput (kein Tag ist
+   eindeutig FALSE, aber mindestens einer ist mengen-mehrdeutig — siehe
+   resolveDumbbellOrKettlebellQuantity), oder weder-noch (mindestens ein
+   Tag ist eindeutig nicht erfuellt -> die Branch ist definitiv nicht
+   satisfiable, unabhaengig von etwaiger Mehrdeutigkeit anderer Tags). */
 function resolveSetupBranchSatisfiability(branch,view){
   const results=(branch||[]).map(tag=>({tag,...resolveSetupPredicate(tag,view)}));
   const impossible=results.some(r=>!r.resolvable);
   const satisfied=!impossible&&results.every(r=>r.satisfied);
-  return {satisfied,impossible,results};
+  const needsInput=!impossible&&!satisfied
+    &&results.every(r=>r.satisfied||r.needsInput)
+    &&results.some(r=>!r.satisfied&&r.needsInput);
+  return {satisfied,impossible,needsInput,results};
 }
 function resolveEquipmentSetupSatisfiability(equipmentSetups,view){
   const branchResults=(equipmentSetups||[]).map((branch,index)=>({index,branch,...resolveSetupBranchSatisfiability(branch,view)}));
   const satisfiableBranches=branchResults.filter(b=>b.satisfied);
+  const needsInputBranches=branchResults.filter(b=>b.needsInput);
   return {
     satisfiable:satisfiableBranches.length>0,
     satisfiableBranchIndices:satisfiableBranches.map(b=>b.index),
+    /* needsInput auf Gesamtebene nur relevant, wenn KEINE Branch bereits
+       eindeutig satisfiable ist — eine bereits gefundene, vollstaendig
+       geklaerte Loesung macht eine andere, mehrdeutige Branch irrelevant
+       (OR-Semantik). */
+    needsInput:satisfiableBranches.length===0&&needsInputBranches.length>0,
+    needsInputBranchIndices:needsInputBranches.map(b=>b.index),
     branchResults,
   };
 }
 
 /* ================= Bindungswahl (§6.2, Regeln 1-6, reiner Comparator) =================
-   KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit, Abschnitt 2): die
-   vorherige Fassung wandte NUR Regel 6 an und behandelte damit jede
-   fehlende Information aus den Regeln 1-5 stillschweigend wie "gleich" —
-   das ist als finale Produktionsauswahl nicht spec-konform. §6.2 verlangt
-   exakt diese Reihenfolge:
+   KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit Runde 2, Abschnitt 2): die
+   vorherige Fassung sprang bei fehlender Annotation einer Regel einfach zur
+   naechsten Regel weiter — das behandelt fehlende Information genauso wie
+   einen ECHTEN Gleichstand und kann eine hoehere Regel stillschweigend
+   uebergehen. §6.2 verlangt exakt diese Reihenfolge:
      1. persistierte Bindung weiterverwenden, wenn weiterhin satisfiable;
      2. legaler Progressionspfad ohne PROGRESSION_LIMITED;
      3. feinere verfuegbare Laststufung;
      4. geringere Setup-/Transition-Kosten;
      5. vorhandene eigene Historie auf der relevanten Load-Identitaet;
      6. lexikografisch exercise_setup_id, danach equipment_instance_id[].
-   Regeln 1-5 brauchen Informationen aus Engines, die dieses Pack NICHT baut
-   (Plan-/Progression-/Session-/Historie-Engine) — dieses Pack ERFINDET
-   diese Information NICHT, sondern konsumiert sie als EXPLIZITE, optionale
-   Annotationen ueber `options`. Fehlt eine Annotation VOLLSTAENDIG, wird
-   die betroffene Regel uebersprungen (naechste Regel greift). Ist eine
-   Annotation nur fuer EINEN TEIL der verbleibenden Kandidaten vorhanden,
-   wird die Regel ebenfalls uebersprungen statt eine unfaire Teil-Anwendung
-   vorzunehmen. Regel 6 (lexikografischer Tie-Break) wird NIEMALS
-   automatisch als Ausweg genutzt: sie lauft nur, wenn der Aufrufer sie via
+   Jetzt gilt: eine niedrigere Regel wird NUR ausgewertet, wenn ALLE
+   hoeheren Regeln VOLLSTAENDIG ausgewertet wurden und dort ein ECHTER
+   Gleichstand besteht (d.h. Annotation fuer JEDEN verbliebenen Kandidaten
+   vorhanden, und die Scores sind gleich). Fehlt fuer eine hoehere Regel
+   entscheidungsrelevante Information (Annotation fehlt komplett ODER nur
+   fuer einen Teil der Kandidaten) -> SOFORT strukturiertes NEEDS_INPUT,
+   NICHT zur naechsten Regel weiterspringen. Regel 1 ist dabei die einzige
+   Regel mit einer echten "definitiv nicht vorhanden"-Antwort: der Aufrufer
+   muss `persistedBindingBranchIndex` entweder auf einen Branch-Index ODER
+   explizit auf `null` setzen ("es existiert nachweislich keine persistierte
+   Bindung") — beides ist eine VOLLSTAENDIGE Antwort und erlaubt den
+   Uebergang zu Regel 2. Bleibt das Feld `undefined` (gar nicht uebergeben),
+   ist das fehlende Information, kein "nein" -> NEEDS_INPUT.
+   Regel 6 (lexikografischer Tie-Break) laeuft NIEMALS automatisch, sondern
+   nur wenn Regeln 1-5 VOLLSTAENDIG ausgewertet wurden, dort ein echter
+   Gleichstand besteht, UND der Aufrufer sie via
    `options.allowLexicographicFallback=true` explizit als finale
-   Produktionsauswahl anfordert. Ohne dieses Flag liefert die Funktion bei
-   verbleibender Mehrdeutigkeit ein strukturiertes NEEDS_INPUT-Ergebnis
-   statt einer falschen lexikografischen Auswahl.
+   Produktionsauswahl anfordert.
    Rueckgabeformen:
      {status:"UNSATISFIABLE",binding:null}
      {status:"RESOLVED",resolvedByRule:1..6|null,binding:{branchIndex,branch,
        equipmentInstanceIds[],attachmentInstanceIds[]},trace:[...]}
-     {status:"NEEDS_INPUT",binding:null,remainingCandidates:[branchIndex...],trace:[...]}
+     {status:"NEEDS_INPUT",binding:null,remainingCandidates:[branchIndex...]|null,trace:[...]}
    `options` (alle optional):
-     persistedBindingBranchIndex: number|null      // Regel 1
+     persistedBindingBranchIndex: number|null      // Regel 1 — null = explizit "keine persistierte Bindung"
      progressionLimitedByBranch: {[branchIndex]:bool}   // Regel 2 (true=PROGRESSION_LIMITED, wird nicht bevorzugt)
      stepFinenessByBranch: {[branchIndex]:number}       // Regel 3 (kleiner=feiner=bevorzugt)
      transitionCostByBranch: {[branchIndex]:number}     // Regel 4 (kleiner=bevorzugt)
@@ -397,26 +480,23 @@ function materializeBinding(equipmentSetups,res,branchIndex){
   equipmentInstanceIds.sort();attachmentInstanceIds.sort();
   return {branchIndex,branch,equipmentInstanceIds,attachmentInstanceIds};
 }
-function filterByAnnotatedRule(candidates,annotationByBranch,scoreFn,ruleNumber,ruleLabel,trace){
-  if(!annotationByBranch){
-    trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): keine Annotation uebergeben -> uebersprungen");
-    return candidates;
-  }
-  const allAnnotated=candidates.every(c=>annotationByBranch[c]!==undefined);
-  if(!allAnnotated){
-    trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): unvollstaendige Annotation fuer die verbleibenden Kandidaten -> uebersprungen (keine unfaire Teil-Anwendung)");
-    return candidates;
-  }
-  const scored=candidates.map(c=>({c,score:scoreFn(annotationByBranch[c])}));
-  const bestScore=Math.min.apply(null,scored.map(s=>s.score));
-  const winners=scored.filter(s=>s.score===bestScore).map(s=>s.c);
-  trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): "+candidates.length+" -> "+winners.length+" Kandidaten");
-  return winners;
-}
+const BINDING_RULES=Object.freeze([
+  {key:"progressionLimitedByBranch",score:v=>v?1:0,number:2,label:"kein PROGRESSION_LIMITED"},
+  {key:"stepFinenessByBranch",score:v=>v,number:3,label:"feinere Laststufung"},
+  {key:"transitionCostByBranch",score:v=>v,number:4,label:"geringere Setup-/Transition-Kosten"},
+  {key:"ownHistoryByBranch",score:v=>v?0:1,number:5,label:"eigene Historie vorhanden"},
+]);
 function resolveDeterministicBinding(equipmentSetups,view,options){
   options=options||{};
   const res=resolveEquipmentSetupSatisfiability(equipmentSetups,view);
-  if(!res.satisfiable)return {status:"UNSATISFIABLE",binding:null};
+  if(!res.satisfiable){
+    if(res.needsInput){
+      return {status:"NEEDS_INPUT",binding:null,remainingCandidates:null,
+        trace:["keine Branch ist eindeutig satisfiable, aber mindestens eine Branch ist wegen mehrdeutiger Mengendaten (§29.4 Quantity) needsInput -> NEEDS_INPUT statt falschem UNSATISFIABLE"],
+        needsInputBranchIndices:res.needsInputBranchIndices};
+    }
+    return {status:"UNSATISFIABLE",binding:null};
+  }
   let candidates=res.satisfiableBranchIndices.slice();
   const trace=[];
 
@@ -425,33 +505,45 @@ function resolveDeterministicBinding(equipmentSetups,view,options){
   }
 
   // Regel 1: persistierte Bindung weiterverwenden, wenn weiterhin satisfiable.
-  if(options.persistedBindingBranchIndex!=null){
+  if(options.persistedBindingBranchIndex===undefined){
+    trace.push("Regel 1 (persistierte Bindung): keine Annotation uebergeben (weder Branch-Index noch explizites null) -> NEEDS_INPUT");
+    return {status:"NEEDS_INPUT",binding:null,remainingCandidates:candidates,trace};
+  }
+  if(options.persistedBindingBranchIndex!==null){
     if(candidates.indexOf(options.persistedBindingBranchIndex)!==-1){
-      trace.push("Regel 1 (persistierte Bindung): Branch "+options.persistedBindingBranchIndex+" weiterhin satisfiable -> gewaehlt");
+      trace.push("Regel 1: persistierte Bindung (Branch "+options.persistedBindingBranchIndex+") weiterhin satisfiable -> gewaehlt");
       return {status:"RESOLVED",resolvedByRule:1,binding:materializeBinding(equipmentSetups,res,options.persistedBindingBranchIndex),trace};
     }
-    trace.push("Regel 1 (persistierte Bindung): Branch "+options.persistedBindingBranchIndex+" nicht mehr satisfiable -> naechste Regel");
+    trace.push("Regel 1: persistierte Bindung (Branch "+options.persistedBindingBranchIndex+") nicht mehr satisfiable -> Regel 1 vollstaendig entschieden (kein Kandidat gewinnt via Regel 1) -> naechste Regel");
   }else{
-    trace.push("Regel 1 (persistierte Bindung): keine Annotation uebergeben -> uebersprungen");
+    trace.push("Regel 1: explizit keine persistierte Bindung vorhanden (null) -> vollstaendig entschieden -> naechste Regel");
   }
 
-  // Regel 2: legaler Progressionspfad ohne PROGRESSION_LIMITED (true=limitiert, score 1 = schlechter).
-  candidates=filterByAnnotatedRule(candidates,options.progressionLimitedByBranch,v=>v?1:0,2,"kein PROGRESSION_LIMITED",trace);
-  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:2,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+  // Regeln 2-5: eine niedrigere Regel wird NUR erreicht, wenn die aktuelle
+  // vollstaendig annotiert ist (fuer jeden verbliebenen Kandidaten) — sonst
+  // sofort NEEDS_INPUT statt Weiterspringen.
+  for(let idx=0;idx<BINDING_RULES.length;idx++){
+    const rule=BINDING_RULES[idx];
+    const annotation=options[rule.key];
+    if(!annotation){
+      trace.push("Regel "+rule.number+" ("+rule.label+"): keine Annotation uebergeben -> NEEDS_INPUT (nicht zur naechsten Regel weiterspringen)");
+      return {status:"NEEDS_INPUT",binding:null,remainingCandidates:candidates,trace};
+    }
+    const allAnnotated=candidates.every(c=>annotation[c]!==undefined);
+    if(!allAnnotated){
+      trace.push("Regel "+rule.number+" ("+rule.label+"): unvollstaendige Annotation fuer die verbleibenden Kandidaten -> NEEDS_INPUT (nicht zur naechsten Regel weiterspringen)");
+      return {status:"NEEDS_INPUT",binding:null,remainingCandidates:candidates,trace};
+    }
+    const scored=candidates.map(c=>({c,score:rule.score(annotation[c])}));
+    const bestScore=Math.min.apply(null,scored.map(s=>s.score));
+    const winners=scored.filter(s=>s.score===bestScore).map(s=>s.c);
+    trace.push("Regel "+rule.number+" ("+rule.label+"): vollstaendig ausgewertet, "+candidates.length+" -> "+winners.length+" Kandidaten ("+(winners.length<candidates.length?"echte Praeferenz":"echter Gleichstand")+")");
+    candidates=winners;
+    if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:rule.number,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+  }
 
-  // Regel 3: feinere verfuegbare Laststufung (kleinerer Score = feiner = bevorzugt).
-  candidates=filterByAnnotatedRule(candidates,options.stepFinenessByBranch,v=>v,3,"feinere Laststufung",trace);
-  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:3,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
-
-  // Regel 4: geringere Setup-/Transition-Kosten.
-  candidates=filterByAnnotatedRule(candidates,options.transitionCostByBranch,v=>v,4,"geringere Setup-/Transition-Kosten",trace);
-  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:4,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
-
-  // Regel 5: vorhandene eigene Historie auf der relevanten Load-Identitaet (true=bevorzugt, score 0).
-  candidates=filterByAnnotatedRule(candidates,options.ownHistoryByBranch,v=>v?0:1,5,"eigene Historie vorhanden",trace);
-  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:5,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
-
-  // Regel 6: NUR als expliziter letzter Tie-Break, niemals automatisch.
+  // Regel 6: NUR als expliziter letzter Tie-Break, wenn Regeln 1-5
+  // vollstaendig ausgewertet wurden und dort ein echter Gleichstand besteht.
   if(options.allowLexicographicFallback){
     const idsByBranch=options.exerciseSetupIdsByBranch||{};
     const sorted=candidates.slice().sort((a,b)=>{
@@ -462,11 +554,11 @@ function resolveDeterministicBinding(equipmentSetups,view,options){
       if(eqA!==eqB)return eqA<eqB?-1:1;
       return a-b;
     });
-    trace.push("Regel 6 (lexikografisch): explizit angefordert (allowLexicographicFallback) -> Branch "+sorted[0]+" gewaehlt");
+    trace.push("Regel 6 (lexikografisch): Regeln 1-5 vollstaendig ausgewertet und echter Gleichstand -> explizit angefordert (allowLexicographicFallback) -> Branch "+sorted[0]+" gewaehlt");
     return {status:"RESOLVED",resolvedByRule:6,binding:materializeBinding(equipmentSetups,res,sorted[0]),trace};
   }
 
-  trace.push("Regeln 1-5 lassen "+candidates.length+" Kandidaten uebrig; Regel 6 nicht angefordert (allowLexicographicFallback fehlt) -> NEEDS_INPUT statt falscher Produktionsauswahl");
+  trace.push("Regeln 1-5 vollstaendig ausgewertet, echter Gleichstand unter "+candidates.length+" Kandidaten; Regel 6 nicht angefordert (allowLexicographicFallback fehlt) -> NEEDS_INPUT statt falscher Produktionsauswahl");
   return {status:"NEEDS_INPUT",binding:null,remainingCandidates:candidates,trace};
 }
 
@@ -596,7 +688,7 @@ function resolveSupportState(facts){
 if(typeof module!=="undefined"&&module.exports){
   module.exports={
     resolveEffectiveLocationId,
-    buildLocationInventoryView,presentEquipmentInstances,presentAttachmentInstances,definitionOf,
+    buildLocationInventoryView,presentEquipmentInstances,presentAttachmentInstances,definitionOf,loadProfileOf,
     instanceHasCapability,resolveSetupPredicate,resolveSetupBranchSatisfiability,
     resolveEquipmentSetupSatisfiability,resolveDeterministicBinding,
     resolveLoadProfileSteps,validateLoadProfileSemantics,
