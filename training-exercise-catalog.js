@@ -448,10 +448,10 @@ const CATALOG_LINT_STATUS=Object.freeze({
   7:Object.freeze({status:"IMPLEMENTED",note:"Aritaet SETUP_DEFINED(...) <-> equipment_setups-Branches"}),
   8:Object.freeze({status:"IMPLEMENTED",note:"Aritaet calibration_mode (1=broadcast oder positionsgleich zu load_mechanism) + Selbstkonsistenz NON_REP_MANUAL_ONLY<->auto_selectable/progression_capabilities; KEINE erfundene globale Load-Achse<->calibration_mode-Kompatibilitaetstabelle (durch Katalogdaten widerlegt, siehe Code-Kommentar)"}),
   9:Object.freeze({status:"IMPLEMENTED"}),10:Object.freeze({status:"IMPLEMENTED"}),11:Object.freeze({status:"IMPLEMENTED"}),
-  12:Object.freeze({status:"PARTIAL",note:"Assistance-Richtung (LOWER_IS_MORE) geprueft; PER_HAND/PER_SIDE/TOTAL-Semantik ist LoadProfileVersion-Laufzeitdatum (§9.1), kein Catalog-A/B/C-Feld, NICHT pruefbar ohne Equipment-Feasibility-Schicht"}),
+  12:Object.freeze({status:"PARTIAL",note:"STEP06: Assistance-Richtung (LOWER_IS_MORE) UND jetzt zusaetzlich die volle PER_HAND/PER_SIDE/TOTAL/ORDINAL-Semantik strukturell pruefbar+getestet (training-equipment.js validateLoadProfileSemantics(), training-equipment.test.js) — der in STEP05 fehlende LoadProfileVersion-Laufzeit-Layer existiert jetzt. PARTIAL bleibt aus einem Kategorie-Grund bestehen, nicht aus einer fehlenden Faehigkeit: LoadProfileVersion ist ein EquipmentInstance-Datum (§9.1), Catalog A/B/C liefert nie eine konkrete Instanz dazu — validateCatalogLints(catalog) kann diese Pruefung strukturell nie 'von innen' gegen reine Katalog-Records ausfuehren."}),
   13:Object.freeze({status:"IMPLEMENTED"}),14:Object.freeze({status:"IMPLEMENTED"}),
-  15:Object.freeze({status:"NOT_TESTABLE",note:"Verhaltensregel fuer eine (nicht gebaute) Substitution-/Equipment-Matching-Engine; Catalog A/B/C besitzt kein subtype-Feld und keine Aequivalenz-Inferenz, gegen die geprueft werden koennte"}),
-  16:Object.freeze({status:"PARTIAL",note:"nur strukturelle Degenerationsfaelle (doppeltes Tag/doppelte Branch); echte Unmoeglichkeit erfordert eine Equipment-Mutual-Exclusivity-Registry, die Pack 05 nicht besitzt"}),
+  15:Object.freeze({status:"IMPLEMENTED",note:"STEP06: isLoadEquivalentInstance() (training-equipment.js) beweist strukturell (2-Parameter-Funktion ohne subtype/family/manufacturer-Eingang), dass Aequivalenz NIEMALS aus machine_functional_subtype/family/subtype/Namen abgeleitet wird, nur aus expliziter uebereinstimmender equivalence_group_id (INVARIANT P-3/LB-7) — getestet in training-equipment.test.js. Der Catalog selbst behauptet ohnehin keine Instanz-Aequivalenz (kein subtype-Feld auf ExerciseDefinition); jedes MACHINE(X) im echten 125er-Catalog referenziert ausschliesslich einen registrierten §29.2-Subtype (CAT-LINT-16-Nebenpruefung)."}),
+  16:Object.freeze({status:"PARTIAL",note:"STEP06: zusaetzlich zu den strukturellen Degenerationsfaellen (doppeltes Tag/doppelte Branch) wird jetzt jeder Tag gegen die ECHTE §29.4-Predicate-Semantik aufgeloest (training-equipment.js resolveSetupPredicate) — ein Tag, der zu keinem Shorthand/Subtype aufloest, ist ein bewiesenes 'impossible branch'. Echte PHYSISCHE Unmoeglichkeit ueber reine Wohlgeformtheit hinaus (z.B. zwei sich gegenseitig ausschliessende Capabilities in derselben AND-Gruppe) bleibt PARTIAL: Pack 05/06 liefert keine Equipment-Mutual-Exclusivity-Registry, gegen die das ohne Erfindung geprueft werden koennte."}),
   17:Object.freeze({status:"IMPLEMENTED"}),
   18:Object.freeze({status:"IMPLEMENTED",note:"uebrige enum-artige Felder gegen bestehende STEP01/03/04-Registries bzw. gegen den aus dem Baseline-Catalog abgeleiteten geschlossenen Wertevorrat validiert"}),
 });
@@ -488,13 +488,26 @@ function validateCatalogLints(catalog){
         });
       }
     }
-    // Lint #16 (partiell): degenerierte AND-Gruppen/OR-Branches.
+    /* Lint #16 (STEP-06-Erweiterung): jetzt zusaetzlich zu den strukturellen
+       Degenerationsfaellen (doppeltes Tag/doppelte Branch) auch die ECHTE
+       §29.4-Predicate-Semantik aus training-equipment.js: ein Tag, der zu
+       KEINEM benannten Shorthand und KEINEM registrierten §29.1-Subtype
+       aufloest, kann durch KEINE denkbare Inventur jemals erfuellt werden
+       — das ist die woertliche Definition von "impossible EquipmentSetup
+       branch". Echte, ueber die reine Wohlgeformtheit hinausgehende
+       Geraete-Unmoeglichkeit (z.B. zwei physisch sich ausschliessende
+       Capabilities in derselben AND-Gruppe) bleibt bewusst NICHT geprueft:
+       Pack 05/06 liefert keine Equipment-Mutual-Exclusivity-Registry, gegen
+       die das ohne Erfindung geprueft werden koennte (siehe
+       CATALOG_LINT_STATUS[16]). */
     const seenBranchKeys=new Set();
+    const emptyInventoryView=buildLocationInventoryView("__lint__",[],[],[]);
     (e.equipment_setups||[]).forEach((branch,bi)=>{
       const seenTags=new Set();
       (branch||[]).forEach(tag=>{
         if(seenTags.has(tag))errors.push("CAT-LINT-16 ("+e.exercise_id+"): equipment_setups-Branch "+bi+" enthaelt das Tag '"+tag+"' mehrfach");
         seenTags.add(tag);
+        if(!resolveSetupPredicate(tag,emptyInventoryView).resolvable)errors.push("CAT-LINT-16 ("+e.exercise_id+"): equipment_setups-Branch "+bi+" enthaelt das Tag '"+tag+"', das zu KEINEM §29.4-Shorthand und KEINEM §29.1-Subtype aufloest (impossible branch)");
       });
       const key=(branch||[]).slice().sort().join("&");
       if(seenBranchKeys.has(key))errors.push("CAT-LINT-16 ("+e.exercise_id+"): equipment_setups enthaelt eine redundante doppelte Branch ["+(branch||[]).join(",")+"]");

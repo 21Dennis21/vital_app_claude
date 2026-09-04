@@ -46,6 +46,7 @@ const ENGINE_TESTS=[
   "training-plan-engine.test.js",
   "training-volume-engine.test.js",
   "training-exercise-catalog.test.js",
+  "training-equipment.test.js",
 ];
 const BROWSER_TESTS=[
   "browser-scenarios-1to4.test.js",
@@ -157,8 +158,8 @@ runStep("index.html: <script type=\"text/babel\">-Block kompiliert fehlerfrei", 
 });
 
 // ========== 2b. Syntax-Check ausgelagerte Utility-/Engine-Skripte ==========
-section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js / period-nav.js / training-domain.js / training-storage.js / training-profile-engine.js / training-plan-engine.js / training-volume-engine.js / training-exercise-catalog.js");
-["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js","training-profile-engine.js","training-plan-engine.js","training-volume-engine.js","training-exercise-catalog.js"].forEach(file=>{
+section("2b. Syntax-Check date-utils.js / format.js / storage.js / weight-engine.js / sport-engine.js / calendar-engine.js / week-engine.js / goal-engine.js / nutrition-engine.js / chart-resolution.js / period-nav.js / training-domain.js / training-storage.js / training-profile-engine.js / training-plan-engine.js / training-volume-engine.js / training-equipment.js / training-exercise-catalog.js");
+["date-utils.js","format.js","storage.js","weight-engine.js","sport-engine.js","calendar-engine.js","week-engine.js","goal-engine.js","nutrition-engine.js","chart-resolution.js","period-nav.js","training-domain.js","training-storage.js","training-profile-engine.js","training-plan-engine.js","training-volume-engine.js","training-equipment.js","training-exercise-catalog.js"].forEach(file=>{
   runStep(file+": Syntax ok (node --check)", ()=>{
     execFileSync(process.execPath,["--check",path.join(ROOT,file)],{stdio:"pipe"});
   });
