@@ -276,25 +276,58 @@ function validateNumericRange(value,bounds,fieldLabel){
     throw new Error("training-domain: "+fieldLabel+" ausserhalb des gueltigen Bereichs ["+bounds[0]+", "+bounds[1]+"]: "+JSON.stringify(value));
   }
 }
-/* MovementPattern/MovementSubpattern: die vollstaendige geschlossene
-   Registry (u.a. die "6 Grundmuster" aus Dependency §5.5) ist in Paket 01
-   NICHT enthalten (nur die Feldnamen und die Anzahl "6" werden erwaehnt,
-   keine konkreten IDs). Statt beliebige freie Strings dauerhaft als
-   gueltig zu behandeln, gibt es hier eine klar abgegrenzte, aktuell noch
-   LEERE Registry-Struktur: registerMovementPatternId() befuellt sie
-   (Aufgabe eines spaeteren Packs mit der vollstaendigen Liste),
-   isRegisteredMovementPatternId() prueft Mitgliedschaft. Solange die
-   Registry leer ist (Pack 01 liefert keine Werte), wird movement_pattern
-   in den Entity-Fabriken NICHT hart gegen sie validiert — sonst waere in
-   diesem Pack ueberhaupt keine ExerciseDefinitionVersion/PlanSlot
-   konstruierbar. Sobald ein spaeteres Pack die Registry befuellt, greift
-   isRegisteredMovementPatternId() sofort mit echten Werten. */
-const MOVEMENT_PATTERN_REGISTRY=new Set();
-const MOVEMENT_SUBPATTERN_REGISTRY=new Set();
-function registerMovementPatternId(id){MOVEMENT_PATTERN_REGISTRY.add(id);}
-function isRegisteredMovementPatternId(id){return MOVEMENT_PATTERN_REGISTRY.has(id);}
-function registerMovementSubpatternId(id){MOVEMENT_SUBPATTERN_REGISTRY.add(id);}
-function isRegisteredMovementSubpatternId(id){return MOVEMENT_SUBPATTERN_REGISTRY.has(id);}
+/* ===== Pack 05 (§5.1 Kanonische Bewegungsmuster-Taxonomie): schliesst die
+   in STEP01 bewusst offen gelassene Movement-Registry. STEP01 hatte hierfuer
+   nur eine LEERE Set-Struktur mit registerMovementPatternId()/
+   registerMovementSubpatternId() als Platzhalter angelegt, weil Paket 01
+   selbst keine konkreten IDs nannte ("Aufgabe eines spaeteren Packs mit der
+   vollstaendigen Liste" — siehe Git-Historie). Pack 05 liefert diese Liste
+   jetzt wortgetreu; die Registry ist damit GESCHLOSSEN (§5.1: "Der Registry
+   ist geschlossen: neue Subpatterns erfordern eine versionierte Catalog-/
+   Registry-Aenderung und duerfen nicht als freie Strings erscheinen") — die
+   vormals offene register*()-API entfaellt ersatzlos, isRegisteredMovement
+   PatternId()/isRegisteredMovementSubpatternId() bleiben als Mitgliedschafts-
+   pruefung erhalten, lesen jetzt aber die feste Liste statt eines Sets. */
+const MOVEMENT_PATTERN_ID=Object.freeze({
+  HORIZONTAL_PRESS:"HORIZONTAL_PRESS",VERTICAL_PRESS:"VERTICAL_PRESS",
+  HORIZONTAL_PULL:"HORIZONTAL_PULL",VERTICAL_PULL:"VERTICAL_PULL",
+  KNEE_DOMINANT:"KNEE_DOMINANT",KNEE_EXTENSION:"KNEE_EXTENSION",
+  HIP_HINGE:"HIP_HINGE",HIP_EXTENSION:"HIP_EXTENSION",KNEE_FLEXION:"KNEE_FLEXION",
+  SHOULDER_LATERAL:"SHOULDER_LATERAL",SHOULDER_REAR:"SHOULDER_REAR",
+  SHOULDER_ADDUCTION:"SHOULDER_ADDUCTION",SHOULDER_EXTENSION:"SHOULDER_EXTENSION",
+  SCAPULAR_PULL:"SCAPULAR_PULL",ELBOW_FLEXION:"ELBOW_FLEXION",ELBOW_EXTENSION:"ELBOW_EXTENSION",
+  HIP_ABDUCTION:"HIP_ABDUCTION",HIP_ADDUCTION:"HIP_ADDUCTION",
+  ANKLE_PLANTARFLEXION:"ANKLE_PLANTARFLEXION",FOREARM:"FOREARM",
+  TRUNK_FLEXION:"TRUNK_FLEXION",TRUNK_ANTIEXTENSION:"TRUNK_ANTIEXTENSION",
+  TRUNK_ANTIROTATION:"TRUNK_ANTIROTATION",TRUNK_ANTILATERALFLEXION:"TRUNK_ANTILATERALFLEXION",
+  LOADED_CARRY:"LOADED_CARRY",
+});
+const MOVEMENT_SUBPATTERN_ID=Object.freeze({
+  ANTI_EXTENSION:"ANTI_EXTENSION",BACK_EXTENSION:"BACK_EXTENSION",BENT_OVER_ROW:"BENT_OVER_ROW",
+  BILATERAL_SQUAT:"BILATERAL_SQUAT",CABLE_PRESS:"CABLE_PRESS",CABLE_ROW:"CABLE_ROW",
+  CALF_RAISE:"CALF_RAISE",CHEST_SUPPORTED_ROW:"CHEST_SUPPORTED_ROW",CHINUP:"CHINUP",
+  CURL:"CURL",DEADLIFT:"DEADLIFT",DIAGONAL_PRESS:"DIAGONAL_PRESS",DIP:"DIP",
+  FACE_PULL:"FACE_PULL",FARMER_CARRY:"FARMER_CARRY",FLAT_PRESS:"FLAT_PRESS",
+  FLOOR_PRESS:"FLOOR_PRESS",FLY:"FLY",GLUTE_BRIDGE:"GLUTE_BRIDGE",GOOD_MORNING:"GOOD_MORNING",
+  HAMMER_CURL:"HAMMER_CURL",HANGING_RAISE:"HANGING_RAISE",HIP_THRUST:"HIP_THRUST",
+  INCLINE_PRESS:"INCLINE_PRESS",INVERTED_ROW:"INVERTED_ROW",LATERAL_RAISE:"LATERAL_RAISE",
+  LEG_CURL:"LEG_CURL",LOADED:"LOADED",LUNGE:"LUNGE",MACHINE_ROW:"MACHINE_ROW",NORDIC:"NORDIC",
+  OPEN_CHAIN_HIP_ABDUCTION:"OPEN_CHAIN_HIP_ABDUCTION",OPEN_CHAIN_HIP_ADDUCTION:"OPEN_CHAIN_HIP_ADDUCTION",
+  OPEN_CHAIN_KNEE_EXTENSION:"OPEN_CHAIN_KNEE_EXTENSION",OVERHEAD_PRESS:"OVERHEAD_PRESS",
+  PALLOF:"PALLOF",PIKE_PRESS:"PIKE_PRESS",PRESS_COMPOUND:"PRESS_COMPOUND",PULLDOWN:"PULLDOWN",
+  PULLUP:"PULLUP",PULL_THROUGH:"PULL_THROUGH",PUSHUP:"PUSHUP",RDL:"RDL",
+  REAR_DELT_FLY:"REAR_DELT_FLY",ROLLOUT:"ROLLOUT",SIDE_PLANK:"SIDE_PLANK",SLIDER:"SLIDER",
+  SPLIT_SQUAT:"SPLIT_SQUAT",STEP_UP:"STEP_UP",STRAIGHT_ARM_PULL:"STRAIGHT_ARM_PULL",
+  SUPPORTED_KNEE_DOMINANT:"SUPPORTED_KNEE_DOMINANT",TRICEPS_EXTENSION:"TRICEPS_EXTENSION",
+  TRUNK_FLEXION:"TRUNK_FLEXION",
+});
+/* Die 6 Grundmuster fuer Pflichtabdeckung bei GENERAL_FITNESS/HYPERTROPHY
+   (§5.1, woertlich). */
+const FOUNDATIONAL_MOVEMENT_PATTERNS=Object.freeze([
+  "HORIZONTAL_PRESS","VERTICAL_PRESS","HORIZONTAL_PULL","VERTICAL_PULL","KNEE_DOMINANT","HIP_HINGE",
+]);
+function isRegisteredMovementPatternId(id){return Object.prototype.hasOwnProperty.call(MOVEMENT_PATTERN_ID,id);}
+function isRegisteredMovementSubpatternId(id){return Object.values(MOVEMENT_SUBPATTERN_ID).indexOf(id)!==-1;}
 
 /* ================= 23.0 Cross-Engine Context und Failure Contract ================= */
 const FAILURE_CATEGORY=Object.freeze({
@@ -324,8 +357,17 @@ function createFailureResult(f){
 function createExerciseDefinitionVersion(f){
   f=f||{};
   requireFields({...f,__type__:"ExerciseDefinitionVersion"},["exercise_id","canonical_name","definition_version","status","movement_pattern","exercise_class","instance_relevance","calibration_mode","technical_demand","stability_demand","mobility_demand","setup_complexity","fatigue_local","fatigue_systemic","setup_time_class","unilateral_time_class","warmup_protocol_class","progression_ceiling_behavior","auto_selectable","metadata_completeness"]);
-  validateEnumArray(f.primary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"primary_muscle_bands");
-  validateEnumArray(f.secondary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"secondary_muscle_bands");
+  validateEnumValue(f.movement_pattern,MOVEMENT_PATTERN_ID,"movement_pattern");
+  if(f.movement_subpattern!=null)validateEnumValue(f.movement_subpattern,MOVEMENT_SUBPATTERN_ID,"movement_subpattern");
+  /* §5.3/§23.1: primary_muscle_bands[]/secondary_muscle_bands[] sind Listen
+     von {canonical_volume_muscle_id, contribution_band}-Paaren (Pack 05,
+     29.8 "Primary bands"/"Secondary bands"), NICHT blosse Muskel-ID-Strings
+     — STEP01 hatte hier faelschlich validateEnumArray gegen die reine
+     Muskel-ID-Liste verwendet (derselbe Fehlertyp wie bei createSlotFunction,
+     dort in STEP03 bereits korrigiert). Korrigiert analog mit der bereits
+     vorhandenen validateMuscleContributionBands(). */
+  validateMuscleContributionBands(f.primary_muscle_bands,"primary_muscle_bands");
+  validateMuscleContributionBands(f.secondary_muscle_bands,"secondary_muscle_bands");
   return {
     exercise_id:f.exercise_id,canonical_name:f.canonical_name,aliases:f.aliases||[],
     definition_version:f.definition_version,status:f.status,
@@ -626,16 +668,26 @@ const REQUIRED_PROGRESSIBILITY=Object.freeze({HIGH:"HIGH",MEDIUM:"MEDIUM",LOW:"L
    Dieser Fix ist fuer STEP 03 zwingend, weil INVARIANT S-3 (Same-Day-
    Overlap) genau diese contribution_band-Information braucht (identischer
    PRIMARY_HIGH-Volume-Muskel). */
+/* Pack 05 (§29.13 INVARIANT CAT-C1): innerhalb EINER Liste darf dieselbe
+   canonical_volume_muscle_id nicht mehrfach vorkommen (die vollstaendige
+   Cross-Check ueber primary_muscle_bands+secondary_muscle_bands HINWEG ist
+   Aufgabe von training-exercise-catalog.js/validateCatalogLints — diese
+   Funktion sieht die beiden Listen hier nicht gleichzeitig). */
 function validateMuscleContributionBands(bands,fieldLabel){
+  const seen=new Set();
   (bands||[]).forEach(b=>{
     if(!b||typeof b!=="object")throw new Error("training-domain: "+fieldLabel+"-Eintrag muss ein Objekt {canonical_volume_muscle_id, contribution_band} sein, erhalten: "+JSON.stringify(b));
     validateEnumValue(b.canonical_volume_muscle_id,CANONICAL_VOLUME_MUSCLE_ID,fieldLabel+".canonical_volume_muscle_id");
     validateEnumValue(b.contribution_band,MUSCLE_CONTRIBUTION_BAND,fieldLabel+".contribution_band");
+    if(seen.has(b.canonical_volume_muscle_id))throw new Error("training-domain: "+fieldLabel+" enthaelt "+b.canonical_volume_muscle_id+" mehrfach (INVARIANT CAT-C1)");
+    seen.add(b.canonical_volume_muscle_id);
   });
 }
 function createSlotFunction(f){
   f=f||{};
   requireFields({...f,__type__:"SlotFunction"},["movement_pattern","role","rep_character"]);
+  validateEnumValue(f.movement_pattern,MOVEMENT_PATTERN_ID,"movement_pattern");
+  if(f.movement_subpattern!=null)validateEnumValue(f.movement_subpattern,MOVEMENT_SUBPATTERN_ID,"movement_subpattern");
   validateMuscleContributionBands(f.primary_muscle_bands,"primary_muscle_bands");
   return {movement_pattern:f.movement_pattern,
     movement_subpattern:f.movement_subpattern!==undefined?f.movement_subpattern:null,
@@ -1022,9 +1074,8 @@ if(typeof module!=="undefined" && module.exports){
     TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
     LIMITING_CONSTRAINT,VOLUME_TOLERANCE_STATUS,
     REST_PREFERENCE,PREFERRED_SPLIT,TRAINING_LOCATION_TYPE,USER_TRAINING_PROFILE_FIELD_BOUNDS,
-    MOVEMENT_PATTERN_REGISTRY,MOVEMENT_SUBPATTERN_REGISTRY,
-    registerMovementPatternId,isRegisteredMovementPatternId,
-    registerMovementSubpatternId,isRegisteredMovementSubpatternId,
+    MOVEMENT_PATTERN_ID,MOVEMENT_SUBPATTERN_ID,FOUNDATIONAL_MOVEMENT_PATTERNS,
+    isRegisteredMovementPatternId,isRegisteredMovementSubpatternId,
     FAILURE_CATEGORY,FAILURE_SEVERITY,RETRY_SEMANTICS,createFailureResult,
     createExerciseDefinitionVersion,createExerciseSetupVariant,createExerciseSetup,createResolvedSetupBinding,
     createExerciseRelation,createCuratedSubstituteGroup,createCuratedVeto,
