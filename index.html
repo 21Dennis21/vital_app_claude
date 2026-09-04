@@ -2012,7 +2012,7 @@ function Spark({points,w=140,h=44,color="var(--accent)"}){
    Titel) reagiert auf Ziehen nach unten, schliesst ab einer Distanz, sonst
    federt es zurueck. Nur der Kopf reagiert, damit Scrollen im Inhalt darunter
    (z.B. lange Formulare) nicht versehentlich das Sheet mitzieht. */
-function Sheet({onClose,title,children}){
+function Sheet({onClose,title,children,dark}){
   const [dragY,setDragY]=useState(0);
   const [dragging,setDragging]=useState(false);
   const startY=useRef(0);
@@ -2040,7 +2040,7 @@ function Sheet({onClose,title,children}){
        Sheet zufaellig eingehaengt ist. */
     <div onClick={e=>e.stopPropagation()}>
       <div className="ov" onClick={onClose}/>
-      <div className="sheet" style={{transform:"translateY("+dragY+"px)",transition:dragging?"none":"transform .35s cubic-bezier(.32,.72,.28,1)"}}>
+      <div className="sheet" style={{transform:"translateY("+dragY+"px)",transition:dragging?"none":"transform .35s cubic-bezier(.32,.72,.28,1)",...(dark?ONBOARDING_THEME_VARS:null)}}>
         <div className="grab" style={{padding:"12px 0 18px",margin:"-12px 0 -2px",touchAction:"none"}}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
           <div style={{width:38,height:5,borderRadius:3,background:"var(--ink3)",opacity:.4,margin:"0 auto 14px"}}/>
@@ -2055,18 +2055,36 @@ function Sheet({onClose,title,children}){
 /* Echte Vollbild-Seite (kein Bottom-Sheet) — fuellt den gesamten Bildschirm
    von ganz oben bis ganz unten, mit eigenem Header (Schliessen + Titel) statt
    Wisch-Griff. Fuer Ablaeufe, die sich wie ein eigener Screen anfuehlen
-   sollen (z.B. Lebensmittel suchen/anlegen), statt wie ein kurzer Dialog. */
-function Page({onClose,onBack,title,children,footer}){
+   sollen (z.B. Lebensmittel suchen/anlegen), statt wie ein kurzer Dialog.
+
+   "dark"/"progress" sind rein additiv (Default: exakt bisheriges Verhalten,
+   siehe alle anderen Page-Aufrufe): "dark" faerbt die Seite ueber die
+   bestehenden CSS-Variablen (--bg/--card/--ink/--accent/...) in die fuer das
+   Trainings-Onboarding gewuenschte dunkle Optik um — betrifft ausschliesslich
+   diese eine Seiteninstanz, nicht die App global. "progress" ersetzt Titel-
+   Text und rechte Schliessen-Flaeche durch eine schmale, kompakte Fortschritts-
+   anzeige neben einem einzelnen Zurueck-Chevron (kein rundes X mehr als
+   Schritt-zu-Schritt-Navigation) — wird nur vom Onboarding-Flow genutzt. */
+function Page({onClose,onBack,title,children,footer,dark,progress}){
   return(
-    <div style={{position:"fixed",inset:0,background:"var(--bg)",zIndex:150,display:"flex",flexDirection:"column",animation:"up .32s cubic-bezier(.32,.72,.28,1)"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"calc(14px + env(safe-area-inset-top)) 18px 14px",borderBottom:"1px solid var(--line)",flexShrink:0}}>
-        {onBack
-          ?<button onClick={onBack} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:20,lineHeight:1}}>‹</button>
-          :<button onClick={onClose} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:16}}>✕</button>}
-        <div style={{fontWeight:700,fontSize:16,flex:1,textAlign:"center",padding:"0 8px"}}>{title}</div>
-        {onBack
-          ?<button onClick={onClose} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:16}}>✕</button>
-          :<div style={{width:34}}/>}
+    <div style={{position:"fixed",inset:0,background:"var(--bg)",zIndex:150,display:"flex",flexDirection:"column",animation:"up .32s cubic-bezier(.32,.72,.28,1)",...(dark?ONBOARDING_THEME_VARS:null)}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,justifyContent:progress?undefined:"space-between",padding:progress?"calc(14px + env(safe-area-inset-top)) 18px 6px":"calc(14px + env(safe-area-inset-top)) 18px 14px",borderBottom:progress?"none":"1px solid var(--line)",flexShrink:0}}>
+        {progress?(
+          <>
+            <button onClick={onBack} style={{width:34,height:34,flexShrink:0,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:20,lineHeight:1}}>‹</button>
+            <div style={{flex:1}}>{progress}</div>
+          </>
+        ):(
+          <>
+            {onBack
+              ?<button onClick={onBack} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:20,lineHeight:1}}>‹</button>
+              :<button onClick={onClose} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:16}}>✕</button>}
+            <div style={{fontWeight:700,fontSize:16,flex:1,textAlign:"center",padding:"0 8px"}}>{title}</div>
+            {onBack
+              ?<button onClick={onClose} style={{width:34,height:34,borderRadius:99,background:"var(--card2)",border:"none",color:"var(--ink2)",fontSize:16}}>✕</button>
+              :<div style={{width:34}}/>}
+          </>
+        )}
       </div>
       {/* Inhalt scrollt; der Fussbereich bleibt immer sichtbar und verdeckt nichts,
           weil er ausserhalb des scrollenden Bereichs liegt. */}
@@ -2077,9 +2095,9 @@ function Page({onClose,onBack,title,children,footer}){
 }
 
 /* Sicherheitsabfrage — fuer Loeschen und fuer "Vorgang verlassen". */
-function ConfirmDialog({text,confirmLabel="Löschen",danger=true,onConfirm,onCancel}){
+function ConfirmDialog({text,confirmLabel="Löschen",danger=true,onConfirm,onCancel,dark}){
   return(
-    <div>
+    <div style={dark?ONBOARDING_THEME_VARS:null}>
       <div className="ov" onClick={onCancel} style={{zIndex:300}}/>
       <div style={{position:"fixed",left:20,right:20,top:"50%",transform:"translateY(-50%)",maxWidth:360,margin:"0 auto",background:"var(--card)",borderRadius:22,padding:22,zIndex:301,boxShadow:"var(--shadow)"}}>
         <div style={{fontSize:15,fontWeight:600,marginBottom:18,lineHeight:1.45}}>{text}</div>
@@ -2092,8 +2110,10 @@ function ConfirmDialog({text,confirmLabel="Löschen",danger=true,onConfirm,onCan
   );
 }
 
-/* Zahlenfeld: erlaubt Komma und Punkt, markiert ungueltige Eingaben direkt. */
-function NumField({value,onChange,placeholder,suffix,autoFocus,onEnterOrBlur}){
+/* Zahlenfeld: erlaubt Komma und Punkt, markiert ungueltige Eingaben direkt.
+   "big" ist rein additiv (Default unveraendert) — grosse, zentrierte Variante
+   fuer die Koerpergewicht-Eingabe im Trainings-Onboarding. */
+function NumField({value,onChange,placeholder,suffix,autoFocus,onEnterOrBlur,big}){
   const invalid=value!==""&&parseNum(value)==null;
   const ref=useRef(null);
   useEffect(()=>{
@@ -2112,8 +2132,12 @@ function NumField({value,onChange,placeholder,suffix,autoFocus,onEnterOrBlur}){
         onChange={e=>onChange(e.target.value)}
         onKeyDown={e=>{if(e.key==="Enter"){e.target.blur();if(onEnterOrBlur)onEnterOrBlur();}}}
         onBlur={()=>{if(onEnterOrBlur)onEnterOrBlur();}}
-        style={{borderColor:invalid?"#C0453E":undefined,paddingRight:suffix?54:14}}/>
-      {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"var(--ink3)",pointerEvents:"none"}}>{suffix}</span>}
+        style={big
+          ?{textAlign:"center",fontSize:42,fontWeight:800,padding:"20px 64px",borderColor:invalid?"#C0453E":undefined}
+          :{borderColor:invalid?"#C0453E":undefined,paddingRight:suffix?54:14}}/>
+      {suffix&&<span style={big
+        ?{position:"absolute",right:22,top:"50%",transform:"translateY(-50%)",fontSize:19,fontWeight:700,color:"var(--ink2)",pointerEvents:"none"}
+        :{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"var(--ink3)",pointerEvents:"none"}}>{suffix}</span>}
     </div>
   );
 }
@@ -3008,17 +3032,87 @@ function ErnaehrungView({data,mSet,goals,openDay,openSetup,openMeal,openMealDeta
   );
 }
 
-/* ===== TRAINING SYSTEM v1.4.1, Implementation Pack 02/14: User Profile/
-   Onboarding/Split-Praeferenz-UX — UI-Schicht. Nutzt ausschliesslich die
-   bereits per <script> geladenen globalen Funktionen/Enums aus training-
-   domain.js/training-storage.js/training-profile-engine.js; keine eigene
-   Fachlogik hier (nur Anzeige-/Interaktions-Uebersetzung). ===== */
+/* ===== TRAINING SYSTEM v1.4.1, Implementation Pack 02/14 (+ 02.1 UX-
+   Redesign): User Profile/Onboarding/Split-Praeferenz-UX — UI-Schicht.
+   Nutzt ausschliesslich die bereits per <script> geladenen globalen
+   Funktionen/Enums aus training-domain.js/training-storage.js/training-
+   profile-engine.js; keine eigene Fachlogik hier (nur Anzeige-/
+   Interaktions-Uebersetzung). Paket 02.1 ist ein reines UX-/UI-Redesign
+   dieses bereits bestehenden Onboardings: dieselben Felder, dieselben
+   Validierungen, dieselbe Persistenz (finishOnboarding/buildOnboarding-
+   DraftFromExisting unveraendert) — nur Darstellung/Bedienbarkeit neu. ===== */
 const TRAINING_GOAL_LABELS={HYPERTROPHY:"Muskelaufbau",STRENGTH:"Kraft",GENERAL_FITNESS:"Allgemeine Fitness"};
-const EXPERIENCE_SELF_LABELS={NEW:"Neu (< 6 Monate)",SOME:"Etwas Erfahrung (6–24 Monate)",EXPERIENCED:"Erfahren (> 24 Monate)"};
+const TRAINING_GOAL_DESCRIPTIONS={HYPERTROPHY:"Mehr Muskelmasse aufbauen.",STRENGTH:"Stärker in den wichtigsten Bewegungen werden.",GENERAL_FITNESS:"Ausgewogen Kraft und Fitness verbessern."};
+const EXPERIENCE_SELF_LABELS={NEW:"Neu",SOME:"Etwas Erfahrung",EXPERIENCED:"Erfahren"};
+const EXPERIENCE_SELF_DESCRIPTIONS={NEW:"Weniger als 6 Monate",SOME:"6–24 Monate",EXPERIENCED:"Mehr als 24 Monate"};
 const TRAINING_LOCATION_TYPE_LABELS={COMMERCIAL_GYM:"Fitnessstudio",HOME_GYM:"Home-Gym",HOTEL_TRAVEL:"Hotel / Unterwegs",BODYWEIGHT_ONLY:"Nur Körpergewicht",OTHER:"Sonstiges"};
 const PREFERRED_SPLIT_LABELS={AUTOMATIC:"Automatisch",FULL_BODY:"Ganzkörper",UPPER_LOWER:"Oberkörper / Unterkörper",UPPER_LOWER_FULL:"Oberkörper/Unterkörper + Ganzkörper",PUSH_PULL:"Push / Pull",PPL:"Push / Pull / Legs",PPL_X2:"Push / Pull / Legs ×2",PPL_UL_HYBRID:"PPL + Oberkörper/Unterkörper (Hybrid)",UPPER_LOWER_X3:"Oberkörper / Unterkörper ×3",BODY_PART_SPLIT:"Muskelgruppen-Split"};
 const REST_PREFERENCE_LABELS={SHORT:"Kurz",STANDARD:"Standard",LONG:"Lang"};
+const ONBOARDING_EFFORT_LABELS={NO:"Einfach",YES:"RIR"};
+const ONBOARDING_EFFORT_DESCRIPTIONS={NO:"Locker, fordernd, schwer oder maximal.",YES:"Für Nutzer, die bereits mit Reps in Reserve arbeiten."};
 const VOLUME_MUSCLE_LABELS={CHEST:"Brust",FRONT_DELT:"Vord. Schulter",SIDE_DELT:"Seitl. Schulter",REAR_DELT:"Hint. Schulter",LATS:"Latissimus",UPPER_BACK:"Oberer Rücken",LOWER_BACK:"Unterer Rücken",BICEPS:"Bizeps",TRICEPS:"Trizeps",FOREARM:"Unterarm",QUADS:"Quadrizeps",HAMSTRINGS:"Beinbeuger",GLUTES:"Gesäß",ADDUCTORS:"Adduktoren",ABDUCTORS:"Abduktoren",CALVES:"Waden",ABS:"Bauch",OBLIQUES:"Seitl. Bauch"};
+
+/* Eigene, in sich geschlossene dunkle Optik ausschliesslich fuer den
+   Trainings-Onboarding-Flow (Paket 02.1) — bewusst UNABHAENGIG vom
+   Hell-/Dunkelmodus der uebrigen App, damit der Flow "eine eigene
+   Identitaet" hat (Vorgabe des Redesign-Auftrags), ohne die globalen
+   Theme-Variablen (:root) und damit den Rest der App zu beruehren. Die
+   Ueberschreibung erfolgt NUR lokal als Inline-Style auf dem Wurzel-Element
+   von Page/Sheet/ConfirmDialog (siehe "dark"-Prop dort) — alle bestehenden
+   Klassen (.card, .btn, .optbtn-Ersatz, .sub, .lbl, .num, .line ...) lesen
+   dieselben CSS-Variablennamen und uebernehmen die neue Palette dadurch
+   automatisch, ohne dass eine einzige bestehende CSS-Regel geaendert
+   werden musste. */
+const ONBOARDING_THEME_VARS={
+  "--bg":"#050505","--card":"#141416","--card2":"#1C1C1F",
+  "--ink":"#F5F4F2","--ink2":"#9C968D","--ink3":"#5C5852",
+  "--accent":"#FF9B45","--accent-soft":"rgba(255,155,69,.16)",
+  "--line":"rgba(255,255,255,.10)","--shadow":"none","--ovbg":"rgba(0,0,0,.65)",
+};
+/* Primary-CTA im Onboarding: hell/weiss mit dunkler Schrift statt des
+   sonst app-weit verwendeten blauen/farbigen ".btn"-Hintergrunds (der
+   Akzent bleibt fuer Auswahl-/Fortschritts-Zustaende reserviert). */
+const ONBOARDING_CTA_STYLE={background:"#F5F4F2",color:"#111315",fontWeight:800,padding:"18px",borderRadius:18,fontSize:16};
+
+/* Segmentierte Fortschrittsanzeige neben dem Zurueck-Chevron (siehe Page-
+   Prop "progress") — rein dekorativ, keine Fachlogik. Vergangene/aktuelle
+   Schritte hell, kommende Schritte deutlich gedimmt. */
+function OnboardingProgress({step,total}){
+  return(
+    <div style={{display:"flex",gap:4}}>
+      {Array.from({length:total}).map((_,i)=>(
+        <div key={i} style={{flex:1,height:3,borderRadius:2,background:"var(--ink)",opacity:i<=step?1:.22}}/>
+      ))}
+    </div>
+  );
+}
+/* Grosse, linksbuendige Screen-Ueberschrift + optionaler Untertitel — auf
+   jedem Onboarding-Schritt identisch platziert (siehe Abstands-Vorgaben). */
+function OnboardingHeadline({headline,subtitle}){
+  return(
+    <div style={{marginBottom:30}}>
+      <div style={{fontSize:"clamp(26px,7.5vw,32px)",fontWeight:800,lineHeight:1.15,letterSpacing:-.3}}>{headline}</div>
+      {subtitle&&<div style={{marginTop:10,fontSize:15,color:"var(--ink2)",lineHeight:1.5}}>{subtitle}</div>}
+    </div>
+  );
+}
+/* Zeile mit Titel/aktuellem Wert/Chevron — fuer die gruppierte Darstellung
+   optionaler Einstellungen (Fokus/Split-Präferenz/Trainingseinstellungen)
+   und die Profil-Zusammenfassung, statt einer langen Liste einzelner
+   Auswahlkontrollen direkt untereinander. */
+function SettingsRow({label,value,onClick}){
+  return(
+    <button onClick={onClick} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",
+      background:"var(--card)",border:"1px solid var(--line)",borderRadius:16,padding:"16px 18px",
+      font:"inherit",color:"var(--ink)",marginBottom:10,textAlign:"left"}}>
+      <span style={{fontWeight:600,fontSize:15}}>{label}</span>
+      <span style={{display:"flex",alignItems:"center",gap:6,color:"var(--ink2)",fontSize:14,maxWidth:"58%"}}>
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value}</span>
+        <span style={{fontSize:16,flexShrink:0}}>›</span>
+      </span>
+    </button>
+  );
+}
 
 /* Minimal-Set fuer Onboarding-Equipment-Presets (Paket 02) — bewusst KEIN
    Ersatz fuer den vollstaendigen TEIL-29-Katalog (spaeteres Pack): reine
@@ -3163,30 +3257,55 @@ function finishOnboarding(draft,existingProfile,existingLocation){
   return profile;
 }
 
-/* Einfache Ein-Feld-Auswahlliste im bestehenden "optbtn"-Stil. */
-function ChoiceList({options,value,onChange,labels}){
+/* Ein-Feld-Auswahlliste als grosse Karte (Titel + optionale Beschreibung +
+   Check-Indikator). "descriptions" ist optional — ohne sie entsteht eine
+   kompakte einzeilige Karte (Trainingstage/Zeitbudget/Trainingsort/Splits/
+   Pausen/Anstrengung), mit ihr eine zweizeilige Karte (Trainingsziel/
+   Erfahrung). Selected State wird NIE ausschliesslich ueber Farbe
+   dargestellt (zusaetzlich Border + Check-Kreis + Fettung, siehe A11y-
+   Vorgabe). */
+function ChoiceList({options,value,onChange,labels,descriptions}){
   return(
-    <div>
-      {options.map(opt=>(
-        <button key={opt} className={"optbtn"+(value===opt?" on":"")} onClick={()=>{tapH();onChange(opt);}}>
-          {labels[opt]||opt}
-        </button>
-      ))}
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {options.map(opt=>{
+        const on=value===opt;
+        const desc=descriptions&&descriptions[opt];
+        return(
+          <button key={String(opt)} data-choice={String(opt)} className={"choice-card"+(on?" on":"")} onClick={()=>{tapH();onChange(opt);}}
+            style={{textAlign:"left",width:"100%",display:"flex",alignItems:"center",gap:12,
+              background:on?"var(--accent-soft)":"var(--card)",
+              border:on?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+              borderRadius:18,padding:"16px 18px",color:"var(--ink)",font:"inherit",cursor:"pointer"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16,fontWeight:700}}>{labels[opt]!==undefined?labels[opt]:opt}</div>
+              {desc&&<div style={{marginTop:4,fontSize:13,color:"var(--ink2)",lineHeight:1.4}}>{desc}</div>}
+            </div>
+            <div style={{width:22,height:22,borderRadius:99,flexShrink:0,
+              border:on?"none":"1.5px solid var(--ink3)",background:on?"var(--accent)":"transparent",
+              display:"flex",alignItems:"center",justifyContent:"center",color:"#161616",fontSize:12,fontWeight:900}}>
+              {on?"✓":""}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
-/* Mehrfachauswahl als kompakte Chips (Equipment-Presets, Prioritaetsmuskeln). */
+/* Mehrfachauswahl als groessere, klar erkennbare Chips (Equipment-Presets,
+   Prioritaetsmuskeln) — mit Check statt nur Farbwechsel im Selected State. */
 function ChipMultiSelect({options,value,onToggle,labels,maxSelected}){
   return(
-    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+    <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
       {options.map(opt=>{
         const on=value.indexOf(opt)!==-1;
         const disabledByMax=!on&&maxSelected!=null&&value.length>=maxSelected;
         return(
-          <button key={opt} disabled={disabledByMax} onClick={()=>{tapH();onToggle(opt);}}
-            style={{padding:"8px 14px",borderRadius:99,border:on?"1.5px solid var(--accent)":"1.5px solid transparent",
-              background:on?"var(--accent-soft)":"var(--card2)",color:on?"var(--accent)":"var(--ink)",
-              fontSize:13,fontWeight:600,opacity:disabledByMax?.4:1,cursor:disabledByMax?"default":"pointer"}}>
+          <button key={opt} data-chip={opt} className={"chip"+(on?" on":"")} disabled={disabledByMax} onClick={()=>{tapH();onToggle(opt);}}
+            style={{display:"flex",alignItems:"center",gap:7,padding:"13px 16px",borderRadius:14,
+              border:on?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+              background:on?"var(--accent-soft)":"var(--card)",color:on?"var(--accent)":"var(--ink)",
+              fontSize:14,fontWeight:600,opacity:disabledByMax?.35:1,cursor:disabledByMax?"default":"pointer"}}>
+            {on&&<span style={{fontSize:12}}>✓</span>}
             {labels[opt]||opt}
           </button>
         );
@@ -3194,27 +3313,38 @@ function ChipMultiSelect({options,value,onToggle,labels,maxSelected}){
     </div>
   );
 }
-/* Numerischer Stepper mit −/+ statt Freitext, fuer die beiden Onboarding-
-   Ganzzahlfelder mit engem, festem Wertebereich (§1.2). */
-function Stepper({value,onChange,min,max,step,suffix}){
+/* Kompakter Fein-Stepper (kleine −/+ statt der frueheren grossen +/--
+   Bloecke) — bleibt fuer Werte verfuegbar, die keinem der Zeitbudget-
+   Presets entsprechen (§1.2-Bereich 20–120 unveraendert). */
+function MiniStepper({value,onChange,min,max,step}){
   return(
-    <div className="row" style={{gap:14,padding:"6px 0"}}>
-      <button className="btn btn2" style={{width:48,height:48,fontSize:20,padding:0,opacity:value<=min?.4:1}}
-        disabled={value<=min} onClick={()=>{tapH();onChange(Math.max(min,value-step));}}>−</button>
-      <div style={{flex:1,textAlign:"center",fontSize:26,fontWeight:700}} className="num">{value}
-        {suffix?<span style={{fontSize:13,fontWeight:500,color:"var(--ink2)"}}> {suffix}</span>:null}</div>
-      <button className="btn btn2" style={{width:48,height:48,fontSize:20,padding:0,opacity:value>=max?.4:1}}
-        disabled={value>=max} onClick={()=>{tapH();onChange(Math.min(max,value+step));}}>+</button>
+    <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <button disabled={value<=min} onClick={()=>{tapH();onChange(Math.max(min,value-step));}}
+        style={{width:34,height:34,borderRadius:99,border:"1px solid var(--line)",background:"var(--card2)",color:"var(--ink)",fontSize:16,opacity:value<=min?.35:1}}>−</button>
+      <span className="num" style={{fontSize:16,fontWeight:700,minWidth:74,textAlign:"center"}}>{value} Min</span>
+      <button disabled={value>=max} onClick={()=>{tapH();onChange(Math.min(max,value+step));}}
+        style={{width:34,height:34,borderRadius:99,border:"1px solid var(--line)",background:"var(--card2)",color:"var(--ink)",fontSize:16,opacity:value>=max?.35:1}}>+</button>
     </div>
   );
 }
+
+const ONBOARDING_TIME_BUDGET_PRESETS=[30,45,60,75,90];
+const ONBOARDING_TOTAL_STEPS=8;
 
 /* Onboarding-/Bearbeiten-Flow: genau die 7 REQUIRED-Felder aus §1.2 auf den
    ersten 7 Schritten (INVARIANT P-1 — kein achtes verstecktes Pflichtfeld),
    danach ein einzelner optionaler Abschluss-Schritt, der den Abschluss
    NICHT blockiert (er ist von Schritt 7 aus bereits erreichbar). Keine
    Split-Bewertung, kein Plan-Generator — preferred_split wird hier nur
-   erfasst, nicht bewertet (folgt in STEP 03). */
+   erfasst, nicht bewertet (folgt in STEP 03).
+
+   Paket 02.1 (UX-Redesign): dieselben 8 Schritte, dasselbe draft-Objekt,
+   dieselbe stepValid()/finishOnboarding()-Logik wie zuvor — neu ist
+   ausschliesslich Darstellung/Navigation: grosse Screen-Ueberschriften,
+   dunkle Onboarding-Optik (Page dark), echte Zurueck-Navigation zwischen
+   Schritten statt eines einzelnen Abbrechen-Dialogs, und Schritt 7 als
+   kompaktes Einstellungen-Menue mit drei Sub-Sheets statt einer langen
+   Liste von Auswahlkontrollen untereinander. */
 function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,onClose,onSaved}){
   const [step,setStep]=useState(0);
   const [draft,setDraft]=useState(()=>initialDraft||{
@@ -3223,9 +3353,8 @@ function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,o
     equipmentSelectedIds:[],equipmentConfirmed:false,
     bodyweight_kg:"",priority_muscles:[],preferred_split:null,uses_rir:false,rest_preference:REST_PREFERENCE.STANDARD,
   });
-  const [confirmExit,setConfirmExit]=useState(false);
+  const [openSubSheet,setOpenSubSheet]=useState(null); // null | "focus" | "split" | "settings"
   const patch=p=>setDraft(dr=>({...dr,...p}));
-  const STEP_TITLES=["Trainingsziel","Erfahrung","Trainingstage","Zeitbudget","Trainingsort","Equipment","Körpergewicht","Weitere Einstellungen"];
   const bounds=USER_TRAINING_PROFILE_FIELD_BOUNDS;
   const isBWOnly=isBodyweightOnlyLocationType(draft.locationType);
 
@@ -3246,79 +3375,126 @@ function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,o
       default:return true;
     }
   }
-  function requestClose(){if(step===0)onClose();else setConfirmExit(true);}
+  function handleBack(){
+    tapH();
+    if(step===0)onClose();
+    else setStep(step-1);
+  }
   function handleNext(){
     tapH();
     if(step===7)onSaved(finishOnboarding(draft,existingProfile,existingLocation));
     else setStep(step+1);
   }
 
+  const focusSummary=draft.priority_muscles.length?draft.priority_muscles.map(mus=>VOLUME_MUSCLE_LABELS[mus]).join(", "):"Keine Auswahl";
+  const splitSummary=draft.preferred_split?PREFERRED_SPLIT_LABELS[draft.preferred_split]:"Automatisch";
+  const settingsSummary=REST_PREFERENCE_LABELS[draft.rest_preference]+" · "+(draft.uses_rir?"RIR":"Einfach");
+
   return(
     <>
-    <Page onClose={requestClose} title={STEP_TITLES[step]}
+    <Page dark onBack={handleBack} progress={<OnboardingProgress step={step} total={ONBOARDING_TOTAL_STEPS}/>}
       footer={
-        <button className="btn" disabled={!stepValid(step)} style={{opacity:stepValid(step)?1:.5}} onClick={handleNext}>
+        <button data-onboarding-cta="true" className="btn" disabled={!stepValid(step)} style={{...ONBOARDING_CTA_STYLE,opacity:stepValid(step)?1:.35}} onClick={handleNext}>
           {step===7?"Fertig":"Weiter"}
         </button>
       }>
-      {step===0&&<ChoiceList options={Object.values(TRAINING_GOAL)} value={draft.goal} onChange={v=>patch({goal:v})} labels={TRAINING_GOAL_LABELS}/>}
-      {step===1&&<ChoiceList options={Object.values(EXPERIENCE_SELF)} value={draft.experience_self} onChange={v=>patch({experience_self:v})} labels={EXPERIENCE_SELF_LABELS}/>}
+      {step===0&&(
+        <div>
+          <OnboardingHeadline headline="Was ist dein Trainingsziel?" subtitle="Wir passen dein Training an dein Ziel an."/>
+          <ChoiceList options={Object.values(TRAINING_GOAL)} value={draft.goal} onChange={v=>patch({goal:v})} labels={TRAINING_GOAL_LABELS} descriptions={TRAINING_GOAL_DESCRIPTIONS}/>
+        </div>
+      )}
+      {step===1&&(
+        <div>
+          <OnboardingHeadline headline="Wie viel Trainingserfahrung hast du?" subtitle="Das hilft uns, dein Training passend zu gestalten."/>
+          <ChoiceList options={Object.values(EXPERIENCE_SELF)} value={draft.experience_self} onChange={v=>patch({experience_self:v})} labels={EXPERIENCE_SELF_LABELS} descriptions={EXPERIENCE_SELF_DESCRIPTIONS}/>
+        </div>
+      )}
       {step===2&&(
         <div>
-          <div className="sub" style={{marginBottom:10}}>Wie viele Tage pro Woche möchtest du trainieren?</div>
-          <Stepper value={draft.training_days_per_week} min={bounds.training_days_per_week[0]} max={bounds.training_days_per_week[1]} step={1} suffix="Tage/Woche" onChange={v=>patch({training_days_per_week:v})}/>
+          <OnboardingHeadline headline="Wie oft möchtest du trainieren?" subtitle="Wähle, was du realistisch jede Woche schaffst."/>
+          <ChoiceList options={[2,3,4,5,6]} value={draft.training_days_per_week} onChange={v=>patch({training_days_per_week:v})}
+            labels={{2:"2 Trainings pro Woche",3:"3 Trainings pro Woche",4:"4 Trainings pro Woche",5:"5 Trainings pro Woche",6:"6 Trainings pro Woche"}}/>
         </div>
       )}
       {step===3&&(
         <div>
-          <div className="sub" style={{marginBottom:10}}>Wie viel Zeit steht dir pro Trainingseinheit zur Verfügung?</div>
-          <Stepper value={draft.session_time_budget_min} min={bounds.session_time_budget_min[0]} max={bounds.session_time_budget_min[1]} step={5} suffix="Minuten" onChange={v=>patch({session_time_budget_min:v})}/>
+          <OnboardingHeadline headline="Wie viel Zeit hast du pro Training?" subtitle="Wähle eine typische Trainingsdauer."/>
+          <ChoiceList options={ONBOARDING_TIME_BUDGET_PRESETS}
+            value={ONBOARDING_TIME_BUDGET_PRESETS.indexOf(draft.session_time_budget_min)!==-1?draft.session_time_budget_min:null}
+            onChange={v=>patch({session_time_budget_min:v})}
+            labels={{30:"30 Min",45:"45 Min",60:"60 Min",75:"75 Min",90:"90 Min"}}/>
+          <div style={{marginTop:20,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span className="sub">Genauer einstellen</span>
+            <MiniStepper value={draft.session_time_budget_min} min={bounds.session_time_budget_min[0]} max={bounds.session_time_budget_min[1]} step={5} onChange={v=>patch({session_time_budget_min:v})}/>
+          </div>
         </div>
       )}
       {step===4&&(
         <div>
-          <div className="lbl" style={{marginBottom:5}}>Name des Orts</div>
-          <input type="text" placeholder="z.B. Zuhause" value={draft.locationName} onChange={e=>patch({locationName:e.target.value})} style={{marginBottom:14}}/>
-          <div className="lbl" style={{marginBottom:6}}>Art des Orts</div>
+          <OnboardingHeadline headline="Wo trainierst du meistens?" subtitle="So wissen wir, welches Equipment infrage kommt."/>
+          <div className="lbl" style={{marginBottom:6}}>Name des Orts</div>
+          <input type="text" placeholder="z.B. Zuhause" value={draft.locationName} onChange={e=>patch({locationName:e.target.value})}
+            style={{marginBottom:22,fontSize:16,padding:"14px 16px"}}/>
+          <div className="lbl" style={{marginBottom:8}}>Art des Orts</div>
           <ChoiceList options={Object.values(TRAINING_LOCATION_TYPE)} value={draft.locationType} onChange={setLocationType} labels={TRAINING_LOCATION_TYPE_LABELS}/>
         </div>
       )}
       {step===5&&(
-        isBWOnly
-          ?<div className="sub" style={{padding:"12px 0"}}>„Nur Körpergewicht" bedeutet ausschließlich Boden- und Körpergewichtsübungen — es wird kein Equipment angenommen (auch keine Klimmzugstange, Dip-Station, Ringe oder Schlingentrainer). Du kannst das später jederzeit ändern.</div>
-          :<div>
-              <div className="sub" style={{marginBottom:10}}>Was steht dir an diesem Ort zur Verfügung? Das sind nur Startschätzungen — du kannst sie jederzeit anpassen.</div>
-              <ChipMultiSelect options={TRAINING_EQUIPMENT_PRESETS.map(p=>p.id)} value={draft.equipmentSelectedIds}
+        <div>
+          <OnboardingHeadline headline="Welches Equipment hast du?" subtitle="Nur Startschätzungen — du kannst sie jederzeit anpassen."/>
+          {isBWOnly
+            ?<div style={{display:"flex",gap:12,alignItems:"flex-start",padding:16,borderRadius:16,background:"var(--card)",border:"1px solid var(--line)"}}>
+                <span style={{fontSize:20}}>🧘</span>
+                <span className="sub" style={{lineHeight:1.5}}>„Nur Körpergewicht" bedeutet ausschließlich Boden- und Körpergewichtsübungen — es wird kein Equipment angenommen (auch keine Klimmzugstange, Dip-Station, Ringe oder Schlingentrainer). Du kannst das später jederzeit ändern.</span>
+              </div>
+            :<ChipMultiSelect options={TRAINING_EQUIPMENT_PRESETS.map(p=>p.id)} value={draft.equipmentSelectedIds}
                 labels={Object.fromEntries(TRAINING_EQUIPMENT_PRESETS.map(p=>[p.id,p.name]))}
-                onToggle={id=>patch({equipmentSelectedIds:draft.equipmentSelectedIds.indexOf(id)!==-1?draft.equipmentSelectedIds.filter(x=>x!==id):draft.equipmentSelectedIds.concat([id]),equipmentConfirmed:true})}/>
-            </div>
+                onToggle={id=>patch({equipmentSelectedIds:draft.equipmentSelectedIds.indexOf(id)!==-1?draft.equipmentSelectedIds.filter(x=>x!==id):draft.equipmentSelectedIds.concat([id]),equipmentConfirmed:true})}/>}
+        </div>
       )}
       {step===6&&(
         <div>
-          <div className="lbl" style={{marginBottom:5}}>Körpergewicht (kg)</div>
-          <NumField value={draft.bodyweight_kg} onChange={v=>patch({bodyweight_kg:v})} placeholder="z.B. 82" suffix="kg" autoFocus/>
-          <div className="sub" style={{marginTop:10}}>Wird zusätzlich als Gewichtseintrag gespeichert — dein Lastmodell für Körpergewichtsübungen basiert darauf.</div>
+          <OnboardingHeadline headline="Wie viel wiegst du?" subtitle="Damit können wir Übungen mit dem eigenen Körpergewicht passend planen."/>
+          <NumField value={draft.bodyweight_kg} onChange={v=>patch({bodyweight_kg:v})} placeholder="0" suffix="kg" autoFocus big/>
         </div>
       )}
       {step===7&&(
         <div>
-          <div className="lbl" style={{marginBottom:6}}>Prioritätsmuskeln (max. 2, optional)</div>
-          <ChipMultiSelect options={Object.values(CANONICAL_VOLUME_MUSCLE_ID)} value={draft.priority_muscles} labels={VOLUME_MUSCLE_LABELS} maxSelected={2}
-            onToggle={id=>patch({priority_muscles:draft.priority_muscles.indexOf(id)!==-1?draft.priority_muscles.filter(x=>x!==id):draft.priority_muscles.concat([id])})}/>
-
-          <div className="lbl" style={{margin:"20px 0 6px"}}>Split-Präferenz (optional)</div>
-          <ChoiceList options={["AUTOMATIC"].concat(Object.values(PREFERRED_SPLIT))} value={draft.preferred_split||"AUTOMATIC"}
-            onChange={v=>patch({preferred_split:v==="AUTOMATIC"?null:v})} labels={PREFERRED_SPLIT_LABELS}/>
-
-          <div className="lbl" style={{margin:"20px 0 6px"}}>Pausenlänge (optional)</div>
-          <ChoiceList options={Object.values(REST_PREFERENCE)} value={draft.rest_preference} onChange={v=>patch({rest_preference:v})} labels={REST_PREFERENCE_LABELS}/>
-
-          <div className="lbl" style={{margin:"20px 0 6px"}}>RIR-Eingabe statt 4-Band-Effort-Skala (optional)</div>
-          <ChoiceList options={["NO","YES"]} value={draft.uses_rir?"YES":"NO"} onChange={v=>patch({uses_rir:v==="YES"})} labels={{NO:"Nein (Effort-Skala)",YES:"Ja (RIR-Wert)"}}/>
+          <OnboardingHeadline headline="Noch etwas Feintuning?" subtitle="Alles hier ist optional — du kannst es jederzeit später ändern."/>
+          <SettingsRow label="Fokus" value={focusSummary} onClick={()=>setOpenSubSheet("focus")}/>
+          <SettingsRow label="Split-Präferenz" value={splitSummary} onClick={()=>setOpenSubSheet("split")}/>
+          <SettingsRow label="Trainingseinstellungen" value={settingsSummary} onClick={()=>setOpenSubSheet("settings")}/>
         </div>
       )}
     </Page>
-    {confirmExit&&<ConfirmDialog text="Einrichtung abbrechen? Deine bisherigen Eingaben in diesem Schritt gehen verloren." confirmLabel="Abbrechen" onConfirm={onClose} onCancel={()=>setConfirmExit(false)}/>}
+
+    {openSubSheet==="focus"&&(
+      <Sheet dark onClose={()=>setOpenSubSheet(null)} title="Wo möchtest du deinen Fokus setzen?">
+        <div className="sub" style={{marginBottom:16}}>Wähle bis zu zwei Muskelgruppen.</div>
+        <ChipMultiSelect options={Object.values(CANONICAL_VOLUME_MUSCLE_ID)} value={draft.priority_muscles} labels={VOLUME_MUSCLE_LABELS} maxSelected={2}
+          onToggle={id=>patch({priority_muscles:draft.priority_muscles.indexOf(id)!==-1?draft.priority_muscles.filter(x=>x!==id):draft.priority_muscles.concat([id])})}/>
+        <button className="btn" style={{marginTop:20,...ONBOARDING_CTA_STYLE}} onClick={()=>{tapH();setOpenSubSheet(null);}}>Fertig</button>
+      </Sheet>
+    )}
+    {openSubSheet==="split"&&(
+      <Sheet dark onClose={()=>setOpenSubSheet(null)} title="Hast du einen bevorzugten Trainingssplit?">
+        <div className="sub" style={{marginBottom:16}}>Optional – du kannst die Auswahl jederzeit ändern. Deine Präferenz fließt später nur als Bonus ein, nie als feste Vorgabe.</div>
+        <ChoiceList options={["AUTOMATIC"].concat(Object.values(PREFERRED_SPLIT))} value={draft.preferred_split||"AUTOMATIC"}
+          onChange={v=>patch({preferred_split:v==="AUTOMATIC"?null:v})} labels={PREFERRED_SPLIT_LABELS}/>
+        <button className="btn" style={{marginTop:20,...ONBOARDING_CTA_STYLE}} onClick={()=>{tapH();setOpenSubSheet(null);}}>Fertig</button>
+      </Sheet>
+    )}
+    {openSubSheet==="settings"&&(
+      <Sheet dark onClose={()=>setOpenSubSheet(null)} title="Trainingseinstellungen">
+        <div className="lbl" style={{marginBottom:8}}>Pausenlänge</div>
+        <ChoiceList options={Object.values(REST_PREFERENCE)} value={draft.rest_preference} onChange={v=>patch({rest_preference:v})} labels={REST_PREFERENCE_LABELS}/>
+        <div className="lbl" style={{margin:"22px 0 8px"}}>Wie möchtest du die Anstrengung nach einem Satz angeben?</div>
+        <ChoiceList options={["NO","YES"]} value={draft.uses_rir?"YES":"NO"} onChange={v=>patch({uses_rir:v==="YES"})}
+          labels={ONBOARDING_EFFORT_LABELS} descriptions={ONBOARDING_EFFORT_DESCRIPTIONS}/>
+        <button className="btn" style={{marginTop:20,...ONBOARDING_CTA_STYLE}} onClick={()=>{tapH();setOpenSubSheet(null);}}>Fertig</button>
+      </Sheet>
+    )}
     </>
   );
 }
@@ -3335,18 +3511,22 @@ function SplitPreferenceSheet({profile,onClose,onSaved}){
     onSaved();
   }
   return(
-    <Sheet onClose={onClose} title="Split-Präferenz">
-      <div className="sub" style={{marginBottom:14}}>Deine Präferenz fließt später als Bonus in die Split-Wahl ein — sie ist keine feste Vorgabe. „Automatisch" lässt dem System freie Wahl.</div>
+    <Sheet dark onClose={onClose} title="Hast du einen bevorzugten Trainingssplit?">
+      <div className="sub" style={{marginBottom:16}}>Optional – du kannst die Auswahl jederzeit ändern. Deine Präferenz fließt später nur als Bonus ein, nie als feste Vorgabe.</div>
       <ChoiceList options={["AUTOMATIC"].concat(Object.values(PREFERRED_SPLIT))} value={value} onChange={setValue} labels={PREFERRED_SPLIT_LABELS}/>
-      <button className="btn" style={{marginTop:10}} onClick={save}>Speichern</button>
+      <button className="btn" style={{marginTop:20,...ONBOARDING_CTA_STYLE}} onClick={save}>Speichern</button>
     </Sheet>
   );
 }
 
 /* ===== TAB 3: TRAINING — enthaelt den aus dem Ernaehrungs-Tab hierher
    verschobenen "Aktivitäten"-Bereich (unveraendert) sowie, seit Paket
-   02/14, das Trainingsprofil-/Onboarding-/Split-Praeferenz-UI. Noch keine
-   Plan-/Workout-Funktionen — die werden in spaeteren Packs ergaenzt. ===== */
+   02/14 (UX-Redesign 02.1), das Trainingsprofil-/Onboarding-/Split-
+   Praeferenz-UI. Noch keine Plan-/Workout-Funktionen — die werden in
+   spaeteren Packs ergaenzt. Die Profil-Zusammenfassung bleibt bewusst in
+   der normalen App-Optik (folgt Hell-/Dunkelmodus wie jede andere Karte
+   der App) — nur der Onboarding-/Bearbeiten-FLOW selbst nutzt die eigene
+   dunkle Optik (siehe ONBOARDING_THEME_VARS). ===== */
 function TrainingView({data,openActivity}){
   const y=NOW.getFullYear(),m=NOW.getMonth(),d=NOW.getDate();
   const today=dayData(data,y,m,d);
@@ -3357,13 +3537,32 @@ function TrainingView({data,openActivity}){
   const profile=useMemo(()=>loadUserTrainingProfile(),[refreshTick]);
   const location=useMemo(()=>profile?loadTrainingLocations().find(l=>l.id===profile.primary_location_id)||null:null,[profile,refreshTick]);
   const onboardingComplete=!!profile&&trainingLocationHasConfirmedEquipmentProfile(profile.primary_location_id);
+  const equipmentSummary=useMemo(()=>{
+    if(!location)return "–";
+    if(location.type===TRAINING_LOCATION_TYPE.BODYWEIGHT_ONLY)return "Nur Körpergewicht";
+    const n=loadEquipmentInstances().filter(i=>i.location_id===location.id&&i.inventory_state==="PRESENT").length;
+    return n?n+" Geräte":"Keine Auswahl";
+  },[location,refreshTick]);
+  const openEdit=()=>{tapH();setShowOnboarding(true);};
+  const summaryRows=profile?[
+    ["Trainingsziel",TRAINING_GOAL_LABELS[profile.goal],openEdit],
+    ["Erfahrung",EXPERIENCE_SELF_LABELS[profile.experience_self],openEdit],
+    ["Trainingstage",profile.training_days_per_week+"× / Woche",openEdit],
+    ["Dauer",profile.session_time_budget_min+" Min",openEdit],
+    ["Trainingsort",location?location.name:"–",openEdit],
+    ["Equipment",equipmentSummary,openEdit],
+    ["Körpergewicht",profile.bodyweight_kg+" kg",openEdit],
+    ["Fokus",profile.priority_muscles.length?profile.priority_muscles.map(mus=>VOLUME_MUSCLE_LABELS[mus]).join(", "):"Keine Auswahl",openEdit],
+    ["Split-Präferenz",profile.preferred_split?PREFERRED_SPLIT_LABELS[profile.preferred_split]:"Automatisch",()=>{tapH();setShowSplitSheet(true);}],
+    ["Trainingseinstellungen",REST_PREFERENCE_LABELS[profile.rest_preference]+" · "+(profile.uses_rir?"RIR":"Einfach"),openEdit],
+  ]:[];
   return(
     <div>
       <div className="h1" style={{marginBottom:18}}>Training</div>
 
       <div style={{marginBottom:"var(--sp-3)"}}>
         {!onboardingComplete&&(
-          <div className="card card-compact" onClick={()=>{tapH();setShowOnboarding(true);}}>
+          <div className="card card-compact" onClick={openEdit}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{width:44,height:44,borderRadius:14,background:"var(--accent-soft)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏋️</div>
               <div style={{flex:1}}>
@@ -3376,20 +3575,21 @@ function TrainingView({data,openActivity}){
         )}
         {onboardingComplete&&(
           <div className="card card-compact">
-            <div className="row" style={{marginBottom:10}}>
+            <div className="row" style={{marginBottom:6}}>
               <div style={{fontWeight:700,fontSize:14}}>Trainingsprofil</div>
-              <button style={{color:"var(--accent)",fontWeight:600,fontSize:13,background:"none",border:"none",padding:0}} onClick={()=>{tapH();setShowOnboarding(true);}}>Bearbeiten</button>
+              <button style={{color:"var(--accent)",fontWeight:600,fontSize:13,background:"none",border:"none",padding:0}} onClick={openEdit}>Bearbeiten</button>
             </div>
-            <div className="sub" style={{lineHeight:1.7}}>
-              {TRAINING_GOAL_LABELS[profile.goal]} · {EXPERIENCE_SELF_LABELS[profile.experience_self]}<br/>
-              {profile.training_days_per_week} Tage/Woche · {profile.session_time_budget_min} Min/Session<br/>
-              {location?location.name:"–"} · {profile.bodyweight_kg} kg
-            </div>
-            <button onClick={()=>{tapH();setShowSplitSheet(true);}}
-              style={{marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:"none",border:"none",borderTop:"1px solid var(--line)",padding:"10px 0 0",font:"inherit",color:"var(--ink)"}}>
-              <span>Split-Präferenz</span>
-              <span className="sub">{profile.preferred_split?PREFERRED_SPLIT_LABELS[profile.preferred_split]:"Automatisch"} ›</span>
-            </button>
+            {summaryRows.map(([label,value,onClick],i)=>(
+              <button key={label} onClick={onClick}
+                style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:"none",border:"none",
+                  borderTop:"1px solid var(--line)",padding:"11px 0",font:"inherit",color:"var(--ink)"}}>
+                <span className="sub">{label}</span>
+                <span style={{display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{fontSize:13,fontWeight:600}}>{value}</span>
+                  <span style={{color:"var(--ink3)",fontSize:15}}>›</span>
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>

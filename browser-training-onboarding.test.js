@@ -1,20 +1,26 @@
 const { createApp, flush } = require("./browser-test-harness.js");
 const { clickByText, setNativeInputValue } = require("./dom-test-helpers.js");
 
-/* Test fuer TRAINING SYSTEM v1.4.1, Implementation Pack 02/14: User
-   Profile/Onboarding/Split-Praeferenz-UX — echte, simulierte Klick-/
-   Eingabe-Durchlaeufe durch den kompletten Onboarding-/Bearbeiten-/Split-
-   Praeferenz-Flow im TRAINING-Tab, gegen den echten kompilierten App-Code
-   (kein echter Browser verfuegbar, jsdom-Simulation mit echter React-
-   Ausfuehrung inkl. DOM/localStorage, siehe CLAUDE.md).
+/* Test fuer TRAINING SYSTEM v1.4.1, Implementation Pack 02/14 (+ UX-
+   Redesign 02.1) — echte, simulierte Klick-/Eingabe-Durchlaeufe durch den
+   kompletten Onboarding-/Bearbeiten-/Split-Praeferenz-Flow im TRAINING-Tab,
+   gegen den echten kompilierten App-Code (kein echter Browser verfuegbar,
+   jsdom-Simulation mit echter React-Ausfuehrung inkl. DOM/localStorage,
+   siehe CLAUDE.md).
+
+   Selektions-Strategie: ChoiceList/ChipMultiSelect tragen stabile
+   data-choice/data-chip-Attribute (reine Test-Hooks, kein visueller/
+   fachlicher Effekt) — robuster als Text-Matching, seit Paket 02.1 Karten
+   mit zusaetzlichem Beschreibungstext und einem Check-Icon verschachtelt
+   rendern.
 
    Deckt ab: die 7 REQUIRED-Onboarding-Felder (§1.2) end-to-end inkl.
    Persistenz, INVARIANT P-1 (Abschluss blockiert bis alle 7 vorhanden),
    optionale Felder blockieren nicht, BODYWEIGHT_ONLY-Equipment-Guard
    (§1.4), Bearbeiten eines bestehenden Profils ohne stilles Ueberschreiben
    von experience_level/user_skill_level (INVARIANT P-EX1/P-2), separate
-   Split-Praeferenz-Aenderung, sowie Regression der bestehenden
-   "Aktivitäten"-Sektion. */
+   Split-Praeferenz-Aenderung, Zurueck-Navigation zwischen Schritten (neu
+   in 02.1), sowie Regression der bestehenden "Aktivitäten"-Sektion. */
 
 let passed=0, failed=0;
 function check(cond, label){
@@ -26,26 +32,22 @@ function findByExactText(d, text, tag){
   const els = [...d.querySelectorAll(tag||"*")];
   return els.find(e=>e.children.length===0 && e.textContent && e.textContent.trim()===text);
 }
+function choiceBtn(d, value){ return d.querySelector('[data-choice="'+value+'"]'); }
+function chipBtn(d, value){ return d.querySelector('[data-chip="'+value+'"]'); }
+function click(el, win){ el.dispatchEvent(new win.MouseEvent("click",{bubbles:true,cancelable:true})); }
 function isOn(el){ return !!el && el.className && el.className.indexOf(" on")!==-1; }
-/* ChipMultiSelect (Equipment-Presets/Prioritätsmuskeln) markiert Auswahl
-   NICHT über eine "on"-Klasse (wie die optbtn-basierte ChoiceList), sondern
-   ausschliesslich per Inline-Style (background: var(--accent-soft)). */
-function chipOn(el){ return !!el && el.getAttribute("style") && el.getAttribute("style").indexOf("var(--accent-soft)")!==-1; }
-function stepperButton(d, symbol){
-  // Es kann pro Seite (Aktivitäten-Sektion, "+ HINZUFÜGEN") noch andere
-  // Elemente mit demselben blossen Text geben — der Onboarding-Flow wird
-  // im JSX-Baum NACH der Aktivitäten-Sektion gerendert und steht daher
-  // spaeter im Dokument; das LETZTE Element mit exaktem Text ist somit
-  // zuverlaessig der Stepper-Button im offenen Page-Overlay.
-  const matches = [...d.querySelectorAll("button")].filter(b=>b.textContent.trim()===symbol);
+/* Der Haupt-Flow-CTA ("Weiter"/"Fertig" im Page-Footer) traegt ein eigenes
+   Test-Attribut, weil Sub-Sheets (Fokus/Split-Präferenz/Trainingseinstell-
+   ungen) auf Schritt 8 GLEICHZEITIG einen eigenen "Fertig"-Button zeigen —
+   Text-Matching allein waere hier mehrdeutig. */
+function weiterBtn(d){ return d.querySelector('[data-onboarding-cta="true"]'); }
+/* Der "Fertig"-Button INNERHALB eines geoeffneten Sub-Sheets: das Sheet
+   wird im JSX NACH der Page gerendert, steht also im Dokument HINTER dem
+   Haupt-Flow-CTA — das LETZTE Element mit diesem Text ist daher zuverlaessig
+   der Sub-Sheet-Button. */
+function subSheetFinishBtn(d){
+  const matches=[...d.querySelectorAll("button")].filter(b=>b.textContent.trim()==="Fertig");
   return matches[matches.length-1];
-}
-/* Stepper-Anzeigewert steht als reiner Textknoten neben einem <span>-
-   Suffix im selben Container (className "num") — kein eigenstaendiges
-   Leaf-Element mit exakt nur der Zahl als Text, daher hier ueber den
-   eindeutigen Suffix-Text gesucht statt per exaktem Textvergleich. */
-function stepperValueContainer(d, suffixText){
-  return [...d.querySelectorAll(".num")].find(e=>e.textContent.indexOf(suffixText)!==-1);
 }
 function readJson(win, key){
   const raw = win.localStorage.getItem(key);
@@ -54,7 +56,7 @@ function readJson(win, key){
 
 async function main(){
   console.log("############################################");
-  console.log("# TRAINING: Onboarding/Profil/Split-Präferenz-UX (Paket 02)");
+  console.log("# TRAINING: Onboarding/Profil/Split-Präferenz-UX (Paket 02 + 02.1 UX-Redesign)");
   console.log("############################################\n");
 
   const dom = createApp(()=>{}, {now:new Date(2026,7,15,12,0,0)});
@@ -71,78 +73,93 @@ async function main(){
 
   clickByText(d, "Trainingsprofil einrichten");
   await flush(dom);
-  check(!!findByExactText(d,"Trainingsziel"), "Onboarding-Flow öffnet sich bei Schritt 'Trainingsziel'");
+  check(!!findByExactText(d,"Was ist dein Trainingsziel?"), "Onboarding-Flow öffnet sich bei Schritt 'Trainingsziel' (grosse Screen-Ueberschrift statt Titel-Leiste)");
+  check(!d.querySelector("button")||![...d.querySelectorAll("button")].some(b=>b.textContent.trim()==="✕"), "kein rundes X mehr als Schritt-Navigation (nur Zurueck-Chevron)");
 
-  console.log("\n--- 2. Schritt 1/7: Trainingsziel (REQUIRED) ---");
-  let weiter = findByExactText(d,"Weiter","button");
-  check(weiter.disabled===true, "'Weiter' ist deaktiviert, solange kein Ziel gewählt ist");
-  clickByText(d, "Muskelaufbau");
+  console.log("\n--- 2. Schritt 1/8: Trainingsziel (REQUIRED) ---");
+  check(weiterBtn(d).disabled===true, "'Weiter' ist deaktiviert, solange kein Ziel gewählt ist");
+  click(choiceBtn(d,"HYPERTROPHY"), win);
   await flush(dom);
-  check(isOn(findByExactText(d,"Muskelaufbau","button")), "'Muskelaufbau' ist als ausgewählt markiert");
-  check(findByExactText(d,"Weiter","button").disabled===false, "'Weiter' ist jetzt aktiv");
-  clickByText(d,"Weiter"); await flush(dom);
+  check(isOn(choiceBtn(d,"HYPERTROPHY")), "'Muskelaufbau' ist als ausgewählt markiert");
+  check(weiterBtn(d).disabled===false, "'Weiter' ist jetzt aktiv");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 3. Schritt 2/7: Erfahrung (REQUIRED) ---");
-  check(!!findByExactText(d,"Erfahrung"), "Schritt 'Erfahrung' erreicht");
-  clickByText(d,"Etwas Erfahrung (6–24 Monate)"); await flush(dom);
-  clickByText(d,"Weiter"); await flush(dom);
+  console.log("\n--- 3. Schritt 2/8: Erfahrung (REQUIRED) ---");
+  check(!!findByExactText(d,"Wie viel Trainingserfahrung hast du?"), "Schritt 'Erfahrung' erreicht");
+  click(choiceBtn(d,"SOME"), win); await flush(dom);
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 4. Schritt 3/7: Trainingstage pro Woche (REQUIRED, Stepper 2–6) ---");
-  check(!!findByExactText(d,"Trainingstage"), "Schritt 'Trainingstage' erreicht");
-  check(findByExactText(d,"Weiter","button").disabled===false, "'Weiter' ist bei numerischen Feldern mit Default sofort aktiv");
-  stepperButton(d,"+").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  stepperButton(d,"+").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  check(stepperValueContainer(d,"Tage/Woche").textContent.trim().indexOf("6")===0, "Trainingstage von 4 auf 6 erhöht");
-  stepperButton(d,"+").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  check(stepperValueContainer(d,"Tage/Woche").textContent.trim().indexOf("6")===0, "Obergrenze 6 wird nicht überschritten (§1.2 Wertebereich)");
-  clickByText(d,"Weiter"); await flush(dom);
+  console.log("\n--- 4. Schritt 3/8: Trainingstage pro Woche (REQUIRED, Auswahlkarten 2–6) ---");
+  check(!!findByExactText(d,"Wie oft möchtest du trainieren?"), "Schritt 'Trainingstage' erreicht");
+  check(isOn(choiceBtn(d,"4")), "Default (4 Tage/Woche) ist vorausgewählt");
+  click(choiceBtn(d,"6"), win); await flush(dom);
+  check(isOn(choiceBtn(d,"6")), "Trainingstage auf 6 gesetzt");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 5. Schritt 4/7: Zeitbudget pro Session (REQUIRED, Stepper 20–120, Schritt 5) ---");
-  check(!!findByExactText(d,"Zeitbudget"), "Schritt 'Zeitbudget' erreicht");
-  stepperButton(d,"−").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  stepperButton(d,"−").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  check(stepperValueContainer(d,"Minuten").textContent.trim().indexOf("50")===0, "Zeitbudget von 60 auf 50 verringert (Schrittweite 5)");
-  clickByText(d,"Weiter"); await flush(dom);
+  console.log("\n--- 5. Schritt 4/8: Zeitbudget pro Session (REQUIRED, Presets + Fein-Stepper, 20–120) ---");
+  check(!!findByExactText(d,"Wie viel Zeit hast du pro Training?"), "Schritt 'Zeitbudget' erreicht");
+  click(choiceBtn(d,"45"), win); await flush(dom);
+  check(isOn(choiceBtn(d,"45")), "45-Minuten-Preset ausgewählt");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 6. Schritt 5/7: Trainingsort (REQUIRED: Name + Typ) ---");
-  check(!!findByExactText(d,"Trainingsort"), "Schritt 'Trainingsort' erreicht");
-  check(findByExactText(d,"Weiter","button").disabled===true, "'Weiter' deaktiviert ohne Ortsnamen");
+  console.log("\n--- 6. Schritt 5/8: Trainingsort (REQUIRED: Name + Typ) ---");
+  check(!!findByExactText(d,"Wo trainierst du meistens?"), "Schritt 'Trainingsort' erreicht");
+  check(weiterBtn(d).disabled===true, "'Weiter' deaktiviert ohne Ortsnamen");
   const nameInput = d.querySelector('input[type="text"]');
   setNativeInputValue(nameInput, "Zuhause");
   await flush(dom);
-  check(findByExactText(d,"Weiter","button").disabled===true, "'Weiter' weiterhin deaktiviert ohne gewählten Ort-Typ");
-  clickByText(d,"Home-Gym"); await flush(dom);
-  check(findByExactText(d,"Weiter","button").disabled===false, "'Weiter' aktiv sobald Name + Typ gesetzt sind");
-  clickByText(d,"Weiter"); await flush(dom);
+  check(weiterBtn(d).disabled===true, "'Weiter' weiterhin deaktiviert ohne gewählten Ort-Typ");
+  click(choiceBtn(d,"HOME_GYM"), win); await flush(dom);
+  check(weiterBtn(d).disabled===false, "'Weiter' aktiv sobald Name + Typ gesetzt sind");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 7. Schritt 6/7: Equipment (REQUIRED: equipment_profile_confirmed, §1.4 nur Startschätzungen) ---");
-  check(!!findByExactText(d,"Equipment"), "Schritt 'Equipment' erreicht");
-  clickByText(d,"Langhantel + Scheiben"); await flush(dom);
-  clickByText(d,"Kurzhanteln"); await flush(dom);
-  check(findByExactText(d,"Weiter","button").disabled===false, "'Weiter' aktiv nach Equipment-Auswahl");
-  clickByText(d,"Weiter"); await flush(dom);
+  console.log("\n--- 7. Schritt 6/8: Equipment (REQUIRED: equipment_profile_confirmed, §1.4 nur Startschätzungen) ---");
+  check(!!findByExactText(d,"Welches Equipment hast du?"), "Schritt 'Equipment' erreicht");
+  click(chipBtn(d,"eqdef_barbell_plates"), win); await flush(dom);
+  click(chipBtn(d,"eqdef_dumbbells"), win); await flush(dom);
+  check(isOn(chipBtn(d,"eqdef_barbell_plates"))&&isOn(chipBtn(d,"eqdef_dumbbells")), "beide Equipment-Presets ausgewählt");
+  check(weiterBtn(d).disabled===false, "'Weiter' aktiv nach Equipment-Auswahl");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 8. Schritt 7/7: Körpergewicht (REQUIRED, 30–250) ---");
-  check(!!findByExactText(d,"Körpergewicht"), "Schritt 'Körpergewicht' erreicht");
-  check(findByExactText(d,"Weiter","button").disabled===true, "'Weiter' deaktiviert ohne Gewichtseingabe");
+  console.log("\n--- 8. Schritt 7/8: Körpergewicht (REQUIRED, 30–250) ---");
+  check(!!findByExactText(d,"Wie viel wiegst du?"), "Schritt 'Körpergewicht' erreicht");
+  check(weiterBtn(d).disabled===true, "'Weiter' deaktiviert ohne Gewichtseingabe");
   const bwInput = d.querySelector('input[inputmode="decimal"]');
   setNativeInputValue(bwInput, "82");
   await flush(dom);
-  check(findByExactText(d,"Weiter","button").disabled===false, "'Weiter' aktiv nach gültiger Gewichtseingabe");
-  clickByText(d,"Weiter"); await flush(dom);
+  check(weiterBtn(d).disabled===false, "'Weiter' aktiv nach gültiger Gewichtseingabe");
+  click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 9. Optionaler Abschluss-Schritt blockiert den Abschluss nicht ---");
-  check(!!findByExactText(d,"Weitere Einstellungen"), "optionaler Schritt erreicht (alle 7 Pflichtfelder bereits vollständig)");
-  check(!!findByExactText(d,"Fertig","button") && findByExactText(d,"Fertig","button").disabled===false, "'Fertig' ist sofort aktiv, ohne dass eine optionale Angabe gemacht wurde");
-  clickByText(d,"Brust"); await flush(dom);
-  clickByText(d,"Latissimus"); await flush(dom);
-  clickByText(d,"Push / Pull / Legs"); await flush(dom);
-  clickByText(d,"Lang"); await flush(dom);
-  clickByText(d,"Ja (RIR-Wert)"); await flush(dom);
-  clickByText(d,"Fertig"); await flush(dom);
+  console.log("\n--- 9. Optionaler Abschluss-Schritt (Einstellungen-Menü) blockiert den Abschluss nicht ---");
+  check(!!findByExactText(d,"Noch etwas Feintuning?"), "optionaler Schritt erreicht (alle 7 Pflichtfelder bereits vollständig)");
+  check(weiterBtn(d).disabled===false, "'Fertig' ist sofort aktiv, ohne dass eine optionale Angabe gemacht wurde");
 
-  console.log("\n--- 10. Nach Abschluss: Profil-Zusammenfassung + Persistenz ---");
-  check(!d.querySelector(".sheet")&&!findByExactText(d,"Fertig","button"), "Onboarding-Flow ist geschlossen");
+  console.log("\n--- 10. Fokus/Split-Präferenz/Trainingseinstellungen als Sub-Sheets ---");
+  clickByText(d,"Fokus"); await flush(dom);
+  check(!!findByExactText(d,"Wo möchtest du deinen Fokus setzen?"), "Fokus-Sheet ist geöffnet");
+  click(chipBtn(d,"CHEST"), win); await flush(dom);
+  click(chipBtn(d,"LATS"), win); await flush(dom);
+  check(!!chipBtn(d,"BICEPS").disabled, "dritte Muskelgruppe ist deaktiviert (max. 2, §4.5)");
+  click(subSheetFinishBtn(d), win); await flush(dom); // Sub-Sheet schliessen (Hauptschritt-CTA heisst ebenfalls "Fertig", aber steht frueher im Dokument)
+  check(!findByExactText(d,"Wo möchtest du deinen Fokus setzen?"), "Fokus-Sheet ist wieder geschlossen");
+  check(!!findByExactText(d,"Brust, Latissimus"), "Fokus-Auswahl erscheint als Zusammenfassung in der Einstellungen-Zeile");
+
+  clickByText(d,"Split-Präferenz"); await flush(dom);
+  check(!!findByExactText(d,"Hast du einen bevorzugten Trainingssplit?"), "Split-Präferenz-Sheet ist geöffnet");
+  click(choiceBtn(d,"PPL"), win); await flush(dom);
+  click(subSheetFinishBtn(d), win); await flush(dom);
+
+  clickByText(d,"Trainingseinstellungen"); await flush(dom);
+  check(!!findByExactText(d,"Trainingseinstellungen","div"), "Trainingseinstellungen-Sheet ist geöffnet");
+  click(choiceBtn(d,"LONG"), win); await flush(dom);
+  click(choiceBtn(d,"YES"), win); await flush(dom);
+  click(subSheetFinishBtn(d), win); await flush(dom);
+
+  console.log("\n--- 11. Abschluss ---");
+  click(weiterBtn(d), win); await flush(dom);
+
+  console.log("\n--- 12. Nach Abschluss: Profil-Zusammenfassung + Persistenz ---");
+  check(!d.querySelector(".sheet")&&!findByExactText(d,"Noch etwas Feintuning?"), "Onboarding-Flow ist geschlossen");
   check(!!findByExactText(d,"Trainingsprofil"), "Profil-Zusammenfassungskarte wird angezeigt");
   check(!findByExactText(d,"Trainingsprofil einrichten"), "CTA-Karte verschwindet, sobald das Profil vollständig ist");
 
@@ -151,7 +168,7 @@ async function main(){
   check(profile.goal==="HYPERTROPHY","goal korrekt persistiert");
   check(profile.experience_self==="SOME","experience_self korrekt persistiert");
   check(profile.training_days_per_week===6,"training_days_per_week korrekt persistiert (6)");
-  check(profile.session_time_budget_min===50,"session_time_budget_min korrekt persistiert (50)");
+  check(profile.session_time_budget_min===45,"session_time_budget_min korrekt persistiert (45)");
   check(profile.bodyweight_kg===82,"bodyweight_kg korrekt persistiert (82)");
   check(JSON.stringify(profile.priority_muscles)===JSON.stringify(["CHEST","LATS"]),"priority_muscles korrekt persistiert (max. 2)");
   check(profile.preferred_split==="PPL","preferred_split korrekt persistiert");
@@ -180,33 +197,37 @@ async function main(){
 
   check(!!findByExactText(d,"Aktivitäten","div"), "'Aktivitäten'-Sektion weiterhin unverändert vorhanden (Regression)");
 
-  console.log("\n--- 11. Bearbeiten: bestehendes Profil wird korrekt vorausgefüllt, experience_level/skill bleiben unverändert ---");
+  console.log("\n--- 13. Zurück-Navigation zwischen Schritten funktioniert ---");
   clickByText(d,"Bearbeiten"); await flush(dom);
-  check(isOn(findByExactText(d,"Muskelaufbau","button")), "Schritt 'Trainingsziel' zeigt den gespeicherten Wert vorausgewählt");
-  clickByText(d,"Weiter"); await flush(dom);
-  check(isOn(findByExactText(d,"Etwas Erfahrung (6–24 Monate)","button")), "Schritt 'Erfahrung' zeigt den gespeicherten Wert vorausgewählt");
-  clickByText(d,"Weiter"); await flush(dom);
-  check(stepperValueContainer(d,"Tage/Woche").textContent.trim().indexOf("6")===0, "Schritt 'Trainingstage' zeigt den gespeicherten Wert (6) vorausgefüllt");
-  stepperButton(d,"−").dispatchEvent(new win.MouseEvent("click",{bubbles:true})); await flush(dom);
-  check(stepperValueContainer(d,"Tage/Woche").textContent.trim().indexOf("5")===0, "Trainingstage auf 5 reduziert");
-  clickByText(d,"Weiter"); await flush(dom);
-  clickByText(d,"Weiter"); await flush(dom); // Zeitbudget unveraendert
-  check(!!findByExactText(d,"Trainingsort")||true, "Schritt 'Trainingsort' erreicht");
+  check(!!findByExactText(d,"Was ist dein Trainingsziel?"), "Bearbeiten öffnet den Flow wieder bei Schritt 1");
+  check(isOn(choiceBtn(d,"HYPERTROPHY")), "Schritt 'Trainingsziel' zeigt den gespeicherten Wert vorausgewählt");
+  click(weiterBtn(d), win); await flush(dom);
+  check(!!findByExactText(d,"Wie viel Trainingserfahrung hast du?"), "Vorwärts zu Schritt 'Erfahrung' navigiert");
+  const backBtn=[...d.querySelectorAll("button")].find(b=>b.textContent.trim()==="‹");
+  click(backBtn, win); await flush(dom);
+  check(!!findByExactText(d,"Was ist dein Trainingsziel?"), "Zurück-Chevron navigiert eine Schritt zurück zu 'Trainingsziel'");
+  click(weiterBtn(d), win); await flush(dom);
+  check(isOn(choiceBtn(d,"SOME")), "Schritt 'Erfahrung' zeigt weiterhin den gespeicherten Wert vorausgewählt");
+
+  console.log("\n--- 14. Bearbeiten: Werte bleiben vorausgefüllt, experience_level/skill bleiben unverändert ---");
+  click(weiterBtn(d), win); await flush(dom); // Erfahrung -> Trainingstage
+  check(isOn(choiceBtn(d,"6")), "Schritt 'Trainingstage' zeigt den gespeicherten Wert (6) vorausgefüllt");
+  click(choiceBtn(d,"5"), win); await flush(dom); // Trainingstage 6 -> 5
+  click(weiterBtn(d), win); await flush(dom); // -> Zeitbudget
+  check(isOn(choiceBtn(d,"45")), "Zeitbudget-Preset bleibt vorausgewählt");
+  click(weiterBtn(d), win); await flush(dom); // -> Trainingsort
   check(d.querySelector('input[type="text"]').value==="Zuhause", "Ortsname vorausgefüllt");
-  check(isOn(findByExactText(d,"Home-Gym","button")), "Ort-Typ vorausgefüllt");
-  clickByText(d,"Weiter"); await flush(dom);
-  check(chipOn(findByExactText(d,"Langhantel + Scheiben","button")), "zuvor gewähltes Equipment-Preset bleibt vorausgewählt");
-  check(chipOn(findByExactText(d,"Kurzhanteln","button")), "zweites Equipment-Preset bleibt vorausgewählt");
-  clickByText(d,"Weiter"); await flush(dom);
+  check(isOn(choiceBtn(d,"HOME_GYM")), "Ort-Typ vorausgefüllt");
+  click(weiterBtn(d), win); await flush(dom); // -> Equipment
+  check(isOn(chipBtn(d,"eqdef_barbell_plates"))&&isOn(chipBtn(d,"eqdef_dumbbells")), "beide Equipment-Presets bleiben vorausgewählt");
+  click(weiterBtn(d), win); await flush(dom); // -> Koerpergewicht
   check(d.querySelector('input[inputmode="decimal"]').value==="82", "Körpergewicht vorausgefüllt");
   setNativeInputValue(d.querySelector('input[inputmode="decimal"]'), "83");
   await flush(dom);
-  clickByText(d,"Weiter"); await flush(dom);
-  check(chipOn(findByExactText(d,"Brust","button"))&&chipOn(findByExactText(d,"Latissimus","button")), "Prioritätsmuskeln bleiben vorausgewählt");
-  check(isOn(findByExactText(d,"Push / Pull / Legs","button")), "Split-Präferenz bleibt vorausgewählt");
-  check(isOn(findByExactText(d,"Lang","button")), "Pausenlänge bleibt vorausgewählt");
-  check(isOn(findByExactText(d,"Ja (RIR-Wert)","button")), "uses_rir bleibt vorausgewählt");
-  clickByText(d,"Fertig"); await flush(dom);
+  click(weiterBtn(d), win); await flush(dom); // -> Optional
+  check(!!findByExactText(d,"Brust, Latissimus"), "Fokus-Zusammenfassung bleibt erhalten");
+  check(!!findByExactText(d,"Push / Pull / Legs"), "Split-Präferenz-Zusammenfassung bleibt erhalten");
+  click(weiterBtn(d), win); await flush(dom);
 
   profile = readJson(win,"tracker_training_profile");
   check(profile.training_days_per_week===5,"training_days_per_week nach Bearbeitung = 5");
@@ -216,31 +237,31 @@ async function main(){
   const bwEventsAfterEdit = readJson(win,"tracker_training_bodyweight_events")||[];
   check(bwEventsAfterEdit.length===2,"ein neues BodyweightEvent wurde angehängt, weil sich der Wert geändert hat (append-only, kein Duplikat)");
 
-  console.log("\n--- 12. Split-Präferenz separat änderbar (ohne vollen Onboarding-Flow) ---");
+  console.log("\n--- 15. Split-Präferenz separat änderbar (ohne vollen Onboarding-Flow) ---");
   check([...d.querySelectorAll("span")].some(e=>e.textContent.indexOf("Push / Pull / Legs")!==-1), "Zusammenfassung zeigt aktuelle Split-Präferenz");
   clickByText(d,"Split-Präferenz"); await flush(dom);
-  check(!!findByExactText(d,"Split-Präferenz","div"), "Split-Präferenz-Sheet ist geöffnet");
-  check(isOn(findByExactText(d,"Push / Pull / Legs","button")), "aktuell gespeicherte Präferenz ist vorausgewählt");
-  clickByText(d,"Automatisch"); await flush(dom);
+  check(!!findByExactText(d,"Hast du einen bevorzugten Trainingssplit?"), "Split-Präferenz-Sheet ist geöffnet");
+  check(isOn(choiceBtn(d,"PPL")), "aktuell gespeicherte Präferenz ist vorausgewählt");
+  click(choiceBtn(d,"AUTOMATIC"), win); await flush(dom);
   clickByText(d,"Speichern"); await flush(dom);
   profile = readJson(win,"tracker_training_profile");
   check(profile.preferred_split===null,"preferred_split wurde auf null (Automatisch) gesetzt");
   check([...d.querySelectorAll("span")].some(e=>e.textContent.indexOf("Automatisch")!==-1), "Zusammenfassung zeigt jetzt 'Automatisch'");
 
-  console.log("\n--- 13. Wechsel zu BODYWEIGHT_ONLY: kein Equipment wird erfunden (§1.4-Guard) ---");
+  console.log("\n--- 16. Wechsel zu BODYWEIGHT_ONLY: kein Equipment wird erfunden (§1.4-Guard) ---");
   clickByText(d,"Bearbeiten"); await flush(dom);
-  clickByText(d,"Weiter"); await flush(dom); // Ziel -> Erfahrung
-  clickByText(d,"Weiter"); await flush(dom); // Erfahrung -> Trainingstage
-  clickByText(d,"Weiter"); await flush(dom); // Trainingstage -> Zeitbudget
-  clickByText(d,"Weiter"); await flush(dom); // Zeitbudget -> Trainingsort
-  check(!!findByExactText(d,"Trainingsort"), "Schritt 'Trainingsort' erreicht");
-  clickByText(d,"Nur Körpergewicht"); await flush(dom);
-  clickByText(d,"Weiter"); await flush(dom);
-  check(!findByExactText(d,"Langhantel + Scheiben"), "Equipment-Presets werden für BODYWEIGHT_ONLY gar nicht erst angeboten");
-  check(!!findByExactText(d,"Weiter","button")&&findByExactText(d,"Weiter","button").disabled===false, "'Weiter' ist für BODYWEIGHT_ONLY sofort aktiv (equipment_profile_confirmed automatisch)");
-  clickByText(d,"Weiter"); await flush(dom); // Koerpergewicht (bereits vorausgefuellt)
-  clickByText(d,"Weiter"); await flush(dom); // Optional
-  clickByText(d,"Fertig"); await flush(dom);
+  click(weiterBtn(d), win); await flush(dom); // Ziel -> Erfahrung
+  click(weiterBtn(d), win); await flush(dom); // Erfahrung -> Trainingstage
+  click(weiterBtn(d), win); await flush(dom); // Trainingstage -> Zeitbudget
+  click(weiterBtn(d), win); await flush(dom); // Zeitbudget -> Trainingsort
+  check(!!findByExactText(d,"Wo trainierst du meistens?"), "Schritt 'Trainingsort' erreicht");
+  click(choiceBtn(d,"BODYWEIGHT_ONLY"), win); await flush(dom);
+  click(weiterBtn(d), win); await flush(dom);
+  check(!chipBtn(d,"eqdef_barbell_plates"), "Equipment-Presets werden für BODYWEIGHT_ONLY gar nicht erst angeboten");
+  check(weiterBtn(d).disabled===false, "'Weiter' ist für BODYWEIGHT_ONLY sofort aktiv (equipment_profile_confirmed automatisch)");
+  click(weiterBtn(d), win); await flush(dom); // Koerpergewicht (bereits vorausgefuellt)
+  click(weiterBtn(d), win); await flush(dom); // Optional
+  click(weiterBtn(d), win); await flush(dom);
 
   const locationsAfterBW = readJson(win,"tracker_training_locations")||[];
   const locAfterBW = locationsAfterBW.find(l=>l.id===location.id);
