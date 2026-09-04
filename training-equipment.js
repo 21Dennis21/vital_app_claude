@@ -55,12 +55,20 @@
      F1 (OR-of-AND EquipmentSetup-Satisfiability) ist hier gebaut. F2-F11
      brauchen Slot-Function/Session-State/Historie, die dieses Pack nicht
      einfuehrt.
-   - Bindungswahl-Reihenfolge (§6.2, 6 Regeln): nur Regel 6 (lexikografischer
-     Tie-Break) ist ohne Prescription/Progression/Historie ueberhaupt
-     bestimmbar und wird hier implementiert (resolveDeterministicBinding).
-     Regeln 1-5 (persistierte Bindung, Progressionspfad, Laststufung-
-     Feinheit, Setup-/Transition-Kosten, eigene Historie) benoetigen Engines,
-     die dieses Pack nicht baut — siehe Kommentar an resolveDeterministicBinding.
+   - Bindungswahl-Reihenfolge (§6.2, 6 Regeln, KORRIGIERT): alle 6 Regeln
+     sind jetzt als reiner deterministischer Comparator implementiert
+     (resolveDeterministicBinding). Regeln 1-5 (persistierte Bindung,
+     Progressionspfad, Laststufung-Feinheit, Setup-/Transition-Kosten,
+     eigene Historie) benoetigen Informationen aus Engines, die dieses Pack
+     nicht baut (Plan-/Progression-/Session-/Historie-Engine) — diese
+     Informationen werden NICHT erfunden, sondern als explizite, optionale
+     `options`-Annotationen konsumiert; fehlt eine Annotation, wird die
+     jeweilige Regel uebersprungen. Regel 6 (lexikografisch) laeuft
+     NIEMALS automatisch, sondern nur mit explizitem
+     `options.allowLexicographicFallback=true`; ohne dieses Flag liefert
+     die Funktion bei verbleibender Mehrdeutigkeit ein strukturiertes
+     NEEDS_INPUT-Ergebnis statt einer falschen Produktionsauswahl — siehe
+     Kommentar an resolveDeterministicBinding.
    - Vollstaendige §11.8 Migration-Tier-KONSEQUENZEN (Calibration/Performance/
      Progression-Spalten) — nur die Tier-KLASSIFIKATION selbst.
    - Support-State-BERECHNUNG aus einem echten Plan (braucht Slot Generation/
@@ -95,46 +103,68 @@ function definitionOf(view,instance){
 function instanceHasCapability(instance,namespace,value){
   return (instance.capability_values||[]).some(cp=>cp.namespace===namespace&&cp.value===value);
 }
-function hasPresentSubtype(view,subtypes,familyFilter){
-  return presentEquipmentInstances(view).some(i=>{
+/* KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit, Abschnitt 1):
+   resolveSetupPredicate() lieferte zuvor nur ein satisfied-Boolean.
+   §29.4 verlangt aber fuer DUMBBELL_SINGLE/DUMBBELL_PAIR/
+   DUMBBELL_SINGLE_OR_PAIR/KETTLEBELL_SINGLE/KETTLEBELL_PAIR "ein konkretes
+   diskretes LoadProfile in der ANGEGEBENEN STUECKZAHL" — SINGLE und PAIR
+   duerfen NICHT identisch satisfiable sein, und `ResolvedSetupBinding.
+   equipment_instance_ids[]` muss die tatsaechlich verwendeten Ressourcen
+   enthalten. Jede match*-Funktion liefert daher jetzt die KONKRETEN
+   matchenden EquipmentInstances (nicht nur ein Boolean), damit
+   resolveSetupPredicate() sowohl korrekt pruefen als auch die tatsaechlich
+   gebundenen Instanzen zurueckgeben kann. */
+function matchSubtype(view,subtypes,familyFilter){
+  return presentEquipmentInstances(view).filter(i=>{
     const d=definitionOf(view,i);
     if(!d)return false;
     if(familyFilter&&d.family!==familyFilter)return false;
     return subtypes.indexOf(d.subtype)!==-1;
   });
 }
-function hasPresentSubtypeWithLoadProfile(view,subtypes,familyFilter){
-  return presentEquipmentInstances(view).some(i=>{
-    const d=definitionOf(view,i);
-    if(!d)return false;
-    if(familyFilter&&d.family!==familyFilter)return false;
-    return subtypes.indexOf(d.subtype)!==-1&&i.load_profile_version_id!=null;
-  });
+function matchSubtypeWithLoadProfile(view,subtypes,familyFilter){
+  return matchSubtype(view,subtypes,familyFilter).filter(i=>i.load_profile_version_id!=null);
 }
-function hasPresentCapability(view,namespace,values,familyFilter){
-  return presentEquipmentInstances(view).some(i=>{
+function matchCapability(view,namespace,values,familyFilter){
+  return presentEquipmentInstances(view).filter(i=>{
     const d=definitionOf(view,i);
     if(familyFilter&&(!d||d.family!==familyFilter))return false;
     return values.some(v=>instanceHasCapability(i,namespace,v));
   });
 }
-function hasPresentMachineFunctionalSubtype(view,machineFunctionalSubtype){
-  return presentEquipmentInstances(view).some(i=>{
+function matchMachineFunctionalSubtype(view,machineFunctionalSubtype){
+  return presentEquipmentInstances(view).filter(i=>{
     const d=definitionOf(view,i);
     return d&&(d.family==="SELECTORIZED_MACHINE"||d.family==="PLATE_LOADED_MACHINE")
       &&d.machine_functional_subtype===machineFunctionalSubtype&&i.load_profile_version_id!=null;
   });
 }
+function sortById(instances){return instances.slice().sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);}
+function sortedIds(instances){return sortById(instances).map(i=>i.id);}
+/* Deterministisches, generisches "genau einen Treffer waehlen"-Ergebnis
+   (lexikografisch kleinste id) fuer alle einfachen Presence-/Capability-
+   Praedikate, die genau EINE Ressource brauchen. */
+function resultFromMatches(matches){
+  if(!matches.length)return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(matches)[0].id],attachmentInstanceIds:[]};
+}
+
 /* Attachment-Shorthands: "Jeder Treffer benoetigt eine PRESENT
    AttachmentInstance ODER eine integrierte identische Capability" — daher
    wird sowohl die separate AttachmentInstance-Liste als auch
    capability_values der Haupt-EquipmentInstance selbst geprueft (z.B. eine
    Cable-Maschine mit integriertem Rope-Attachment ohne separate
-   AttachmentInstance). */
-function hasCableAttachment(view,values){
-  const attachmentHit=presentAttachmentInstances(view).some(a=>values.some(v=>instanceHasCapability(a,"CABLE_ATTACHMENT",v)));
-  if(attachmentHit)return true;
-  return presentEquipmentInstances(view).some(i=>values.some(v=>instanceHasCapability(i,"CABLE_ATTACHMENT",v)));
+   AttachmentInstance). Separate AttachmentInstance hat Vorrang (deterministisch). */
+function resolveCableAttachment(view,values){
+  const attachments=presentAttachmentInstances(view).filter(a=>values.some(v=>instanceHasCapability(a,"CABLE_ATTACHMENT",v)));
+  if(attachments.length){
+    return {resolvable:true,satisfied:true,equipmentInstanceIds:[],attachmentInstanceIds:[sortById(attachments)[0].id]};
+  }
+  const integrated=presentEquipmentInstances(view).filter(i=>values.some(v=>instanceHasCapability(i,"CABLE_ATTACHMENT",v)));
+  if(integrated.length){
+    return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(integrated)[0].id],attachmentInstanceIds:[]};
+  }
+  return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
 }
 const CABLE_ATTACHMENT_SHORTHAND_MAP=Object.freeze({
   ATTACHMENT_SINGLE_HANDLE:Object.freeze(["SINGLE_D_HANDLE"]),
@@ -148,34 +178,53 @@ const CABLE_ATTACHMENT_SHORTHAND_MAP=Object.freeze({
 /* BARBELL_LOADABLE/EZ_BAR_LOADABLE/TRAP_BAR_LOADABLE: "passende Bar +
    LoadProfile/Plates" — gelesen als (passende Bar-Instanz PRESENT mit
    eigenem LoadProfile) ODER (passende Bar-Instanz PRESENT UND zusaetzlich
-   PLATES PRESENT). BARBELL_LOADABLE deckt bewusst NUR die beiden "einfachen"
-   Barbell-Subtypes (OLYMPIC_BARBELL/STANDARD_BARBELL) ab: SAFETY_SQUAT_BAR
-   und SWISS_MULTI_GRIP_BAR erhalten in §29.4 KEIN eigenes benanntes
-   Shorthand, werden hier deshalb NICHT stillschweigend mit BARBELL_LOADABLE
+   PLATES PRESENT — dann sind BEIDE Ressourcen tatsaechlich gebunden).
+   BARBELL_LOADABLE deckt bewusst NUR die beiden "einfachen" Barbell-
+   Subtypes (OLYMPIC_BARBELL/STANDARD_BARBELL) ab: SAFETY_SQUAT_BAR und
+   SWISS_MULTI_GRIP_BAR erhalten in §29.4 KEIN eigenes benanntes Shorthand,
+   werden hier deshalb NICHT stillschweigend mit BARBELL_LOADABLE
    gleichgesetzt (G-D3) und bleiben nur ueber ihre eigene exakte
    Subtype-Presence adressierbar. */
-function barOrPlatesSatisfied(view,subtypes){
-  const barPresent=presentEquipmentInstances(view).some(i=>{
-    const d=definitionOf(view,i);
-    return d&&d.family==="FREE_WEIGHT"&&subtypes.indexOf(d.subtype)!==-1;
-  });
-  if(!barPresent)return false;
-  const barHasOwnLoadProfile=presentEquipmentInstances(view).some(i=>{
-    const d=definitionOf(view,i);
-    return d&&d.family==="FREE_WEIGHT"&&subtypes.indexOf(d.subtype)!==-1&&i.load_profile_version_id!=null;
-  });
-  return barHasOwnLoadProfile||hasPresentSubtype(view,["PLATES"],"FREE_WEIGHT");
+function resolveBarOrPlates(view,subtypes){
+  const bars=matchSubtype(view,subtypes,"FREE_WEIGHT");
+  if(!bars.length)return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  const barsWithProfile=matchSubtypeWithLoadProfile(view,subtypes,"FREE_WEIGHT");
+  if(barsWithProfile.length){
+    return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(barsWithProfile)[0].id],attachmentInstanceIds:[]};
+  }
+  const plates=matchSubtype(view,["PLATES"],"FREE_WEIGHT");
+  if(plates.length){
+    const ids=[sortById(bars)[0].id,sortById(plates)[0].id].sort();
+    return {resolvable:true,satisfied:true,equipmentInstanceIds:ids,attachmentInstanceIds:[]};
+  }
+  return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
 }
-/* Der Katalog nutzt DUMBBELL_SINGLE/DUMBBELL_PAIR/DUMBBELL_SINGLE_OR_PAIR
-   (bzw. KETTLEBELL_SINGLE/KETTLEBELL_PAIR) rein qualitativ ("gibt es
-   Kurzhanteln/Kettlebells mit Laststufung hier"): dieses Pack fuehrt kein
-   Stueckzahl-Inventarmodell ein (wie viele Paare welchen Gewichts im Rack
-   stehen ist keine hier normativ gegebene Groesse) — alle drei Shorthands
-   loesen daher strukturell identisch auf: mindestens eine PRESENT
-   Dumbbell-/Kettlebell-Instanz mit aktivem LoadProfile. Eine erfundene
-   Stueckzahl-Zaehlung waere eine nicht gestuetzte Ergaenzung (G-D3). */
 const DUMBBELL_SUBTYPES=Object.freeze(["FIXED_DUMBBELL","ADJUSTABLE_DUMBBELL","LOADABLE_DUMBBELL"]);
 const KETTLEBELL_SUBTYPES=Object.freeze(["KETTLEBELL"]);
+/* §29.4: "ein konkretes diskretes LoadProfile in der ANGEGEBENEN
+   STUECKZAHL". Zwei EquipmentInstances gelten hier als "kompatible
+   Ressourcen" fuer eine PAIR-Anforderung, wenn sie DIESELBE
+   equipment_definition_version_id teilen (die bereits bestehende
+   Identitaets-Dimension des Datenmodells — keine neu erfundene
+   Kompatibilitaets-Heuristik). Waehlt deterministisch die lexikografisch
+   kleinste definition_version_id-Gruppe, die die geforderte Mindestanzahl
+   `count` erreicht, und daraus die `count` lexikografisch kleinsten
+   Instanz-IDs. Liefert null, wenn KEINE Gruppe `count` Mitglieder hat —
+   eine einzelne reale EquipmentInstance kann damit strukturell NIE eine
+   PAIR-Anforderung (count=2) erfuellen. */
+function selectCompatibleQuantityGroup(view,subtypes,familyFilter,count){
+  const matching=matchSubtypeWithLoadProfile(view,subtypes,familyFilter);
+  const groups={};
+  matching.forEach(i=>{(groups[i.equipment_definition_version_id]=groups[i.equipment_definition_version_id]||[]).push(i);});
+  const eligibleDefIds=Object.keys(groups).filter(defId=>groups[defId].length>=count).sort();
+  if(!eligibleDefIds.length)return null;
+  return sortById(groups[eligibleDefIds[0]]).slice(0,count);
+}
+function resolveDiscreteQuantityPredicate(view,subtypes,count){
+  const chosen=selectCompatibleQuantityGroup(view,subtypes,"FREE_WEIGHT",count);
+  if(!chosen)return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+  return {resolvable:true,satisfied:true,equipmentInstanceIds:chosen.map(i=>i.id).sort(),attachmentInstanceIds:[]};
+}
 
 /* Rueckwaertsindex: jeder als §29.1-Subtype registrierte Wert (ueber alle
    Familien) ist per se ein gueltiges Presence-Predicate (§29.4, erster
@@ -191,74 +240,90 @@ function allRegisteredSubtypes(){
   return out;
 }
 
-/* resolveSetupPredicate(tag, view) -> {resolvable:bool, satisfied:bool}
-   `resolvable=false` bedeutet: der Tag entspricht KEINEM in §29.4 benannten
-   Shorthand und KEINEM registrierten §29.1-Subtype — ein solcher Tag kann
-   durch KEINE denkbare Inventur jemals erfuellt werden (Catalog-Lint #16:
-   "no impossible EquipmentSetup branch"). */
+/* resolveSetupPredicate(tag, view) -> {resolvable, satisfied,
+   equipmentInstanceIds[], attachmentInstanceIds[]}. `resolvable=false`
+   bedeutet: der Tag entspricht KEINEM in §29.4 benannten Shorthand und
+   KEINEM registrierten §29.1-Subtype — ein solcher Tag kann durch KEINE
+   denkbare Inventur jemals erfuellt werden (Catalog-Lint #16: "no
+   impossible EquipmentSetup branch"). Bei satisfied=true enthalten
+   equipmentInstanceIds/attachmentInstanceIds die TATSAECHLICH zur
+   Erfuellung herangezogenen, konkreten Ressourcen (deterministisch
+   lexikografisch gewaehlt) — nie eine abstrakte Family. */
 function resolveSetupPredicate(tag,view){
   const machineMatch=/^MACHINE\(([A-Z0-9_]+)\)$/.exec(tag);
   if(machineMatch){
     const subtype=machineMatch[1];
-    if(MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY.indexOf(subtype)===-1)return {resolvable:false,satisfied:false};
-    return {resolvable:true,satisfied:hasPresentMachineFunctionalSubtype(view,subtype)};
+    if(MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY.indexOf(subtype)===-1)return {resolvable:false,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+    return resultFromMatches(matchMachineFunctionalSubtype(view,subtype));
   }
   if(CABLE_ATTACHMENT_SHORTHAND_MAP[tag]){
-    return {resolvable:true,satisfied:hasCableAttachment(view,CABLE_ATTACHMENT_SHORTHAND_MAP[tag])};
+    return resolveCableAttachment(view,CABLE_ATTACHMENT_SHORTHAND_MAP[tag]);
   }
   switch(tag){
-    case "BARBELL_LOADABLE": return {resolvable:true,satisfied:barOrPlatesSatisfied(view,["OLYMPIC_BARBELL","STANDARD_BARBELL"])};
-    case "EZ_BAR_LOADABLE": return {resolvable:true,satisfied:barOrPlatesSatisfied(view,["EZ_CURL_BAR"])};
-    case "TRAP_BAR_LOADABLE": return {resolvable:true,satisfied:barOrPlatesSatisfied(view,["TRAP_BAR"])};
-    case "DUMBBELL_SINGLE": case "DUMBBELL_PAIR": case "DUMBBELL_SINGLE_OR_PAIR":
-      return {resolvable:true,satisfied:hasPresentSubtypeWithLoadProfile(view,DUMBBELL_SUBTYPES,"FREE_WEIGHT")};
-    case "KETTLEBELL_SINGLE": case "KETTLEBELL_PAIR":
-      return {resolvable:true,satisfied:hasPresentSubtypeWithLoadProfile(view,KETTLEBELL_SUBTYPES,"FREE_WEIGHT")};
-    case "BENCH_FLAT": return {resolvable:true,satisfied:hasPresentCapability(view,"BENCH",["FLAT"],"SUPPORT")};
-    case "BENCH_INCLINE": return {resolvable:true,satisfied:hasPresentCapability(view,"BENCH",["INCLINE_ADJUSTABLE"],"SUPPORT")};
-    case "BENCH_BACK_SUPPORT": return {resolvable:true,satisfied:hasPresentCapability(view,"SUPPORT",["BACK_SUPPORTED"],"SUPPORT")};
-    case "BENCH_OR_BOX": return {resolvable:true,satisfied:hasPresentSubtype(view,["FLAT_BENCH","ADJUSTABLE_BENCH","BOX_STEP"],"SUPPORT")};
-    case "PREACHER_BENCH": return {resolvable:true,satisfied:hasPresentSubtype(view,["PREACHER_BENCH"],"SUPPORT")};
-    case "ROMAN_CHAIR": return {resolvable:true,satisfied:hasPresentSubtype(view,["ROMAN_CHAIR"],"SUPPORT")};
-    case "GHD": return {resolvable:true,satisfied:hasPresentSubtype(view,["GHD"],"SUPPORT")};
-    case "BOX_STEP": return {resolvable:true,satisfied:hasPresentSubtype(view,["BOX_STEP"],"SUPPORT")};
-    case "FIXED_SUPPORT": return {resolvable:true,satisfied:hasPresentSubtype(view,["FIXED_SUPPORT"],"SUPPORT")};
-    case "RACK_SQUAT_HEIGHT": return {resolvable:true,satisfied:hasPresentCapability(view,"RACK",["SQUAT_HEIGHT"],"RACK_STATION")};
-    case "RACK_BENCH_HEIGHT": return {resolvable:true,satisfied:hasPresentCapability(view,"RACK",["BENCH_HEIGHT"],"RACK_STATION")};
-    case "RACK_BAR_ROW_HEIGHT": return {resolvable:true,satisfied:hasPresentCapability(view,"RACK",["ROW_HEIGHT"],"RACK_STATION")};
-    case "CABLE_HIGH": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["HIGH"],"CABLE")};
-    case "CABLE_MID": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["MID"],"CABLE")};
-    case "CABLE_LOW": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["LOW"],"CABLE")};
-    case "CABLE_LOW_OR_MID": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["LOW","MID"],"CABLE")};
-    case "CABLE_HIGH_OR_MID": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["HIGH","MID"],"CABLE")};
-    case "CABLE_HEIGHT_ADJUSTABLE": return {resolvable:true,satisfied:hasPresentCapability(view,"PULLEY_POSITION",["HEIGHT_ADJUSTABLE"],"CABLE")};
-    case "DUAL_CABLE_OR_CROSSOVER": return {resolvable:true,satisfied:hasPresentSubtype(view,["DUAL_ADJUSTABLE_PULLEY","CABLE_CROSSOVER","FUNCTIONAL_TRAINER"],"CABLE")};
+    case "BARBELL_LOADABLE": return resolveBarOrPlates(view,["OLYMPIC_BARBELL","STANDARD_BARBELL"]);
+    case "EZ_BAR_LOADABLE": return resolveBarOrPlates(view,["EZ_CURL_BAR"]);
+    case "TRAP_BAR_LOADABLE": return resolveBarOrPlates(view,["TRAP_BAR"]);
+    case "DUMBBELL_SINGLE": case "DUMBBELL_SINGLE_OR_PAIR":
+      /* SINGLE_OR_PAIR: die Mindestanforderung fuer JEDE Instantiierung
+         (einhaendig ODER beidhaendig) ist 1 Stueck — genau wie SINGLE. */
+      return resolveDiscreteQuantityPredicate(view,DUMBBELL_SUBTYPES,1);
+    case "DUMBBELL_PAIR": return resolveDiscreteQuantityPredicate(view,DUMBBELL_SUBTYPES,2);
+    case "KETTLEBELL_SINGLE": return resolveDiscreteQuantityPredicate(view,KETTLEBELL_SUBTYPES,1);
+    case "KETTLEBELL_PAIR": return resolveDiscreteQuantityPredicate(view,KETTLEBELL_SUBTYPES,2);
+    case "BENCH_FLAT": return resultFromMatches(matchCapability(view,"BENCH",["FLAT"],"SUPPORT"));
+    case "BENCH_INCLINE": return resultFromMatches(matchCapability(view,"BENCH",["INCLINE_ADJUSTABLE"],"SUPPORT"));
+    case "BENCH_BACK_SUPPORT": return resultFromMatches(matchCapability(view,"SUPPORT",["BACK_SUPPORTED"],"SUPPORT"));
+    case "BENCH_OR_BOX": return resultFromMatches(matchSubtype(view,["FLAT_BENCH","ADJUSTABLE_BENCH","BOX_STEP"],"SUPPORT"));
+    case "PREACHER_BENCH": return resultFromMatches(matchSubtype(view,["PREACHER_BENCH"],"SUPPORT"));
+    case "ROMAN_CHAIR": return resultFromMatches(matchSubtype(view,["ROMAN_CHAIR"],"SUPPORT"));
+    case "GHD": return resultFromMatches(matchSubtype(view,["GHD"],"SUPPORT"));
+    case "BOX_STEP": return resultFromMatches(matchSubtype(view,["BOX_STEP"],"SUPPORT"));
+    case "FIXED_SUPPORT": return resultFromMatches(matchSubtype(view,["FIXED_SUPPORT"],"SUPPORT"));
+    case "RACK_SQUAT_HEIGHT": return resultFromMatches(matchCapability(view,"RACK",["SQUAT_HEIGHT"],"RACK_STATION"));
+    case "RACK_BENCH_HEIGHT": return resultFromMatches(matchCapability(view,"RACK",["BENCH_HEIGHT"],"RACK_STATION"));
+    case "RACK_BAR_ROW_HEIGHT": return resultFromMatches(matchCapability(view,"RACK",["ROW_HEIGHT"],"RACK_STATION"));
+    case "CABLE_HIGH": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["HIGH"],"CABLE"));
+    case "CABLE_MID": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["MID"],"CABLE"));
+    case "CABLE_LOW": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["LOW"],"CABLE"));
+    case "CABLE_LOW_OR_MID": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["LOW","MID"],"CABLE"));
+    case "CABLE_HIGH_OR_MID": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["HIGH","MID"],"CABLE"));
+    case "CABLE_HEIGHT_ADJUSTABLE": return resultFromMatches(matchCapability(view,"PULLEY_POSITION",["HEIGHT_ADJUSTABLE"],"CABLE"));
+    case "DUAL_CABLE_OR_CROSSOVER": return resultFromMatches(matchSubtype(view,["DUAL_ADJUSTABLE_PULLEY","CABLE_CROSSOVER","FUNCTIONAL_TRAINER"],"CABLE"));
     case "BODYWEIGHT":
       /* Repraesentiert "der eigene Koerper", keine Equipment-Inventur
          noetig — kein §29.1-Subtype, sondern die einzige Ausnahme, bei der
          die Praesenz per Definition immer gegeben ist. Explizit NICHT mit
          FLOOR/WALK_SPACE verwechselt (die physische Flaeche verlangen und
          PRESENT-gepflegt sein muessen). */
-      return {resolvable:true,satisfied:true};
-    case "FLOOR": return {resolvable:true,satisfied:hasPresentSubtype(view,["FLOOR"],"BODYWEIGHT")};
-    case "PULLUP_BAR": return {resolvable:true,satisfied:hasPresentSubtype(view,["PULLUP_BAR"],"BODYWEIGHT")};
-    case "DIP_STATION": return {resolvable:true,satisfied:hasPresentSubtype(view,["DIP_STATION"],"BODYWEIGHT")};
-    case "RINGS": return {resolvable:true,satisfied:hasPresentSubtype(view,["RINGS"],"BODYWEIGHT")};
-    case "WALK_SPACE": return {resolvable:true,satisfied:hasPresentSubtype(view,["WALK_SPACE"],"BODYWEIGHT")};
-    case "SLIDERS": return {resolvable:true,satisfied:hasPresentSubtype(view,["SLIDERS"],"SUPPORT")};
-    case "AB_WHEEL": return {resolvable:true,satisfied:hasPresentSubtype(view,["AB_WHEEL"],"SUPPORT")};
-    case "LOWER_BODY_ANCHOR": return {resolvable:true,satisfied:hasPresentCapability(view,"SUPPORT",["LOWER_LEG_ANCHORED"],"SUPPORT")};
-    case "ANCHOR_LOW": return {resolvable:true,satisfied:hasPresentCapability(view,"ANCHOR",["LOW"])};
-    case "ANCHOR_MID": return {resolvable:true,satisfied:hasPresentCapability(view,"ANCHOR",["MID"])};
-    case "ANCHOR_HIGH": return {resolvable:true,satisfied:hasPresentCapability(view,"ANCHOR",["HIGH"])};
-    case "EXTERNAL_BODYWEIGHT_LOAD": return {resolvable:true,satisfied:hasPresentSubtype(view,["WEIGHT_VEST"],"RESISTANCE_ACCESSORY")||hasPresentSubtype(view,["PLATES"],"FREE_WEIGHT")};
-    case "DIP_BELT": return {resolvable:true,satisfied:hasPresentSubtype(view,["DIP_BELT"],"RESISTANCE_ACCESSORY")&&hasPresentSubtype(view,["PLATES"],"FREE_WEIGHT")};
+      return {resolvable:true,satisfied:true,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+    case "FLOOR": return resultFromMatches(matchSubtype(view,["FLOOR"],"BODYWEIGHT"));
+    case "PULLUP_BAR": return resultFromMatches(matchSubtype(view,["PULLUP_BAR"],"BODYWEIGHT"));
+    case "DIP_STATION": return resultFromMatches(matchSubtype(view,["DIP_STATION"],"BODYWEIGHT"));
+    case "RINGS": return resultFromMatches(matchSubtype(view,["RINGS"],"BODYWEIGHT"));
+    case "WALK_SPACE": return resultFromMatches(matchSubtype(view,["WALK_SPACE"],"BODYWEIGHT"));
+    case "SLIDERS": return resultFromMatches(matchSubtype(view,["SLIDERS"],"SUPPORT"));
+    case "AB_WHEEL": return resultFromMatches(matchSubtype(view,["AB_WHEEL"],"SUPPORT"));
+    case "LOWER_BODY_ANCHOR": return resultFromMatches(matchCapability(view,"SUPPORT",["LOWER_LEG_ANCHORED"],"SUPPORT"));
+    case "ANCHOR_LOW": return resultFromMatches(matchCapability(view,"ANCHOR",["LOW"]));
+    case "ANCHOR_MID": return resultFromMatches(matchCapability(view,"ANCHOR",["MID"]));
+    case "ANCHOR_HIGH": return resultFromMatches(matchCapability(view,"ANCHOR",["HIGH"]));
+    case "EXTERNAL_BODYWEIGHT_LOAD": {
+      const vests=matchSubtype(view,["WEIGHT_VEST"],"RESISTANCE_ACCESSORY");
+      if(vests.length)return resultFromMatches(vests);
+      return resultFromMatches(matchSubtype(view,["PLATES"],"FREE_WEIGHT"));
+    }
+    case "DIP_BELT": {
+      const belts=matchSubtype(view,["DIP_BELT"],"RESISTANCE_ACCESSORY");
+      const plates=matchSubtype(view,["PLATES"],"FREE_WEIGHT");
+      if(!belts.length||!plates.length)return {resolvable:true,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
+      return {resolvable:true,satisfied:true,equipmentInstanceIds:[sortById(belts)[0].id,sortById(plates)[0].id].sort(),attachmentInstanceIds:[]};
+    }
     default: break;
   }
   if(allRegisteredSubtypes().indexOf(tag)!==-1){
-    return {resolvable:true,satisfied:hasPresentSubtype(view,[tag])};
+    return resultFromMatches(matchSubtype(view,[tag]));
   }
-  return {resolvable:false,satisfied:false};
+  return {resolvable:false,satisfied:false,equipmentInstanceIds:[],attachmentInstanceIds:[]};
 }
 
 /* ================= EquipmentSetup OR-of-AND Satisfiability (§29.4/§6.2 F1-Kern) ================= */
@@ -282,43 +347,127 @@ function resolveEquipmentSetupSatisfiability(equipmentSetups,view){
   };
 }
 
-/* ================= Bindungswahl (§6.2, NUR Regel 6) ================= */
-/* Die volle 6-stufige Bindungswahl-Reihenfolge aus §6.2 braucht:
-   (1) persistierte Bindungen — Plan-Engine (nicht gebaut);
-   (2) "legaler Progressionspfad ohne PROGRESSION_LIMITED" — Progression-
-       Engine (nicht gebaut);
-   (3) "feinere verfuegbare Laststufung" — vergleicht resolve_steps()
-       mehrerer Kandidaten UNTER Beruecksichtigung einer Zielaufloesung, die
-       erst die Prescription-Engine kennt (nicht gebaut);
-   (4) "geringere Setup-/Transition-Kosten" — Session-/Logistik-Modell
-       (nicht gebaut);
-   (5) "vorhandene eigene Historie auf der relevanten Load-Identitaet" —
-       WorkoutLog-Historie-Aggregation (nicht gebaut).
-   Nur Regel 6 (lexikografisch exercise_setup_id, danach
-   equipment_instance_id[]) ist eine reine, kontextfreie Funktion der
-   bereits vorhandenen Daten und wird hier IMPLEMENTIERT — als bewusst
-   partieller, ehrlich dokumentierter Tie-Break fuer den Fall, dass mehrere
-   Branches gleichzeitig satisfiable sind und keine der Regeln 1-5
-   anwendbar ist (weil ihre Engines nicht existieren). */
-function resolveDeterministicBinding(equipmentSetups,view){
-  const res=resolveEquipmentSetupSatisfiability(equipmentSetups,view);
-  if(!res.satisfiable)return null;
-  const branchIndex=res.satisfiableBranchIndices[0]; // niedrigster Index = "lexikografisch erste" Branch
+/* ================= Bindungswahl (§6.2, Regeln 1-6, reiner Comparator) =================
+   KORREKTUR (STEP-06-Spec-Conformance-Nacharbeit, Abschnitt 2): die
+   vorherige Fassung wandte NUR Regel 6 an und behandelte damit jede
+   fehlende Information aus den Regeln 1-5 stillschweigend wie "gleich" —
+   das ist als finale Produktionsauswahl nicht spec-konform. §6.2 verlangt
+   exakt diese Reihenfolge:
+     1. persistierte Bindung weiterverwenden, wenn weiterhin satisfiable;
+     2. legaler Progressionspfad ohne PROGRESSION_LIMITED;
+     3. feinere verfuegbare Laststufung;
+     4. geringere Setup-/Transition-Kosten;
+     5. vorhandene eigene Historie auf der relevanten Load-Identitaet;
+     6. lexikografisch exercise_setup_id, danach equipment_instance_id[].
+   Regeln 1-5 brauchen Informationen aus Engines, die dieses Pack NICHT baut
+   (Plan-/Progression-/Session-/Historie-Engine) — dieses Pack ERFINDET
+   diese Information NICHT, sondern konsumiert sie als EXPLIZITE, optionale
+   Annotationen ueber `options`. Fehlt eine Annotation VOLLSTAENDIG, wird
+   die betroffene Regel uebersprungen (naechste Regel greift). Ist eine
+   Annotation nur fuer EINEN TEIL der verbleibenden Kandidaten vorhanden,
+   wird die Regel ebenfalls uebersprungen statt eine unfaire Teil-Anwendung
+   vorzunehmen. Regel 6 (lexikografischer Tie-Break) wird NIEMALS
+   automatisch als Ausweg genutzt: sie lauft nur, wenn der Aufrufer sie via
+   `options.allowLexicographicFallback=true` explizit als finale
+   Produktionsauswahl anfordert. Ohne dieses Flag liefert die Funktion bei
+   verbleibender Mehrdeutigkeit ein strukturiertes NEEDS_INPUT-Ergebnis
+   statt einer falschen lexikografischen Auswahl.
+   Rueckgabeformen:
+     {status:"UNSATISFIABLE",binding:null}
+     {status:"RESOLVED",resolvedByRule:1..6|null,binding:{branchIndex,branch,
+       equipmentInstanceIds[],attachmentInstanceIds[]},trace:[...]}
+     {status:"NEEDS_INPUT",binding:null,remainingCandidates:[branchIndex...],trace:[...]}
+   `options` (alle optional):
+     persistedBindingBranchIndex: number|null      // Regel 1
+     progressionLimitedByBranch: {[branchIndex]:bool}   // Regel 2 (true=PROGRESSION_LIMITED, wird nicht bevorzugt)
+     stepFinenessByBranch: {[branchIndex]:number}       // Regel 3 (kleiner=feiner=bevorzugt)
+     transitionCostByBranch: {[branchIndex]:number}     // Regel 4 (kleiner=bevorzugt)
+     ownHistoryByBranch: {[branchIndex]:bool}           // Regel 5 (true=bevorzugt)
+     exerciseSetupIdsByBranch: {[branchIndex]:string}   // Regel 6 (lexikografischer Primaerschluessel)
+     allowLexicographicFallback: bool                   // Regel 6 nur mit explizitem Opt-in */
+function materializeBinding(equipmentSetups,res,branchIndex){
   const branch=equipmentSetups[branchIndex];
-  const instanceIds=[];
-  branch.forEach(tag=>{
-    const matched=presentEquipmentInstances(view).filter(i=>{
-      const d=definitionOf(view,i);
-      if(!d)return false;
-      const r=resolveSetupPredicate(tag,view);
-      if(!r.satisfied)return false;
-      // grobe Ruecksicherung: nur Instanzen, die zu diesem konkreten Tag passen (Subtype-Praedikate)
-      return allRegisteredSubtypes().indexOf(tag)===-1||d.subtype===tag;
-    }).map(i=>i.id).sort();
-    matched.forEach(id=>{if(instanceIds.indexOf(id)===-1)instanceIds.push(id);});
+  const branchResult=res.branchResults.find(b=>b.index===branchIndex);
+  const equipmentInstanceIds=[];
+  const attachmentInstanceIds=[];
+  branchResult.results.forEach(r=>{
+    (r.equipmentInstanceIds||[]).forEach(id=>{if(equipmentInstanceIds.indexOf(id)===-1)equipmentInstanceIds.push(id);});
+    (r.attachmentInstanceIds||[]).forEach(id=>{if(attachmentInstanceIds.indexOf(id)===-1)attachmentInstanceIds.push(id);});
   });
-  instanceIds.sort();
-  return {branchIndex,branch,equipmentInstanceIds:instanceIds};
+  equipmentInstanceIds.sort();attachmentInstanceIds.sort();
+  return {branchIndex,branch,equipmentInstanceIds,attachmentInstanceIds};
+}
+function filterByAnnotatedRule(candidates,annotationByBranch,scoreFn,ruleNumber,ruleLabel,trace){
+  if(!annotationByBranch){
+    trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): keine Annotation uebergeben -> uebersprungen");
+    return candidates;
+  }
+  const allAnnotated=candidates.every(c=>annotationByBranch[c]!==undefined);
+  if(!allAnnotated){
+    trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): unvollstaendige Annotation fuer die verbleibenden Kandidaten -> uebersprungen (keine unfaire Teil-Anwendung)");
+    return candidates;
+  }
+  const scored=candidates.map(c=>({c,score:scoreFn(annotationByBranch[c])}));
+  const bestScore=Math.min.apply(null,scored.map(s=>s.score));
+  const winners=scored.filter(s=>s.score===bestScore).map(s=>s.c);
+  trace.push("Regel "+ruleNumber+" ("+ruleLabel+"): "+candidates.length+" -> "+winners.length+" Kandidaten");
+  return winners;
+}
+function resolveDeterministicBinding(equipmentSetups,view,options){
+  options=options||{};
+  const res=resolveEquipmentSetupSatisfiability(equipmentSetups,view);
+  if(!res.satisfiable)return {status:"UNSATISFIABLE",binding:null};
+  let candidates=res.satisfiableBranchIndices.slice();
+  const trace=[];
+
+  if(candidates.length===1){
+    return {status:"RESOLVED",resolvedByRule:null,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace:["genau ein satisfiable Branch — keine Auswahl noetig"]};
+  }
+
+  // Regel 1: persistierte Bindung weiterverwenden, wenn weiterhin satisfiable.
+  if(options.persistedBindingBranchIndex!=null){
+    if(candidates.indexOf(options.persistedBindingBranchIndex)!==-1){
+      trace.push("Regel 1 (persistierte Bindung): Branch "+options.persistedBindingBranchIndex+" weiterhin satisfiable -> gewaehlt");
+      return {status:"RESOLVED",resolvedByRule:1,binding:materializeBinding(equipmentSetups,res,options.persistedBindingBranchIndex),trace};
+    }
+    trace.push("Regel 1 (persistierte Bindung): Branch "+options.persistedBindingBranchIndex+" nicht mehr satisfiable -> naechste Regel");
+  }else{
+    trace.push("Regel 1 (persistierte Bindung): keine Annotation uebergeben -> uebersprungen");
+  }
+
+  // Regel 2: legaler Progressionspfad ohne PROGRESSION_LIMITED (true=limitiert, score 1 = schlechter).
+  candidates=filterByAnnotatedRule(candidates,options.progressionLimitedByBranch,v=>v?1:0,2,"kein PROGRESSION_LIMITED",trace);
+  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:2,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+
+  // Regel 3: feinere verfuegbare Laststufung (kleinerer Score = feiner = bevorzugt).
+  candidates=filterByAnnotatedRule(candidates,options.stepFinenessByBranch,v=>v,3,"feinere Laststufung",trace);
+  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:3,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+
+  // Regel 4: geringere Setup-/Transition-Kosten.
+  candidates=filterByAnnotatedRule(candidates,options.transitionCostByBranch,v=>v,4,"geringere Setup-/Transition-Kosten",trace);
+  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:4,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+
+  // Regel 5: vorhandene eigene Historie auf der relevanten Load-Identitaet (true=bevorzugt, score 0).
+  candidates=filterByAnnotatedRule(candidates,options.ownHistoryByBranch,v=>v?0:1,5,"eigene Historie vorhanden",trace);
+  if(candidates.length===1)return {status:"RESOLVED",resolvedByRule:5,binding:materializeBinding(equipmentSetups,res,candidates[0]),trace};
+
+  // Regel 6: NUR als expliziter letzter Tie-Break, niemals automatisch.
+  if(options.allowLexicographicFallback){
+    const idsByBranch=options.exerciseSetupIdsByBranch||{};
+    const sorted=candidates.slice().sort((a,b)=>{
+      const idA=idsByBranch[a],idB=idsByBranch[b];
+      if(idA!==undefined&&idB!==undefined&&idA!==idB)return idA<idB?-1:1;
+      const eqA=materializeBinding(equipmentSetups,res,a).equipmentInstanceIds.join(",");
+      const eqB=materializeBinding(equipmentSetups,res,b).equipmentInstanceIds.join(",");
+      if(eqA!==eqB)return eqA<eqB?-1:1;
+      return a-b;
+    });
+    trace.push("Regel 6 (lexikografisch): explizit angefordert (allowLexicographicFallback) -> Branch "+sorted[0]+" gewaehlt");
+    return {status:"RESOLVED",resolvedByRule:6,binding:materializeBinding(equipmentSetups,res,sorted[0]),trace};
+  }
+
+  trace.push("Regeln 1-5 lassen "+candidates.length+" Kandidaten uebrig; Regel 6 nicht angefordert (allowLexicographicFallback fehlt) -> NEEDS_INPUT statt falscher Produktionsauswahl");
+  return {status:"NEEDS_INPUT",binding:null,remainingCandidates:candidates,trace};
 }
 
 /* ================= effective_location_id (§1.4 DECISION) ================= */
