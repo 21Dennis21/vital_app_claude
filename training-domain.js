@@ -176,17 +176,38 @@ function roundTimeSpanMinutes(centerMinutes,uncertaintyPct,stepMinutes){
 }
 
 /* ================= §9.1 Load-Mechanismus / load_axis_class ================= */
+/* KORREKTUR (STEP-05-Catalog-Lint-Nacharbeit): §9.1s woertlich zitierte
+   "Load-Mechanism Registry" (Dependency-Exzerpt, 13 Werte) nennt
+   "INSTANCE_DEFINED_MACHINE" NICHT — Pack 05s eigene, ebenfalls woertlich
+   uebernommene Baseline Catalog B (§29.9, PRIMARY SCOPE dieses Packs)
+   verwendet diesen Wert aber durchgaengig fuer Maschinen mit
+   instanzspezifischer (nicht plattenbasierter) numerischer Last (z.B.
+   HACK_SQUAT_MACHINE, LEG_PRESS_45, MACHINE_ROW). Das ist ein echter
+   Wortlaut-Konflikt zwischen einem Dependency-Exzerpt und dem Primary-
+   Scope-Katalog DESSELBEN Packs. Da §29.9 als Primary Scope dieses Packs
+   die spezifischere, tatsaechlich verwendete Datenquelle ist, wird die
+   Registry hier um genau diesen einen, im Katalog belegten Wert erweitert
+   — keine erfundene Ergaenzung, sondern eine dokumentierte Angleichung an
+   die woertlichen Katalogdaten (siehe training-exercise-catalog.js,
+   Catalog-Lint #18). */
 const LOAD_MECHANISM_REGISTRY=Object.freeze([
   "PLATE_LOADABLE_FREE_WEIGHT","DUMBBELL_DISCRETE","KETTLEBELL_DISCRETE","SELECTORIZED_STACK",
   "PLATE_LOADED_MACHINE","CABLE_STACK","SMITH_PLATE","BODYWEIGHT_OR_REP_ONLY",
   "BODYWEIGHT_PLUS_EXTERNAL","ASSISTANCE_INVERSE","BAND_ASSISTANCE","BAND_ORDINAL","NO_EXTERNAL_LOAD",
+  "INSTANCE_DEFINED_MACHINE",
 ]);
 const LOAD_AXIS_CLASS=Object.freeze({
   NUMERIC_EXTERNAL_LOAD:"NUMERIC_EXTERNAL_LOAD",ASSISTANCE_INVERSE:"ASSISTANCE_INVERSE",
   BODYWEIGHT_PLUS_EXTERNAL:"BODYWEIGHT_PLUS_EXTERNAL",BAND_ORDINAL:"BAND_ORDINAL",
   VARIANT_PROGRESSIVE:"VARIANT_PROGRESSIVE",BODYWEIGHT_REP_ONLY:"BODYWEIGHT_REP_ONLY",NON_REP:"NON_REP",
 });
-const NUMERIC_EXTERNAL_LOAD_MECHANISMS=Object.freeze(["PLATE_LOADABLE_FREE_WEIGHT","DUMBBELL_DISCRETE","KETTLEBELL_DISCRETE","SELECTORIZED_STACK","PLATE_LOADED_MACHINE","CABLE_STACK","SMITH_PLATE"]);
+/* INSTANCE_DEFINED_MACHINE hier ebenfalls als NUMERIC_EXTERNAL_LOAD
+   eingeordnet (siehe Korrektur oben): alle Catalog-B-Zeilen mit diesem
+   Mechanismus haben calibration_mode=STANDARD_CURVE und
+   progression_capabilities enthaelt LOAD — dieselbe Semantik wie
+   PLATE_LOADED_MACHINE, nur an einer konkreten Geraete-Instanz statt an
+   diskreten Gewichtsplatten gemessen. */
+const NUMERIC_EXTERNAL_LOAD_MECHANISMS=Object.freeze(["PLATE_LOADABLE_FREE_WEIGHT","DUMBBELL_DISCRETE","KETTLEBELL_DISCRETE","SELECTORIZED_STACK","PLATE_LOADED_MACHINE","CABLE_STACK","SMITH_PLATE","INSTANCE_DEFINED_MACHINE"]);
 /* Deterministische Ableitung exakt nach §9.1-Tabelle. hasVariantChain =
    "eine kanonische variant_chain fuer das Exercise existiert" (Katalogdaten
    aus Teil 29, hier nur als Boolean-Parameter durchgereicht). */
