@@ -199,6 +199,59 @@ function loadAxisClass(loadMechanism,hasVariantChain){
   return LOAD_AXIS_CLASS.NON_REP;
 }
 
+/* ================= Kanonische fachliche Enums (Korrektur nach STEP-01-Review) =================
+   Pack 01 selbst wiederholt die Master-v1.4.1-Registries nicht vollstaendig
+   (viele Wertelisten stehen erst in Teil 29 bzw. anderen Packs). Fuer die
+   Werte, die als Teil dieser Korrektur explizit als kanonisch benannt
+   wurden, gilt aber ab sofort: KEINE frei erfundenen/dauerhaft offenen
+   Strings mehr — Validierung erfolgt in den betroffenen Entity-Fabriken
+   unten (validateEnumValue/validateEnumArray wirft bei jedem Wert
+   ausserhalb der Liste). */
+function validateEnumValue(value,enumObj,fieldLabel){
+  if(Object.values(enumObj).indexOf(value)===-1){
+    throw new Error("training-domain: ungueltiger Wert fuer "+fieldLabel+": "+JSON.stringify(value)+" (erlaubt: "+Object.values(enumObj).join(", ")+")");
+  }
+}
+function validateEnumArray(values,enumObj,fieldLabel){
+  (values||[]).forEach(v=>validateEnumValue(v,enumObj,fieldLabel));
+}
+const TRAINING_GOAL=Object.freeze({HYPERTROPHY:"HYPERTROPHY",STRENGTH:"STRENGTH",GENERAL_FITNESS:"GENERAL_FITNESS"});
+const EXPERIENCE_SELF=Object.freeze({NEW:"NEW",SOME:"SOME",EXPERIENCED:"EXPERIENCED"});
+const EXPERIENCE_LEVEL=Object.freeze({BEGINNER:"BEGINNER",INTERMEDIATE:"INTERMEDIATE",ADVANCED:"ADVANCED"});
+/* MuscleContributionBand: in den bisher bereitgestellten TEIL-23-Feldern
+   (siehe unten) taucht bislang KEIN Feld auf, das explizit vom Typ
+   MuscleContributionBand ist — der Enum wird trotzdem bereits jetzt
+   kanonisch bereitgestellt (exportiert, validierbar), damit ein spaeteres
+   Pack ihn direkt verwenden kann, statt selbst wieder einen freien String
+   zu erfinden. */
+const MUSCLE_CONTRIBUTION_BAND=Object.freeze({PRIMARY_HIGH:"PRIMARY_HIGH",PRIMARY_MODERATE:"PRIMARY_MODERATE",SECONDARY:"SECONDARY",STABILIZER:"STABILIZER"});
+const CANONICAL_VOLUME_MUSCLE_ID=Object.freeze({
+  CHEST:"CHEST",FRONT_DELT:"FRONT_DELT",SIDE_DELT:"SIDE_DELT",REAR_DELT:"REAR_DELT",
+  LATS:"LATS",UPPER_BACK:"UPPER_BACK",LOWER_BACK:"LOWER_BACK",BICEPS:"BICEPS",
+  TRICEPS:"TRICEPS",FOREARM:"FOREARM",QUADS:"QUADS",HAMSTRINGS:"HAMSTRINGS",
+  GLUTES:"GLUTES",ADDUCTORS:"ADDUCTORS",ABDUCTORS:"ABDUCTORS",CALVES:"CALVES",
+  ABS:"ABS",OBLIQUES:"OBLIQUES",
+});
+/* MovementPattern/MovementSubpattern: die vollstaendige geschlossene
+   Registry (u.a. die "6 Grundmuster" aus Dependency §5.5) ist in Paket 01
+   NICHT enthalten (nur die Feldnamen und die Anzahl "6" werden erwaehnt,
+   keine konkreten IDs). Statt beliebige freie Strings dauerhaft als
+   gueltig zu behandeln, gibt es hier eine klar abgegrenzte, aktuell noch
+   LEERE Registry-Struktur: registerMovementPatternId() befuellt sie
+   (Aufgabe eines spaeteren Packs mit der vollstaendigen Liste),
+   isRegisteredMovementPatternId() prueft Mitgliedschaft. Solange die
+   Registry leer ist (Pack 01 liefert keine Werte), wird movement_pattern
+   in den Entity-Fabriken NICHT hart gegen sie validiert — sonst waere in
+   diesem Pack ueberhaupt keine ExerciseDefinitionVersion/PlanSlot
+   konstruierbar. Sobald ein spaeteres Pack die Registry befuellt, greift
+   isRegisteredMovementPatternId() sofort mit echten Werten. */
+const MOVEMENT_PATTERN_REGISTRY=new Set();
+const MOVEMENT_SUBPATTERN_REGISTRY=new Set();
+function registerMovementPatternId(id){MOVEMENT_PATTERN_REGISTRY.add(id);}
+function isRegisteredMovementPatternId(id){return MOVEMENT_PATTERN_REGISTRY.has(id);}
+function registerMovementSubpatternId(id){MOVEMENT_SUBPATTERN_REGISTRY.add(id);}
+function isRegisteredMovementSubpatternId(id){return MOVEMENT_SUBPATTERN_REGISTRY.has(id);}
+
 /* ================= 23.0 Cross-Engine Context und Failure Contract ================= */
 const FAILURE_CATEGORY=Object.freeze({
   USER_RESOLVABLE:"USER_RESOLVABLE",SYSTEM_REPAIRABLE:"SYSTEM_REPAIRABLE",TEMPORARY:"TEMPORARY",
@@ -227,6 +280,8 @@ function createFailureResult(f){
 function createExerciseDefinitionVersion(f){
   f=f||{};
   requireFields({...f,__type__:"ExerciseDefinitionVersion"},["exercise_id","canonical_name","definition_version","status","movement_pattern","exercise_class","instance_relevance","calibration_mode","technical_demand","stability_demand","mobility_demand","setup_complexity","fatigue_local","fatigue_systemic","setup_time_class","unilateral_time_class","warmup_protocol_class","progression_ceiling_behavior","auto_selectable","metadata_completeness"]);
+  validateEnumArray(f.primary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"primary_muscle_bands");
+  validateEnumArray(f.secondary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"secondary_muscle_bands");
   return {
     exercise_id:f.exercise_id,canonical_name:f.canonical_name,aliases:f.aliases||[],
     definition_version:f.definition_version,status:f.status,
@@ -359,6 +414,11 @@ function createUser(f){
 function createUserTrainingProfile(f){
   f=f||{};
   requireFields({...f,__type__:"UserTrainingProfile"},["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","preferred_split","uses_rir","rest_preference","experience_level_eligible","experience_level","user_skill_level"]);
+  validateEnumValue(f.goal,TRAINING_GOAL,"goal");
+  validateEnumValue(f.experience_self,EXPERIENCE_SELF,"experience_self");
+  validateEnumValue(f.experience_level_eligible,EXPERIENCE_LEVEL,"experience_level_eligible");
+  validateEnumValue(f.experience_level,EXPERIENCE_LEVEL,"experience_level");
+  validateEnumArray(f.priority_muscles,CANONICAL_VOLUME_MUSCLE_ID,"priority_muscles");
   return {
     user_id:f.user_id,goal:f.goal,experience_self:f.experience_self,
     training_days_per_week:f.training_days_per_week,session_time_budget_min:f.session_time_budget_min,
@@ -436,6 +496,7 @@ const CONTROL_AUTHORITY=Object.freeze({AUTOMATIC:"AUTOMATIC",RECOMMENDATION:"REC
 function createPlan(f){
   f=f||{};
   requireFields({...f,__type__:"Plan"},["id","user_id","goal","plan_origin","control_authority_default","status","current_version_id","created_at"]);
+  validateEnumValue(f.goal,TRAINING_GOAL,"goal");
   return {id:f.id,user_id:f.user_id,goal:f.goal,plan_origin:f.plan_origin,
     control_authority_default:f.control_authority_default,status:f.status,flags:f.flags||[],
     current_version_id:f.current_version_id,created_at:f.created_at};
@@ -494,6 +555,7 @@ const REQUIRED_PROGRESSIBILITY=Object.freeze({HIGH:"HIGH",MEDIUM:"MEDIUM",LOW:"L
 function createSlotFunction(f){
   f=f||{};
   requireFields({...f,__type__:"SlotFunction"},["movement_pattern","role","rep_character"]);
+  validateEnumArray(f.primary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"primary_muscle_bands");
   return {movement_pattern:f.movement_pattern,
     movement_subpattern:f.movement_subpattern!==undefined?f.movement_subpattern:null,
     primary_muscle_bands:f.primary_muscle_bands||[],role:f.role,rep_character:f.rep_character};
@@ -511,6 +573,7 @@ function createSubstitutionHistoryEntry(f){
 function createPlanSlot(f){
   f=f||{};
   requireFields({...f,__type__:"PlanSlot"},["id","plan_version_id","session_id","order_index","slot_function","priority_value","required_progressibility","fatigue_budget","exercise_id","original_exercise_id","resolved_setup_binding_id","prescription_id","calibration_state"]);
+  validateEnumArray(Object.keys(f.volume_contribution||{}),CANONICAL_VOLUME_MUSCLE_ID,"volume_contribution");
   return {id:f.id,plan_version_id:f.plan_version_id,session_id:f.session_id,order_index:f.order_index,
     slot_function:f.slot_function,volume_contribution:f.volume_contribution||{},
     priority_value:f.priority_value,required_progressibility:f.required_progressibility,fatigue_budget:f.fatigue_budget,
@@ -668,15 +731,25 @@ function createWorkoutLogCorrection(f){
     idempotency_key:f.idempotency_key};
 }
 /* Deterministische Projektion Basislog + geordnete Corrections (23.4).
-   HINWEIS zur Interpretation: die Quelle spezifiziert exakt die vier
-   Operationstypen und ihre Wirkung ("PATCH_FIELD" fuer Feldkorrekturen,
-   "DELETE_SET"/"INSERT_SET" fuer Satz-Korrekturen, "VOID_AND_REPLACE" fuer
-   identitaetskritische Aenderungen), aber nicht die exakte Mikro-Syntax
-   von "path" fuer DELETE_SET/INSERT_SET. Diese Implementierung interpretiert
-   "path" bei DELETE_SET als den zu loeschenden "sets[].index"-Wert und bei
-   INSERT_SET "new_value" als den einzufuegenden vollstaendigen Satz-Eintrag
-   — eine dokumentierte, minimale Interpretation, kein erfundenes
-   Zusatzverhalten. Der Basislog selbst wird NIE mutiert (deep clone). */
+   Die Quelle definiert exakt vier Operationstypen und WOFUER sie genutzt
+   werden ("PATCH_FIELD" fuer reps/RIR/weight/time-Korrekturen,
+   "DELETE_SET" fuer versehentlich geloggte Saetze, "INSERT_SET" fuer
+   nachtraeglich erfasste Saetze, "VOID_AND_REPLACE" fuer identitaets-
+   kritische Aenderungen) — aber KEINE konkrete Adressierungssyntax fuer
+   "path"/"new_value" bei DELETE_SET/INSERT_SET (kein normierter
+   Set-Index, kein normiertes Set-Objekt-Schema). Diese Foundation
+   erfindet dafuer bewusst KEINE eigene fachliche Semantik:
+   - PATCH_FIELD wird angewendet (generischer, punktgetrennter
+     Feld-Pfad-Setter — reine Technik, keine fachliche Zusatzannahme
+     ueber die bereits explizit benannten Zielfelder hinaus).
+   - VOID_AND_REPLACE wird angewendet (Wirkung ist explizit normiert:
+     "voided"/"contributes_zero"/replacement_workout_log_id).
+   - DELETE_SET/INSERT_SET werden NICHT auf sets[] angewendet, sondern
+     unangewendet, aber in kanonischer Reihenfolge sichtbar unter
+     "unresolved_set_corrections" durchgereicht. Ein spaeteres Pack, das
+     die konkrete Adressierungssemantik normativ festlegt (oder eine
+     ausdrueckliche Spezifikation dafuer liefert), wertet sie aus.
+   Der Basislog selbst wird NIE mutiert (deep clone). */
 function applyPatchFieldPath(target,path,value){
   const parts=String(path).split(".");
   let node=target;
@@ -692,6 +765,7 @@ function projectEffectiveWorkoutLog(baseLog,corrections){
   const ordered=sortByCanonicalEventOrder(relevant.map(c=>({...c,event_id:c.id})));
   let voided=false,replacementId=null;
   const working=JSON.parse(JSON.stringify(baseLog));
+  const unresolvedSetCorrections=[];
   for(const c of ordered){
     if(c.operation===WORKOUT_LOG_CORRECTION_OPERATION.VOID_AND_REPLACE){
       voided=true;replacementId=c.replacement_workout_log_id||null;continue;
@@ -699,14 +773,11 @@ function projectEffectiveWorkoutLog(baseLog,corrections){
     if(voided)continue;
     if(c.operation===WORKOUT_LOG_CORRECTION_OPERATION.PATCH_FIELD){
       applyPatchFieldPath(working,c.path,c.new_value);
-    }else if(c.operation===WORKOUT_LOG_CORRECTION_OPERATION.DELETE_SET){
-      const idx=working.sets.findIndex(s=>s.index===c.path);
-      if(idx!==-1)working.sets.splice(idx,1);
-    }else if(c.operation===WORKOUT_LOG_CORRECTION_OPERATION.INSERT_SET){
-      working.sets.push(c.new_value);
+    }else if(c.operation===WORKOUT_LOG_CORRECTION_OPERATION.DELETE_SET||c.operation===WORKOUT_LOG_CORRECTION_OPERATION.INSERT_SET){
+      unresolvedSetCorrections.push(c);
     }
   }
-  return {...working,voided,replacement_workout_log_id:replacementId,contributes_zero:voided};
+  return {...working,voided,replacement_workout_log_id:replacementId,contributes_zero:voided,unresolved_set_corrections:unresolvedSetCorrections};
 }
 /* Bodyweight-Replay-Contract (23.4): fuer eine Exposure gilt der Event mit
    maximalem effective_at <= performed_at; bei Gleichstand kanonische
@@ -831,6 +902,7 @@ function createRirCalibrationEvent(f){
 function createVolumeSnapshot(f){
   f=f||{};
   requireFields({...f,__type__:"VolumeSnapshot"},["user_id","week_start","canonical_volume_muscle_id","fractional_sets","direct_share","corridor_min","corridor_max","status"]);
+  validateEnumValue(f.canonical_volume_muscle_id,CANONICAL_VOLUME_MUSCLE_ID,"canonical_volume_muscle_id");
   return {user_id:f.user_id,week_start:f.week_start,canonical_volume_muscle_id:f.canonical_volume_muscle_id,
     fractional_sets:f.fractional_sets,direct_share:f.direct_share,
     volume_floor:f.volume_floor!==undefined?f.volume_floor:null,
@@ -840,6 +912,7 @@ function createVolumeSnapshot(f){
 function createVolumeDeficit(f){
   f=f||{};
   requireFields({...f,__type__:"VolumeDeficit"},["muscle_id","planned_credit","standard_min","volume_floor","deficit_to_floor","limiting_constraint","generated_at"]);
+  validateEnumValue(f.muscle_id,CANONICAL_VOLUME_MUSCLE_ID,"muscle_id");
   return {muscle_id:f.muscle_id,planned_credit:f.planned_credit,standard_min:f.standard_min,
     volume_floor:f.volume_floor,deficit_to_floor:f.deficit_to_floor,
     limiting_constraint:f.limiting_constraint,generated_at:f.generated_at};
@@ -856,6 +929,11 @@ if(typeof module!=="undefined" && module.exports){
     CONFIDENCE_LEVELS,CONFIDENCE_ORDER,compareConfidence,
     roundVolumeToHalfSet,roundToAvailableSteps,roundTimeSpanMinutes,
     LOAD_MECHANISM_REGISTRY,LOAD_AXIS_CLASS,loadAxisClass,
+    validateEnumValue,validateEnumArray,
+    TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
+    MOVEMENT_PATTERN_REGISTRY,MOVEMENT_SUBPATTERN_REGISTRY,
+    registerMovementPatternId,isRegisteredMovementPatternId,
+    registerMovementSubpatternId,isRegisteredMovementSubpatternId,
     FAILURE_CATEGORY,FAILURE_SEVERITY,RETRY_SEMANTICS,createFailureResult,
     createExerciseDefinitionVersion,createExerciseSetupVariant,createExerciseSetup,createResolvedSetupBinding,
     createExerciseRelation,createCuratedSubstituteGroup,createCuratedVeto,
