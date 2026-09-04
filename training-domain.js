@@ -232,6 +232,18 @@ const CANONICAL_VOLUME_MUSCLE_ID=Object.freeze({
   GLUTES:"GLUTES",ADDUCTORS:"ADDUCTORS",ABDUCTORS:"ABDUCTORS",CALVES:"CALVES",
   ABS:"ABS",OBLIQUES:"OBLIQUES",
 });
+/* ===== Pack 04 (Volume Engine, §4.4/§4.4): kanonische Enums fuer
+   VolumeDeficit.limiting_constraint und VolumeSnapshot.status. Beide
+   Felder existierten bereits als freie Werte in createVolumeDeficit/
+   createVolumeSnapshot (STEP 01) — hier NACHTRAEGLICH mit den in Pack 04
+   §4.4 wortgetreu genannten Werten geschlossen, analog der STEP-03-
+   Korrektur an createSlotFunction (kein Freitext fuer normative Enums,
+   INVARIANT G-D3/V-M1). */
+const LIMITING_CONSTRAINT=Object.freeze({
+  P2_EQUIPMENT:"P2_EQUIPMENT",P3_TIME:"P3_TIME",P4_SLOT_FUNCTION:"P4_SLOT_FUNCTION",
+  USER_COMPOSED_CHOICE:"USER_COMPOSED_CHOICE",
+});
+const VOLUME_TOLERANCE_STATUS=Object.freeze({OK:"OK",WARNING:"WARNING",ERROR:"ERROR"});
 
 /* ===== Pack 02 (User Profile/Onboarding): weitere kanonische Enums, die
    erst in Paket 02 wortgetreu benannt werden (§1.2, §1.4, §3.1). Analog zur
@@ -972,16 +984,24 @@ function createVolumeSnapshot(f){
   f=f||{};
   requireFields({...f,__type__:"VolumeSnapshot"},["user_id","week_start","canonical_volume_muscle_id","fractional_sets","direct_share","corridor_min","corridor_max","status"]);
   validateEnumValue(f.canonical_volume_muscle_id,CANONICAL_VOLUME_MUSCLE_ID,"canonical_volume_muscle_id");
+  validateEnumValue(f.status,VOLUME_TOLERANCE_STATUS,"status");
   return {user_id:f.user_id,week_start:f.week_start,canonical_volume_muscle_id:f.canonical_volume_muscle_id,
     fractional_sets:f.fractional_sets,direct_share:f.direct_share,
     volume_floor:f.volume_floor!==undefined?f.volume_floor:null,
     corridor_min:f.corridor_min,corridor_max:f.corridor_max,status:f.status,
+    /* upper_bound + config_version: Pack 04 (§4.1 Config-Versionierung,
+       §4.4 Obergrenzen-Schwellen) — nachtraeglich ergaenzte optionale
+       Felder, analog der STEP-03-Korrektur an createSlotFunction. Ein
+       fehlender Wert bleibt null statt einer erfundenen Zahl. */
+    upper_bound:f.upper_bound!==undefined?f.upper_bound:null,
+    config_version:f.config_version!==undefined?f.config_version:null,
     volume_deficit:f.volume_deficit!==undefined?f.volume_deficit:null};
 }
 function createVolumeDeficit(f){
   f=f||{};
   requireFields({...f,__type__:"VolumeDeficit"},["muscle_id","planned_credit","standard_min","volume_floor","deficit_to_floor","limiting_constraint","generated_at"]);
   validateEnumValue(f.muscle_id,CANONICAL_VOLUME_MUSCLE_ID,"muscle_id");
+  validateEnumValue(f.limiting_constraint,LIMITING_CONSTRAINT,"limiting_constraint");
   return {muscle_id:f.muscle_id,planned_credit:f.planned_credit,standard_min:f.standard_min,
     volume_floor:f.volume_floor,deficit_to_floor:f.deficit_to_floor,
     limiting_constraint:f.limiting_constraint,generated_at:f.generated_at};
@@ -1000,6 +1020,7 @@ if(typeof module!=="undefined" && module.exports){
     LOAD_MECHANISM_REGISTRY,LOAD_AXIS_CLASS,loadAxisClass,
     validateEnumValue,validateEnumArray,validateNumericRange,validateMuscleContributionBands,
     TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
+    LIMITING_CONSTRAINT,VOLUME_TOLERANCE_STATUS,
     REST_PREFERENCE,PREFERRED_SPLIT,TRAINING_LOCATION_TYPE,USER_TRAINING_PROFILE_FIELD_BOUNDS,
     MOVEMENT_PATTERN_REGISTRY,MOVEMENT_SUBPATTERN_REGISTRY,
     registerMovementPatternId,isRegisteredMovementPatternId,

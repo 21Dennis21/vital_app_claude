@@ -160,8 +160,8 @@ const ENTITY_CASES=[
   {name:"RepDecayProfile",factory:TD.createRepDecayProfile,input:{user_id:"u1",exercise_id:"ex1",rep_band_class:"6-8",comparable_session_count:4},expectedKeys:["user_id","exercise_id","equipment_instance_id","rep_band_class","comparable_session_count","median_decay_vector","mad_decay_vector"]},
   {name:"ExerciseRoundingDebt",factory:TD.createExerciseRoundingDebt,input:{user_id:"u1",exercise_id:"ex1",debt:0.5},expectedKeys:["user_id","exercise_id","equipment_instance_id","debt"]},
   {name:"RirCalibrationEvent",factory:TD.createRirCalibrationEvent,input:{id:"rce1",user_id:"u1",exercise_id:"ex1",reported_rir:2,actual_extra_reps:1,error:1,performed_at:"2026-08-15T00:00:00Z",recorded_at:"2026-08-15T00:00:00Z",source_event_revision:1},expectedKeys:["id","user_id","exercise_id","reported_rir","actual_extra_reps","error","performed_at","recorded_at","source_event_revision"]},
-  {name:"VolumeSnapshot",factory:TD.createVolumeSnapshot,input:{user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"IN_CORRIDOR"},expectedKeys:["user_id","week_start","canonical_volume_muscle_id","fractional_sets","direct_share","volume_floor","corridor_min","corridor_max","status","volume_deficit"]},
-  {name:"VolumeDeficit",factory:TD.createVolumeDeficit,input:{muscle_id:"CHEST",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"TIME",generated_at:"2026-08-15T00:00:00Z"},expectedKeys:["muscle_id","planned_credit","standard_min","volume_floor","deficit_to_floor","limiting_constraint","generated_at"]},
+  {name:"VolumeSnapshot",factory:TD.createVolumeSnapshot,input:{user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"OK"},expectedKeys:["user_id","week_start","canonical_volume_muscle_id","fractional_sets","direct_share","volume_floor","corridor_min","corridor_max","status","upper_bound","config_version","volume_deficit"]},
+  {name:"VolumeDeficit",factory:TD.createVolumeDeficit,input:{muscle_id:"CHEST",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"P3_TIME",generated_at:"2026-08-15T00:00:00Z"},expectedKeys:["muscle_id","planned_credit","standard_min","volume_floor","deficit_to_floor","limiting_constraint","generated_at"]},
 ];
 ENTITY_CASES.forEach(({name,factory,input,expectedKeys})=>{
   const result=factory(input);
@@ -197,8 +197,26 @@ console.log("========== Kanonische Enums/Registry-IDs (Korrektur nach STEP-01-Re
   assertThrows(()=>TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"NOT_A_BAND"}]}),"SlotFunction.primary_muscle_bands mit ungueltigem contribution_band wird abgelehnt");
   assert(!!TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"PRIMARY_HIGH"}]}),"§5.3: SlotFunction.primary_muscle_bands akzeptiert {canonical_volume_muscle_id,contribution_band}-Paare");
 
-  assertThrows(()=>TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"NOT_A_MUSCLE",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"IN_CORRIDOR"}),"VolumeSnapshot.canonical_volume_muscle_id mit ungueltigem Wert wird abgelehnt");
-  assertThrows(()=>TD.createVolumeDeficit({muscle_id:"NOT_A_MUSCLE",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"TIME",generated_at:"2026-08-15T00:00:00Z"}),"VolumeDeficit.muscle_id mit ungueltigem Wert wird abgelehnt");
+  assertThrows(()=>TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"NOT_A_MUSCLE",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"OK"}),"VolumeSnapshot.canonical_volume_muscle_id mit ungueltigem Wert wird abgelehnt");
+  assertThrows(()=>TD.createVolumeDeficit({muscle_id:"NOT_A_MUSCLE",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"P3_TIME",generated_at:"2026-08-15T00:00:00Z"}),"VolumeDeficit.muscle_id mit ungueltigem Wert wird abgelehnt");
+
+  // Pack 04 (§4.1/§4.4): VolumeSnapshot.status und VolumeDeficit.limiting_constraint
+  // waren in STEP 01 freie Strings — jetzt gegen die woertlich in §4.4
+  // genannten Enums validiert (analog der STEP-03-Korrektur an createSlotFunction).
+  assertThrows(()=>TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"IN_CORRIDOR"}),"VolumeSnapshot.status mit frei erfundenem Wert (\"IN_CORRIDOR\") wird abgelehnt");
+  ["OK","WARNING","ERROR"].forEach(status=>{
+    assert(!!TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status}),"VolumeSnapshot.status akzeptiert kanonischen Wert '"+status+"'");
+  });
+  assertThrows(()=>TD.createVolumeDeficit({muscle_id:"CHEST",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"TIME",generated_at:"2026-08-15T00:00:00Z"}),"VolumeDeficit.limiting_constraint mit frei erfundenem Wert (\"TIME\") wird abgelehnt");
+  ["P2_EQUIPMENT","P3_TIME","P4_SLOT_FUNCTION","USER_COMPOSED_CHOICE"].forEach(lc=>{
+    assert(!!TD.createVolumeDeficit({muscle_id:"CHEST",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:lc,generated_at:"2026-08-15T00:00:00Z"}),"VolumeDeficit.limiting_constraint akzeptiert kanonischen Wert '"+lc+"'");
+  });
+  const snapshotWithOptionalFields=TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"OK",upper_bound:22,config_version:"v1.4.1"});
+  assertEq(snapshotWithOptionalFields.upper_bound,22,"VolumeSnapshot.upper_bound (Pack-04-Ergaenzung) wird uebernommen");
+  assertEq(snapshotWithOptionalFields.config_version,"v1.4.1","VolumeSnapshot.config_version (Pack-04-Ergaenzung, fuer historische Snapshots) wird uebernommen");
+  const snapshotWithoutOptionalFields=TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"CHEST",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"OK"});
+  assertEq(snapshotWithoutOptionalFields.upper_bound,null,"VolumeSnapshot.upper_bound defaultet auf null, keine erfundene Zahl");
+  assertEq(snapshotWithoutOptionalFields.config_version,null,"VolumeSnapshot.config_version defaultet auf null");
 
   const slotFn=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE"});
   const validSlot={id:"ps1",plan_version_id:"pv1",session_id:"s1",order_index:0,slot_function:slotFn,priority_value:90,required_progressibility:"HIGH",fatigue_budget:3,exercise_id:"ex1",original_exercise_id:"ex1",resolved_setup_binding_id:"rsb1",prescription_id:"pr1",calibration_state:"ACTIVE"};
