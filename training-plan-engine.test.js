@@ -414,21 +414,21 @@ console.log("========== preferred_split ist niemals ein Hard Filter (kein Bypass
 
 console.log("========== INVARIANT S-3 Same-Day-Overlap ==========");
 {
-  const sfPrimaryHighChest=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"PRIMARY_HIGH"}]});
-  const sfPrimaryHighChestOtherPattern=TD.createSlotFunction({movement_pattern:"VERTICAL_PUSH",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"PRIMARY_HIGH"}]});
-  const sfSecondaryChest=TD.createSlotFunction({movement_pattern:"VERTICAL_PUSH",role:"SECONDARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"SECONDARY"}]});
+  const sfPrimaryHighChest=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PRESS",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"PRIMARY_HIGH"}]});
+  const sfPrimaryHighChestOtherPattern=TD.createSlotFunction({movement_pattern:"VERTICAL_PRESS",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"PRIMARY_HIGH"}]});
+  const sfSecondaryChest=TD.createSlotFunction({movement_pattern:"VERTICAL_PRESS",role:"SECONDARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"SECONDARY"}]});
   const sfPrimaryHighBack=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PULL",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"LATS",contribution_band:"PRIMARY_HIGH"}]});
-  const sfSecondaryBackSamePattern=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"SECONDARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"LATS",contribution_band:"SECONDARY"}]});
-  const sfIsolationChestSamePattern=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"ISOLATION",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"STABILIZER"}]});
+  const sfSecondaryBackSamePattern=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PRESS",role:"SECONDARY",rep_character:"MODERATE",primary_muscle_bands:[{canonical_volume_muscle_id:"LATS",contribution_band:"SECONDARY"}]});
+  const sfIsolationChestSamePattern=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PRESS",role:"ISOLATION",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"CHEST",contribution_band:"STABILIZER"}]});
 
   assert(TP.determineSameDayOverlap([sfPrimaryHighChest],[sfPrimaryHighChestOtherPattern]),"beide Sessions bewerten CHEST als PRIMARY_HIGH (unterschiedliche Patterns) -> Overlap TRUE (Muskel-Kriterium)");
   assert(!TP.determineSameDayOverlap([sfPrimaryHighChest],[sfSecondaryChest]),"CHEST ist nur in Session A PRIMARY_HIGH, in Session B nur SECONDARY -> KEIN Overlap ueber das Muskel-Kriterium (beide Seiten muessen PRIMARY_HIGH sein)");
-  assert(TP.determineSameDayOverlap([sfPrimaryHighChest],[sfSecondaryBackSamePattern]),"identisches movement_pattern (HORIZONTAL_PUSH) in PRIMARY (A) bzw. SECONDARY (B) mit unterschiedlichen Muskeln -> Overlap TRUE (Pattern-Kriterium)");
+  assert(TP.determineSameDayOverlap([sfPrimaryHighChest],[sfSecondaryBackSamePattern]),"identisches movement_pattern (HORIZONTAL_PRESS) in PRIMARY (A) bzw. SECONDARY (B) mit unterschiedlichen Muskeln -> Overlap TRUE (Pattern-Kriterium)");
   assert(!TP.determineSameDayOverlap([sfPrimaryHighChest],[sfIsolationChestSamePattern]),"identisches Pattern, aber Session B nutzt es nur in ISOLATION-Rolle -> KEIN Pattern-Overlap (nur PRIMARY/SECONDARY zaehlen auf BEIDEN Seiten)");
   assert(!TP.determineSameDayOverlap([sfPrimaryHighChest],[sfPrimaryHighBack]),"unterschiedlicher PRIMARY_HIGH-Muskel UND unterschiedliches Pattern -> KEIN Overlap");
 
-  const sfIsolationOnly=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"ISOLATION",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"TRICEPS",contribution_band:"STABILIZER"}]});
-  const sfIsolationOnly2=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"ACCESSORY",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"TRICEPS",contribution_band:"STABILIZER"}]});
+  const sfIsolationOnly=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PRESS",role:"ISOLATION",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"TRICEPS",contribution_band:"STABILIZER"}]});
+  const sfIsolationOnly2=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PRESS",role:"ACCESSORY",rep_character:"LIGHT",primary_muscle_bands:[{canonical_volume_muscle_id:"TRICEPS",contribution_band:"STABILIZER"}]});
   assert(!TP.determineSameDayOverlap([sfIsolationOnly],[sfIsolationOnly2]),"gleiches movement_pattern, aber NUR ISOLATION/ACCESSORY-Rollen auf beiden Seiten -> KEIN Pattern-Overlap (nur PRIMARY/SECONDARY zaehlen)");
 }
 
