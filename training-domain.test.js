@@ -127,7 +127,7 @@ const ENTITY_CASES=[
   {name:"LoadProfileVersion",factory:TD.createLoadProfileVersion,input:{id:"lpv1",equipment_instance_id:"ei1",version:1,load_unit:"KG",display_semantics:"TOTAL_LOAD",direction:"HIGHER_IS_MORE",pair_semantics:"SINGLE",per_side_semantics:"N_A",ratio_confidence:"NONE",effective_load_unknown:false,microloading_available:false},expectedKeys:["id","equipment_instance_id","version","load_unit","display_semantics","direction","min","max","available_steps","combination_rule","base_load","pair_semantics","per_side_semantics","mechanical_ratio","ratio_confidence","effective_load_unknown","microloading_available"]},
   {name:"CatalogMigrationRecord",factory:TD.createCatalogMigrationRecord,input:{id:"cmr1",entity_type:"ExerciseDefinitionVersion",from_version:1,to_version:2,operation:"RENAME",created_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","entity_type","from_version","to_version","operation","deterministic_rule","created_at"]},
   {name:"User",factory:TD.createUser,input:{id:"u1",created_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","created_at"]},
-  {name:"UserTrainingProfile",factory:TD.createUserTrainingProfile,input:{user_id:"u1",goal:"HYPERTROPHY",experience_self:"INTERMEDIATE",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2},expectedKeys:["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","priority_muscles","preferred_split","training_weekdays","weekday_location_map","uses_rir","rest_preference","sex","age","experience_level_eligible","experience_level","user_skill_level","rir_reliability_tier_by_exercise","session_adherence_rate","actual_session_duration_factor"]},
+  {name:"UserTrainingProfile",factory:TD.createUserTrainingProfile,input:{user_id:"u1",goal:"HYPERTROPHY",experience_self:"SOME",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2},expectedKeys:["user_id","goal","experience_self","training_days_per_week","session_time_budget_min","primary_location_id","bodyweight_kg","priority_muscles","preferred_split","training_weekdays","weekday_location_map","uses_rir","rest_preference","sex","age","experience_level_eligible","experience_level","user_skill_level","rir_reliability_tier_by_exercise","session_adherence_rate","actual_session_duration_factor"]},
   {name:"BodyweightEvent",factory:TD.createBodyweightEvent,input:{event_id:"bwe1",user_id:"u1",bodyweight_kg:80,effective_at:"2026-08-15T00:00:00Z",recorded_at:"2026-08-15T00:00:00Z",source:"USER_ENTRY"},expectedKeys:["event_id","user_id","bodyweight_kg","effective_at","recorded_at","source","corrects_event_id","idempotency_key"]},
   {name:"TrainingLocation",factory:TD.createTrainingLocation,input:{id:"loc1",user_id:"u1",name:"Home Gym",type:"HOME"},expectedKeys:["id","user_id","name","type","current_equipment_profile_version_id","is_default_for_weekdays"]},
   {name:"AvailabilityEvent",factory:TD.createAvailabilityEvent,input:{id:"ave1",equipment_instance_id:"ei1",state:"AVAILABLE",starts_at:"2026-08-15T00:00:00Z",reason:"restocked",recorded_at:"2026-08-15T00:00:00Z"},expectedKeys:["id","equipment_instance_id","session_instance_id","state","starts_at","expires_at","reason","recorded_at"]},
@@ -174,6 +174,44 @@ ENTITY_CASES.forEach(({name,factory,input,expectedKeys})=>{
 });
 console.log(ENTITY_CASES.length+" Entity-Fabriken geprueft (Feldvollstaendigkeit + Pflichtfeld-Validierung).");
 
+console.log("========== Kanonische Enums/Registry-IDs (Korrektur nach STEP-01-Review) ==========");
+{
+  const validProfile={user_id:"u1",goal:"HYPERTROPHY",experience_self:"SOME",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2};
+  assert(!!TD.createUserTrainingProfile(validProfile),"UserTrainingProfile mit ausschliesslich kanonischen Enum-Werten wird akzeptiert");
+  assertThrows(()=>TD.createUserTrainingProfile({...validProfile,goal:"NOT_A_GOAL"}),"Ungueltiger goal-Wert wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...validProfile,experience_self:"INTERMEDIATE"}),"Ungueltiger experience_self-Wert (INTERMEDIATE ist kein ExperienceSelf-Wert) wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...validProfile,experience_level:"NOT_A_LEVEL"}),"Ungueltiger experience_level-Wert wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...validProfile,experience_level_eligible:"NOT_A_LEVEL"}),"Ungueltiger experience_level_eligible-Wert wird abgelehnt");
+  assertThrows(()=>TD.createUserTrainingProfile({...validProfile,priority_muscles:["NOT_A_MUSCLE"]}),"Ungueltige Muskel-ID in priority_muscles wird abgelehnt");
+  assert(!!TD.createUserTrainingProfile({...validProfile,priority_muscles:["CHEST","LATS"]}),"Kanonische Muskel-IDs in priority_muscles werden akzeptiert");
+
+  assertThrows(()=>TD.createPlan({id:"p1",user_id:"u1",goal:"NOT_A_GOAL",plan_origin:"GENERATED",control_authority_default:"AUTOMATIC",status:"ACTIVE",current_version_id:"pv1",created_at:"2026-08-15T00:00:00Z"}),"Plan.goal mit ungueltigem Wert wird abgelehnt");
+
+  const validExercise={exercise_id:"ex1",canonical_name:"Bench Press",definition_version:1,status:"ACTIVE",movement_pattern:"HORIZONTAL_PUSH",exercise_class:"COMPOUND",instance_relevance:"HIGH",calibration_mode:"STANDARD",technical_demand:3,stability_demand:2,mobility_demand:2,setup_complexity:2,fatigue_local:3,fatigue_systemic:3,setup_time_class:"FAST",unilateral_time_class:"N_A",warmup_protocol_class:"STANDARD",progression_ceiling_behavior:"NONE",auto_selectable:true,metadata_completeness:"COMPLETE"};
+  assertThrows(()=>TD.createExerciseDefinitionVersion({...validExercise,primary_muscle_bands:["NOT_A_MUSCLE"]}),"Ungueltige Muskel-ID in primary_muscle_bands wird abgelehnt");
+  assertThrows(()=>TD.createExerciseDefinitionVersion({...validExercise,secondary_muscle_bands:["NOT_A_MUSCLE"]}),"Ungueltige Muskel-ID in secondary_muscle_bands wird abgelehnt");
+  assert(!!TD.createExerciseDefinitionVersion({...validExercise,primary_muscle_bands:["CHEST"],secondary_muscle_bands:["TRICEPS"]}),"Kanonische Muskel-IDs in primary_muscle_bands/secondary_muscle_bands werden akzeptiert");
+
+  assertThrows(()=>TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE",primary_muscle_bands:["NOT_A_MUSCLE"]}),"SlotFunction.primary_muscle_bands mit ungueltiger Muskel-ID wird abgelehnt");
+
+  assertThrows(()=>TD.createVolumeSnapshot({user_id:"u1",week_start:"2026-08-10",canonical_volume_muscle_id:"NOT_A_MUSCLE",fractional_sets:14,direct_share:10,corridor_min:10,corridor_max:20,status:"IN_CORRIDOR"}),"VolumeSnapshot.canonical_volume_muscle_id mit ungueltigem Wert wird abgelehnt");
+  assertThrows(()=>TD.createVolumeDeficit({muscle_id:"NOT_A_MUSCLE",planned_credit:8,standard_min:10,volume_floor:6,deficit_to_floor:0,limiting_constraint:"TIME",generated_at:"2026-08-15T00:00:00Z"}),"VolumeDeficit.muscle_id mit ungueltigem Wert wird abgelehnt");
+
+  const slotFn=TD.createSlotFunction({movement_pattern:"HORIZONTAL_PUSH",role:"PRIMARY",rep_character:"MODERATE"});
+  const validSlot={id:"ps1",plan_version_id:"pv1",session_id:"s1",order_index:0,slot_function:slotFn,priority_value:90,required_progressibility:"HIGH",fatigue_budget:3,exercise_id:"ex1",original_exercise_id:"ex1",resolved_setup_binding_id:"rsb1",prescription_id:"pr1",calibration_state:"ACTIVE"};
+  assertThrows(()=>TD.createPlanSlot({...validSlot,volume_contribution:{NOT_A_MUSCLE:1}}),"PlanSlot.volume_contribution mit ungueltigem Muskel-Key wird abgelehnt");
+  assert(!!TD.createPlanSlot({...validSlot,volume_contribution:{CHEST:1}}),"PlanSlot.volume_contribution mit kanonischem Muskel-Key wird akzeptiert");
+
+  // MovementPattern/MovementSubpattern: Paket 01 liefert keine geschlossene
+  // Liste (nur die Anzahl "6 Grundmuster" in §5.5, keine konkreten IDs) —
+  // deshalb hier NUR die Registry-Struktur pruefen, keine harte Ablehnung
+  // beliebiger movement_pattern-Strings in den Fabriken.
+  assert(!TD.isRegisteredMovementPatternId("HORIZONTAL_PUSH"),"MovementPattern-Registry ist zu Beginn leer (Paket 01 liefert keine konkreten IDs)");
+  TD.registerMovementPatternId("HORIZONTAL_PUSH");
+  assert(TD.isRegisteredMovementPatternId("HORIZONTAL_PUSH"),"registerMovementPatternId() befuellt die Registry nachtraeglich");
+  assert(!TD.isRegisteredMovementSubpatternId("ANY_SUBPATTERN"),"MovementSubpattern-Registry ist ebenfalls zu Beginn leer");
+}
+
 console.log("========== WorkoutLog: immutable:true fest verdrahtet ==========");
 {
   const wl=TD.createWorkoutLog({id:"wl1",user_id:"u1",plan_id:"p1",plan_version_id:"pv1",session_id:"s1",session_instance_id:"si1",slot_execution_id:"se1",slot_id:"ps1",exercise_id:"ex1",exercise_definition_version:1,resolved_setup_binding_snapshot:{},prescription_snapshot:{},authority_mode_at_execution:"AUTOMATIC",performed_at:"2026-08-15T00:00:00Z",recorded_at:"2026-08-15T00:00:00Z",session_status:"COMPLETE"});
@@ -195,16 +233,24 @@ console.log("========== WorkoutLog-Korrektur-Projektion (23.4) ==========");
   assertEq(projected1.session_status,"PARTIAL","PATCH_FIELD aendert das Zielfeld in der Projektion");
   assertEq(JSON.stringify(base),baseSnapshot,"Der Basis-Log bleibt durch PATCH_FIELD komplett unveraendert (append-only)");
 
-  // DELETE_SET
+  // DELETE_SET: Foundation legt KEINE Satz-Adressierungssemantik fest (nicht
+  // normativ durch Paket 01 spezifiziert) — die Correction wird deshalb
+  // unangewendet durchgereicht, statt eine erfundene Bedeutung fuer "path"
+  // anzunehmen.
   const deleteCorrection=TD.createWorkoutLogCorrection({id:"c2",workout_log_id:"wl1",operation:"DELETE_SET",path:2,effective_at:"2026-08-16T00:00:00Z",recorded_at:"2026-08-16T00:00:00Z",reason:"versehentlich geloggt",actor:"USER",idempotency_key:"k2"});
   const projected2=TD.projectEffectiveWorkoutLog(base,[deleteCorrection]);
-  assertEq(projected2.sets.length,1,"DELETE_SET entfernt genau den referenzierten Satz aus der Projektion");
+  assertEq(projected2.sets.length,2,"DELETE_SET veraendert die Satzliste der Projektion NICHT (keine erfundene Adressierungssemantik)");
+  assertEq(projected2.unresolved_set_corrections.length,1,"DELETE_SET wird stattdessen unaufgeloest in unresolved_set_corrections durchgereicht");
+  assertEq(projected2.unresolved_set_corrections[0].id,"c2","Die durchgereichte Correction ist genau die uebergebene DELETE_SET-Correction");
   assertEq(base.sets.length,2,"Der Basis-Log behaelt weiterhin beide Saetze (append-only)");
 
-  // INSERT_SET
+  // INSERT_SET: gleiches Prinzip — keine erfundene Bedeutung fuer "new_value"
+  // als vollstaendiger Satz-Eintrag, stattdessen unaufgeloest durchgereicht.
   const insertCorrection=TD.createWorkoutLogCorrection({id:"c3",workout_log_id:"wl1",operation:"INSERT_SET",new_value:TD.createWorkoutSetEntry({index:3,metric_type:"REPS",weight:80,reps:7,is_warmup:false,is_calibration_set:false}),effective_at:"2026-08-16T00:00:00Z",recorded_at:"2026-08-16T00:00:00Z",reason:"nachtraeglich erfasst",actor:"USER",idempotency_key:"k3"});
   const projected3=TD.projectEffectiveWorkoutLog(base,[insertCorrection]);
-  assertEq(projected3.sets.length,3,"INSERT_SET fuegt einen Satz in der Projektion hinzu");
+  assertEq(projected3.sets.length,2,"INSERT_SET veraendert die Satzliste der Projektion NICHT (keine erfundene Adressierungssemantik)");
+  assertEq(projected3.unresolved_set_corrections.length,1,"INSERT_SET wird stattdessen unaufgeloest in unresolved_set_corrections durchgereicht");
+  assertEq(projected3.unresolved_set_corrections[0].id,"c3","Die durchgereichte Correction ist genau die uebergebene INSERT_SET-Correction");
 
   // VOID_AND_REPLACE: Basis traegt danach 0 bei
   const voidCorrection=TD.createWorkoutLogCorrection({id:"c4",workout_log_id:"wl1",operation:"VOID_AND_REPLACE",replacement_workout_log_id:"wl2",effective_at:"2026-08-16T00:00:00Z",recorded_at:"2026-08-16T00:00:00Z",reason:"falsche Uebung geloggt",actor:"USER",idempotency_key:"k4"});
@@ -279,7 +325,7 @@ console.log("========== ID-Erzeugung ==========");
 
 console.log("========== Serialisierbarkeit (JSON-Roundtrip, Voraussetzung fuer localStorage) ==========");
 {
-  const profile=TD.createUserTrainingProfile({user_id:"u1",goal:"HYPERTROPHY",experience_self:"INTERMEDIATE",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2});
+  const profile=TD.createUserTrainingProfile({user_id:"u1",goal:"HYPERTROPHY",experience_self:"SOME",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2});
   const roundtripped=JSON.parse(JSON.stringify(profile));
   assertEq(roundtripped,profile,"UserTrainingProfile uebersteht einen JSON.stringify/parse-Roundtrip verlustfrei");
 }

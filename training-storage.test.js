@@ -75,7 +75,7 @@ console.log("========== UserTrainingProfile: Singleton, keine erfundenen Default
 {
   resetStorage();
   assertEq(TS.loadUserTrainingProfile(),null,"Ohne vorherigen Save: null (kein automatisch erzeugtes Profil)");
-  const profile=createUserTrainingProfile({user_id:"u1",goal:"HYPERTROPHY",experience_self:"INTERMEDIATE",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2});
+  const profile=createUserTrainingProfile({user_id:"u1",goal:"HYPERTROPHY",experience_self:"SOME",training_days_per_week:4,session_time_budget_min:60,primary_location_id:"loc1",bodyweight_kg:80,preferred_split:"UPPER_LOWER",uses_rir:true,rest_preference:"STANDARD",experience_level_eligible:"INTERMEDIATE",experience_level:"INTERMEDIATE",user_skill_level:2});
   TS.saveUserTrainingProfile(profile);
   assertEq(TS.loadUserTrainingProfile(),profile,"Roundtrip: gespeichertes Profil wird unveraendert zurueckgegeben");
 }
