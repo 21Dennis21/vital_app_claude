@@ -52,14 +52,20 @@
    L3. Innerhalb einer Allocation-Stufe (§4.2: "VOLUME_FLOOR der uebrigen
        Zielmuskeln" / "Standardkorridor" / "zusaetzliches Volumen") sagt
        v1.4.1 nicht, WIE knappe Kapazitaet auf MEHRERE gleichzeitig
-       betroffene Nicht-Prioritaets-Muskeln verteilt wird. Diese Datei
-       verwendet dafuer eine proportionale Gleichverteilung (jeder Muskel
-       verliert denselben Anteil seines noch offenen Bedarfs dieser Stufe)
-       als neutralen, symmetrischen Mechanismus OHNE Praeferenz zwischen
-       gleichrangigen Muskeln — das ist eine offengelegte technische
-       Notwendigkeit, KEIN aus v1.4.1 abgeleiteter Zahlenwert. Innerhalb
-       jeder Stufe sind die 3 Stufen-Zielwerte selbst (volume_floor,
-       standard_max, upper_bound) exakt woertlich aus §4.2.
+       betroffene Nicht-Prioritaets-Muskeln verteilt wird. FRUEHERE FASSUNG
+       (Fehler, per STEP-04-Korrektur entfernt): eine selbst erfundene
+       proportionale Gleichverteilung. Das war eine freie Entwicklerregel
+       ohne v1.4.1-Deckung (INVARIANT G-D3) und wurde ersatzlos entfernt.
+       resolveVolumeTargets() verlangt jetzt einen PFLICHT-externen
+       Parameter `allocationOrder` (Reihenfolge der konkurrierenden
+       Muskel-IDs), sobald mehr als ein Nicht-Prioritaets-Zielmuskel
+       gleichzeitig um Kapazitaet konkurrieren kann: jeder Muskel wird in
+       genau dieser vom Aufrufer vorgegebenen Reihenfolge vollstaendig bis
+       zum jeweiligen Stufen-Zielwert finanziert, bevor der naechste an
+       der Reihe ist — keine Gewichtung, kein Round-Robin, keine
+       Gleichverteilung wird von dieser Datei selbst entschieden. Die 3
+       Stufen-Zielwerte selbst (volume_floor, standard_max, upper_bound)
+       bleiben exakt woertlich aus §4.2.
    L4. "limiting_constraint" fuer einen VolumeDeficit: welcher P2/P3/P4-
        Engpass die Ursache war, weiss die Volume Engine allein nicht (das
        haengt von Equipment/Zeit/Slot-Entscheidungen anderer Engines ab).
@@ -70,16 +76,40 @@
        ausserhalb der Volume Engine entschieden wird. PFLICHT-externer
        Parameter `hasRepairableCapacity` in evaluateVolumeTolerance(),
        keine Annahme.
-   L6. Support-State-Downgrade (`GOAL_LIMITED`/`SUPPORTED_WITH_LIMITATIONS`)
-       ist Teil eines groesseren, hier nicht vollstaendig definierten
-       Support-State-Systems (vermutlich Global-Validation-Scope). Diese
-       Datei liefert nur die BEIDEN hier woertlich genannten Werte als
-       Hinweis-Enum (VOLUME_SUPPORT_STATE_HINT), baut aber keine
-       vollstaendige Support-State-Maschine.
-   Alle 6 Luecken sind damit entweder (a) explizite, versionierte externe
-   Inputs ohne Produktions-Default, oder (b) klar offengelegte, neutrale
-   technische Notwendigkeiten (L3) — es gibt keinen stillen erfundenen
-   Zahlenwert. */
+   L6. Support-State-Downgrade (§4.2 nennt "mindestens GOAL_LIMITED bzw.
+       SUPPORTED_WITH_LIMITATIONS") ist Teil eines groesseren, hier NICHT
+       definierten Support-State-Systems (vermutlich Global-Validation-
+       Scope, §20). FRUEHERE FASSUNG (Fehler, per STEP-04-Korrektur
+       entfernt): ein eigenes `VOLUME_SUPPORT_STATE_HINT`-Enum mit
+       GENAU diesen 2 Werten — das haette faelschlich den Eindruck einer
+       vollstaendigen, von dieser Datei kanonisch definierten Taxonomie
+       erweckt, obwohl v1.4.1 an anderer Stelle weitere Support-States
+       kennt (z.B. SUPPORTED, siehe §4.2-Flusstext) und dieses Pack die
+       Taxonomie gar nicht besitzt. Diese Datei definiert daher KEIN
+       Support-State-Enum. Ihr einziger, tatsaechlich benoetigter Beitrag
+       ist das strukturierte `VolumeDeficit`-Signal (`deficits[]` in
+       resolveVolumeTargets()); welchen konkreten Support-State ein
+       spaeteres, dafuer zustaendiges Modul daraus ableitet, ist nicht
+       Teil dieses Packs.
+   L7. Phase 5 (`VolumeTargets + SplitStructure -> SessionVolumeTargets`)
+       verlangt laut Primary Scope eine DETERMINISTISCHE Verteilung, ohne
+       dafuer einen konkreten Equal-Split-/Remainder-Algorithmus zu
+       nennen. FRUEHERE FASSUNG (Fehler, per STEP-04-Korrektur entfernt):
+       ein selbst erfundener Equal-Split (Wochenziel/Anzahl Expositionen).
+       computeSessionVolumeTargets() verlangt jetzt einen PFLICHT-externen
+       Parameter `sessionDistributionWeights` (Gewichte je Muskel und
+       Exposition, muessen sich zu 1 summieren) — diese Datei entscheidet
+       selbst nicht mehr, WIE ein Wochenziel auf mehrere Sessions verteilt
+       wird, sondern wendet nur eine vom Aufrufer vorgegebene Verteilung
+       an. Welche Session ueberhaupt fuer einen Muskel in Frage kommt
+       (Eligibility), bleibt weiterhin ueber `sessionTemplateSequence`
+       bestimmt (das ist KEINE Verteilentscheidung, sondern eine reine
+       Tatsachenfeststellung aus einem bereits in STEP 03 etablierten
+       externen Input).
+   Alle Luecken sind damit entweder (a) explizite, versionierte externe
+   Inputs ohne Produktions-Default, oder (b) eine bewusst NICHT von dieser
+   Datei getroffene Entscheidung (L6) — es gibt keinen stillen erfundenen
+   Zahlenwert und keine erfundene Verteil-/Reduktionsregel mehr. */
 
 /* ================= §4.3 — Kanonischer Muscle Registry (Anatomy/Subregion) ===== */
 /* canonical_volume_muscle_id lebt bereits in training-domain.js
@@ -273,9 +303,10 @@ function evaluateVolumeTolerance(plannedCredit,corridor,opts){
   // unter VOLUME_FLOOR
   return {status:hasRepairableCapacity?VOLUME_TOLERANCE_STATUS.ERROR:VOLUME_TOLERANCE_STATUS.WARNING,reason:"BELOW_VOLUME_FLOOR",needsVolumeDeficit:!hasRepairableCapacity};
 }
-/* Support-State-Hinweis (siehe Kopf-Kommentar L6) — NUR die 2 in §4.2/§4.4
-   woertlich genannten Werte, keine vollstaendige Support-State-Maschine. */
-const VOLUME_SUPPORT_STATE_HINT=Object.freeze({GOAL_LIMITED:"GOAL_LIMITED",SUPPORTED_WITH_LIMITATIONS:"SUPPORTED_WITH_LIMITATIONS"});
+/* KEIN Support-State-Enum hier (siehe Kopf-Kommentar L6) — dieses Pack
+   besitzt die Support-State-Taxonomie nicht. Das strukturierte
+   `deficits[]`-Ergebnis von resolveVolumeTargets() ist das einzige Signal,
+   das diese Datei dafuer liefert. */
 /* Baut ein VolumeDeficit ueber die BESTEHENDE training-domain.js-Fabrik
    (createVolumeDeficit, STEP 01) — keine parallele Struktur. */
 function buildVolumeDeficit(muscleId,plannedCredit,corridor,limitingConstraint,evaluationContext){
@@ -409,8 +440,10 @@ function evaluateDirectShare(directCredit,totalCredit,weeklyTarget,goal){
    (geschuetzt), 2) Prioritaetsmuskel-Ziele (geschuetzt, §4.5 Regel 1),
    3) VOLUME_FLOOR uebriger Zielmuskeln, 4) Standardkorridor (bis
    standard_max), 5) zusaetzliches Volumen bis Obergrenze. Innerhalb einer
-   knappen Stufe: proportionale Gleichverteilung (siehe Kopf-Kommentar L3). */
-function resolveVolumeTargets({planRequirements,targetMuscles,weeklyDeliverableVolumeCapacity,hardRequirementFloors,limitingConstraint,evaluationContext}){
+   knappen Stufe entscheidet AUSSCHLIESSLICH der Pflicht-Parameter
+   `allocationOrder` (siehe Kopf-Kommentar L3) — keine von dieser Datei
+   erfundene Verteilregel. */
+function resolveVolumeTargets({planRequirements,targetMuscles,weeklyDeliverableVolumeCapacity,hardRequirementFloors,allocationOrder,limitingConstraint,evaluationContext}){
   if(!evaluationContext||evaluationContext.evaluation_at===undefined)throw new Error("training-volume-engine: resolveVolumeTargets benoetigt einen EvaluationContext (kein verstecktes now())");
   if(!planRequirements)throw new Error("training-volume-engine: resolveVolumeTargets benoetigt PlanRequirements");
   if(weeklyDeliverableVolumeCapacity==null)throw new Error("training-volume-engine: resolveVolumeTargets benoetigt weeklyDeliverableVolumeCapacity — dieses Pack kann sie NICHT selbst aus SessionCapacity ableiten (siehe Kopf-Kommentar L2), muss vom Aufrufer explizit uebergeben werden");
@@ -444,19 +477,32 @@ function resolveVolumeTargets({planRequirements,targetMuscles,weeklyDeliverableV
   // Stufen 3-5: uebrige Zielmuskeln mit Korridor, Leiter [floor, standard_max, upper_bound].
   const remaining=muscles.filter(m=>allocated[m]==null&&corridorByMuscle[m]&&corridorByMuscle[m].has_corridor);
   remaining.forEach(m=>{allocated[m]=0;});
-  const ladders=remaining.map(m=>({muscle:m,checkpoints:[corridorByMuscle[m].volume_floor,corridorByMuscle[m].standard_max,corridorByMuscle[m].upper_bound]}));
+  const ladderByMuscle={};
+  remaining.forEach(m=>{ladderByMuscle[m]=[corridorByMuscle[m].volume_floor,corridorByMuscle[m].standard_max,corridorByMuscle[m].upper_bound];});
+
+  // Reihenfolge, in der KONKURRIERENDE Muskeln derselben Stufe finanziert
+  // werden: AUSSCHLIESSLICH der vom Aufrufer vorgegebene `allocationOrder`
+  // (siehe Kopf-Kommentar L3) — kein Round-Robin, keine Gewichtung, keine
+  // Gleichverteilung wird hier erfunden. Bei hoechstens 1 konkurrierenden
+  // Muskel gibt es nichts zu ordnen, `allocationOrder` ist dann nicht
+  // erforderlich.
+  let orderedRemaining=remaining;
+  if(remaining.length>1){
+    if(!Array.isArray(allocationOrder))throw new Error("training-volume-engine: resolveVolumeTargets benoetigt allocationOrder — mehrere Nicht-Prioritaets-Zielmuskeln ("+remaining.join(", ")+") koennen gleichzeitig um Kapazitaet konkurrieren, v1.4.1 nennt dafuer keine Verteilregel (kein Round-Robin, keine Gleichverteilung darf erfunden werden); die Finanzierungsreihenfolge muss vom Aufrufer explizit vorgegeben werden.");
+    const missing=remaining.filter(m=>allocationOrder.indexOf(m)===-1);
+    if(missing.length)throw new Error("training-volume-engine: allocationOrder deckt nicht alle konkurrierenden Muskeln ab, fehlend: "+missing.join(", "));
+    orderedRemaining=remaining.slice().sort((a,b)=>allocationOrder.indexOf(a)-allocationOrder.indexOf(b));
+  }
+
   let remainingCapacity=Math.max(0,weeklyDeliverableVolumeCapacity-usedCapacity);
   for(let tier=0;tier<3;tier++){
-    const needs=ladders.map(l=>Math.max(0,l.checkpoints[tier]-allocated[l.muscle]));
-    const totalNeed=needs.reduce((a,b)=>a+b,0);
-    if(totalNeed<=0)continue;
-    if(remainingCapacity>=totalNeed){
-      ladders.forEach((l,i)=>{allocated[l.muscle]+=needs[i];});
-      remainingCapacity-=totalNeed;
-    }else{
-      ladders.forEach((l,i)=>{allocated[l.muscle]+=remainingCapacity*(needs[i]/totalNeed);});
-      remainingCapacity=0;
-    }
+    orderedRemaining.forEach(m=>{
+      const need=Math.max(0,ladderByMuscle[m][tier]-allocated[m]);
+      if(need<=0)return;
+      const give=Math.min(need,remainingCapacity);
+      allocated[m]+=give;
+      remainingCapacity-=give;
+    });
   }
   usedCapacity=weeklyDeliverableVolumeCapacity-remainingCapacity;
 
@@ -477,21 +523,22 @@ function resolveVolumeTargets({planRequirements,targetMuscles,weeklyDeliverableV
 }
 
 /* ================= Phase 5 — Volume Distribution (SessionVolumeTargets) ===== */
-/* VolumeTargets + SplitStructure -> SessionVolumeTargets. KEIN erfundener
-   Verteilungsalgorithmus (kein round-robin, kein "Rest in erste Session",
-   keine eigene Muskel->Split-Tag-Zuordnung): jede Session, die einen
-   Muskel laut sessionTemplateSequence traegt, erhaelt exakt den gleichen
-   Anteil (weekly/AnzahlExpositionen) — das ist dieselbe Rechnung
-   (weeklyTarget/frequency), die STEP 03s SF3/SF4/SP1/SP5 bereits
-   verwenden (weeklyTarget/frequency = Saetze pro Exposition), hier nur
-   auf die konkreten Session-Instanzen angewendet statt auf die
-   aggregierte Splitkennzahl. sessionTemplateSequence ist derselbe
-   externe Input wie in STEP 03 (training-plan-engine.js), da dieses Pack
-   den Muskelinhalt der session_templates[] ebenfalls nicht selbst
-   definiert (v1.4.1 nennt dafuer keine Werte). */
-function computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence){
+/* VolumeTargets + SplitStructure -> SessionVolumeTargets. v1.4.1 verlangt
+   hierfuer eine DETERMINISTISCHE Verteilung, definiert aber keinen
+   konkreten Equal-Split-/Remainder-Algorithmus (siehe Kopf-Kommentar L7).
+   Diese Funktion erfindet daher KEINE Verteilregel (kein Equal-Split,
+   kein Round-Robin, kein "Rest in erste Session"): `sessionTemplateSequence`
+   bestimmt ausschliesslich die ELIGIBILITY (welche Session einen Muskel
+   ueberhaupt traegt — eine reine Tatsachenfeststellung aus demselben
+   externen Input wie in STEP 03), waehrend die tatsaechliche
+   Gewichtsverteilung des Wochenziels auf diese Expositionen ein
+   PFLICHT-externer Input `sessionDistributionWeights` ist (Form:
+   {muscle: [gewicht_expo_0, gewicht_expo_1, ...]}, je Muskel parallel zu
+   dessen eigenen Expositionen, muss sich zu 1 summieren). */
+function computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence,sessionDistributionWeights){
   if(!splitStructure||!Array.isArray(splitStructure.training_weekdays))throw new Error("training-volume-engine: computeSessionVolumeTargets benoetigt SplitStructure.training_weekdays (STEP 03)");
   if(!Array.isArray(sessionTemplateSequence)||!sessionTemplateSequence.length)throw new Error("training-volume-engine: computeSessionVolumeTargets benoetigt sessionTemplateSequence (externer Input, siehe STEP 03)");
+  if(!sessionDistributionWeights)throw new Error("training-volume-engine: computeSessionVolumeTargets benoetigt sessionDistributionWeights — v1.4.1 definiert fuer Phase 5 keinen konkreten Equal-Split-/Remainder-Algorithmus; die Gewichtung je Exposition muss vom Aufrufer explizit vorgegeben werden (kein impliziter Equal-Split).");
   const weekdays=splitStructure.training_weekdays;
   const T=sessionTemplateSequence.length;
   const perSessionInstance=weekdays.map(()=>({}));
@@ -502,8 +549,13 @@ function computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionT
       if(sessionTemplateSequence[i%T].muscles.indexOf(muscle)!==-1)exposureIndexes.push(i);
     });
     if(!exposureIndexes.length)return;
-    const perExposure=roundVolumeToHalfSet(weekly/exposureIndexes.length);
-    exposureIndexes.forEach(i=>{perSessionInstance[i][muscle]=perExposure;});
+    const weights=sessionDistributionWeights[muscle];
+    if(!Array.isArray(weights)||weights.length!==exposureIndexes.length)throw new Error("training-volume-engine: sessionDistributionWeights["+muscle+"] fehlt oder passt nicht zur Anzahl der Expositionen ("+exposureIndexes.length+") — keine implizite Gleichverteilung, die Gewichte je Exposition muessen vom Aufrufer explizit vorgegeben werden.");
+    const weightSum=weights.reduce((a,b)=>a+b,0);
+    if(Math.abs(weightSum-1)>1e-6)throw new Error("training-volume-engine: sessionDistributionWeights["+muscle+"] muss sich zu 1 summieren (erhalten: "+weightSum+")");
+    exposureIndexes.forEach((sessionIndex,k)=>{
+      perSessionInstance[sessionIndex][muscle]=roundVolumeToHalfSet(weekly*weights[k]);
+    });
   });
   return perSessionInstance;
 }
@@ -518,7 +570,7 @@ if(typeof module!=="undefined" && module.exports){
     ROLLING_VOLUME_WINDOW_DAYS,isWithinRollingWindow,
     computeRollingMuscleVolumeCredit,computeRollingDirectShareCredit,
     VOLUME_CORRIDORS,resolveMuscleVolumeCorridor,
-    evaluateVolumeTolerance,VOLUME_SUPPORT_STATE_HINT,buildVolumeDeficit,
+    evaluateVolumeTolerance,buildVolumeDeficit,
     MAX_PRIORITY_MUSCLES,validatePriorityMuscleList,computePriorityMuscleTarget,
     computeIdealTargetFrequency,clampFrequencyToSplit,evaluateStrengthExposurePreference,
     evaluateMuscleSessionSetCap,evaluateTotalSessionSetCap,

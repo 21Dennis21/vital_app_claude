@@ -278,12 +278,19 @@ console.log("========== Phase 3: Allocation-Reihenfolge (resolveVolumeTargets) =
     return Object.assign({goal:"HYPERTROPHY",experience_level:"INTERMEDIATE",priority_muscles:[]},overrides||{});
   }
 
-  // Sehr hohe Kapazitaet: jeder Muskel erreicht seine Obergrenze (Stufe 5 voll finanziert).
-  const abundant=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:10000,limitingConstraint:"P3_TIME",evaluationContext:ctx});
+  // Sehr hohe Kapazitaet: jeder Muskel erreicht seine Obergrenze (Stufe 5
+  // voll finanziert) — bei UEBERSCHUSS ist die Finanzierungsreihenfolge
+  // irrelevant, daher hier trotzdem ein allocationOrder-Fixture (Pflicht,
+  // sobald >1 konkurrierender Muskel vorliegt), NICHT normativ.
+  const abundant=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:10000,allocationOrder:["CHEST","LATS"],limitingConstraint:"P3_TIME",evaluationContext:ctx});
   assertEq(abundant.weeklyVolumeTargets.CHEST,22,"Bei unbegrenzter Kapazitaet erreicht ein Nicht-Prioritaets-Muskel seine Obergrenze (22 fuer HYP/INTERMEDIATE)");
+  assertEq(abundant.weeklyVolumeTargets.LATS,22,"...unabhaengig von der allocationOrder, da genug Kapazitaet fuer BEIDE Muskeln vorhanden ist");
   assertEq(abundant.deficits.length,0,"Bei unbegrenzter Kapazitaet entsteht kein Deficit");
 
   // Prioritaetsmuskel-Ziel ist FIX (Regel 1) und wird durch Kapazitaetsueberschuss NICHT weiter erhoeht.
+  // Nur LATS ist hier ein "remaining"-Nicht-Prioritaetsmuskel (CHEST ist
+  // Prioritaet und dadurch bereits VOR Stufe 3-5 fest alloziert) -> keine
+  // Konkurrenz, allocationOrder daher hier nicht erforderlich.
   const withPriority=TV.resolveVolumeTargets({planRequirements:planReq({priority_muscles:["CHEST"]}),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:10000,limitingConstraint:"P3_TIME",evaluationContext:ctx});
   assertClose(withPriority.weeklyVolumeTargets.CHEST,19.5,"Prioritaetsmuskel CHEST bleibt exakt bei seinem §4.5-Zielwert (19.5), auch bei ueberschuessiger Kapazitaet");
   assertEq(withPriority.weeklyVolumeTargets.LATS,22,"Nicht-Prioritaetsmuskel LATS erreicht dennoch seine eigene Obergrenze");
@@ -291,22 +298,26 @@ console.log("========== Phase 3: Allocation-Reihenfolge (resolveVolumeTargets) =
   // INVARIANT V-1: Prioritaetsmuskel hat nie weniger Volumen als ein
   // vergleichbarer Nicht-Prioritaetsmuskel — hier bewusst mit knapper
   // Kapazitaet geprueft: Nicht-Prioritaet wird VOR Prioritaet Richtung
-  // Floor abgesenkt (§4.5 Regel 4).
-  // usedCapacity fuer CHEST(prio)=19.5 laesst 0.5 fuer LATS -> LATS faellt
-  // weit unter seinen Floor (8), CHEST bleibt bei 19.5.
+  // Floor abgesenkt (§4.5 Regel 4). Auch hier nur 1 "remaining"-Muskel
+  // (LATS), keine allocationOrder noetig.
   const scarce=TV.resolveVolumeTargets({planRequirements:planReq({priority_muscles:["CHEST"]}),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:20,limitingConstraint:"P3_TIME",evaluationContext:ctx});
   assertClose(scarce.weeklyVolumeTargets.CHEST,19.5,"Prioritaetsmuskel-Ziel bleibt bei knapper Kapazitaet unangetastet (wird erst NACH allen Nicht-Prioritaets-Muskeln reduziert)");
   assert(scarce.weeklyVolumeTargets.LATS<scarce.weeklyVolumeTargets.CHEST,"INVARIANT V-1: Nicht-Prioritaetsmuskel LATS hat bei Knappheit weniger Volumen als der Prioritaetsmuskel CHEST");
   assert(scarce.deficits.some(d=>d.muscle_id==="LATS"),"LATS erhaelt einen VolumeDeficit, weil sein Floor bei dieser knappen Kapazitaet nicht erreichbar ist");
 
-  // Proportionale Gleichverteilung innerhalb einer Stufe (dokumentierte,
-  // nicht-normative Notwendigkeit, siehe Kopf-Kommentar L3): zwei
-  // gleichrangige Nicht-Prioritaets-Muskeln mit identischem Korridor und
-  // exakt halb ausreichender Floor-Kapazitaet bekommen exakt die HAELFTE
-  // ihres Floors, nicht "einer volle, der andere nichts".
-  const equalShare=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:8,limitingConstraint:"P3_TIME",evaluationContext:ctx}); // beide floor=8, zusammen 16 noetig, nur 8 da -> je 4
-  assertClose(equalShare.weeklyVolumeTargets.CHEST,4,"proportionale Gleichverteilung: CHEST bekommt die Haelfte des gemeinsam benoetigten Floor-Bedarfs");
-  assertClose(equalShare.weeklyVolumeTargets.LATS,4,"proportionale Gleichverteilung: LATS bekommt ebenfalls die Haelfte (symmetrisch, keine Praeferenz)");
+  // KEINE Gleichverteilung/Round-Robin mehr (STEP-04-Korrektur): bei >1
+  // konkurrierendem Nicht-Prioritaetsmuskel ist allocationOrder PFLICHT
+  // und entscheidet als reine Aufrufer-Vorgabe, wer zuerst finanziert
+  // wird — vollstaendig, bevor der naechste an die Reihe kommt.
+  assertThrows(()=>TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:8,limitingConstraint:"P3_TIME",evaluationContext:ctx}),"resolveVolumeTargets OHNE allocationOrder wirft, wenn mehrere Nicht-Prioritaetsmuskeln um Kapazitaet konkurrieren (keine Gleichverteilung/Round-Robin wird erfunden)");
+  const orderChestFirst=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:8,allocationOrder:["CHEST","LATS"],limitingConstraint:"P3_TIME",evaluationContext:ctx}); // beide floor=8, zusammen 16 noetig, nur 8 vorhanden
+  assertClose(orderChestFirst.weeklyVolumeTargets.CHEST,8,"allocationOrder=[CHEST,LATS]: CHEST wird zuerst VOLLSTAENDIG bis zu seinem Floor finanziert");
+  assertClose(orderChestFirst.weeklyVolumeTargets.LATS,0,"...LATS bekommt danach nichts mehr (keine anteilige Gleichverteilung)");
+  assert(orderChestFirst.deficits.some(d=>d.muscle_id==="LATS"),"LATS erhaelt entsprechend einen VolumeDeficit");
+  const orderLatsFirst=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:8,allocationOrder:["LATS","CHEST"],limitingConstraint:"P3_TIME",evaluationContext:ctx});
+  assertClose(orderLatsFirst.weeklyVolumeTargets.LATS,8,"vertauschte allocationOrder=[LATS,CHEST]: jetzt wird LATS zuerst vollstaendig finanziert (reine Aufrufer-Entscheidung, keine eingebaute Praeferenz)");
+  assertClose(orderLatsFirst.weeklyVolumeTargets.CHEST,0,"...CHEST bekommt danach nichts mehr");
+  assertThrows(()=>TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","LATS"],weeklyDeliverableVolumeCapacity:8,allocationOrder:["CHEST"],limitingConstraint:"P3_TIME",evaluationContext:ctx}),"allocationOrder, das nicht alle konkurrierenden Muskeln abdeckt, wirft");
 
   assertThrows(()=>TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST"],weeklyDeliverableVolumeCapacity:null,evaluationContext:ctx}),"resolveVolumeTargets ohne weeklyDeliverableVolumeCapacity wirft (Pflicht-externer Input, siehe Kopf-Kommentar L2)");
   assertThrows(()=>TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST"],weeklyDeliverableVolumeCapacity:1,evaluationContext:ctx}),"resolveVolumeTargets OHNE limitingConstraint wirft, wenn tatsaechlich ein Deficit entsteht (Pflicht-externer Input, siehe Kopf-Kommentar L4)");
@@ -315,11 +326,17 @@ console.log("========== Phase 3: Allocation-Reihenfolge (resolveVolumeTargets) =
   // hardRequirementFloors (Stufe 1, extern, geschuetzt) werden vollstaendig respektiert.
   const withHardReq=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST"],weeklyDeliverableVolumeCapacity:100,hardRequirementFloors:{CHEST:5},limitingConstraint:"P3_TIME",evaluationContext:ctx});
   assert(withHardReq.usedCapacity>=5,"hardRequirementFloors fliessen in usedCapacity ein (Stufe 1 zuerst reserviert)");
+
+  // Punkt B der Korrekturanweisung: No-Floor-Muskeln bekommen NIE eine
+  // erfundene Floor-/Minimum-Regel, auch wenn sie explizit als Zielmuskel
+  // uebergeben werden.
+  const withNoFloorMuscle=TV.resolveVolumeTargets({planRequirements:planReq(),targetMuscles:["CHEST","FOREARM"],weeklyDeliverableVolumeCapacity:100,allocationOrder:["CHEST"],limitingConstraint:"P3_TIME",evaluationContext:ctx});
+  assertEq(withNoFloorMuscle.weeklyVolumeTargets.FOREARM,undefined,"FOREARM (No-Floor-Muskel) erhaelt KEIN von resolveVolumeTargets erfundenes Zielvolumen, auch wenn explizit als Zielmuskel uebergeben");
 }
 
 console.log("========== Determinismus (INVARIANT G-3) ==========");
 {
-  const input={planRequirements:{goal:"HYPERTROPHY",experience_level:"INTERMEDIATE",priority_muscles:["CHEST"]},targetMuscles:["CHEST","LATS","QUADS"],weeklyDeliverableVolumeCapacity:50,limitingConstraint:"P3_TIME",evaluationContext:ctx};
+  const input={planRequirements:{goal:"HYPERTROPHY",experience_level:"INTERMEDIATE",priority_muscles:["CHEST"]},targetMuscles:["CHEST","LATS","QUADS"],weeklyDeliverableVolumeCapacity:50,allocationOrder:["LATS","QUADS"],limitingConstraint:"P3_TIME",evaluationContext:ctx};
   const r1=TV.resolveVolumeTargets(input);
   const r2=TV.resolveVolumeTargets(input);
   assertEq(r1.weeklyVolumeTargets,r2.weeklyVolumeTargets,"identischer Input + identischer EvaluationContext -> identisches Ergebnis");
@@ -331,20 +348,35 @@ console.log("========== Phase 5: computeSessionVolumeTargets (Weekly Distributio
   // Wiederverwendung derselben externen sessionTemplateSequence-Form wie
   // STEP 03 (training-plan-engine.js) — hier eine kleine, klar als
   // Test-Fixture gekennzeichnete 2-Template-Sequenz (UPPER/LOWER).
+  // sessionTemplateSequence bestimmt NUR die Eligibility (welche Session
+  // ueberhaupt einen Muskel traegt); die tatsaechliche Gewichtung je
+  // Exposition (sessionDistributionWeights) ist ein separater, ebenfalls
+  // klar als Test-Fixture markierter Pflicht-Input — KEIN von dieser
+  // Datei erfundener Equal-Split mehr (STEP-04-Korrektur).
   const splitStructure={training_weekdays:[0,1,3,4]}; // 4 Sessions in der Woche
   const sessionTemplateSequence=[
     {name:"UPPER",muscles:["CHEST","LATS"]},
     {name:"LOWER",muscles:["QUADS"]},
   ];
   const weeklyVolumeTargets={CHEST:12,LATS:12,QUADS:8};
-  const sessionTargets=TV.computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence);
+  // Test-Fixture: CHEST/LATS je 2 Expositionen (Tage 0,2), gleichgewichtet
+  // 0.5/0.5 — QUADS je 2 Expositionen (Tage 1,3), UNgleichgewichtet
+  // 0.25/0.75, um zu zeigen, dass die Funktion KEINEN Equal-Split
+  // erzwingt, sondern exakt die vorgegebenen Gewichte anwendet.
+  const sessionDistributionWeights={CHEST:[0.5,0.5],LATS:[0.5,0.5],QUADS:[0.25,0.75]};
+  const sessionTargets=TV.computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence,sessionDistributionWeights);
   assertEq(sessionTargets.length,4,"eine SessionVolumeTargets-Eintrag je tatsaechlicher Session-Instanz (4 Trainingstage)");
-  // Tage 0,2 (i%2==0) = UPPER, Tage 1,3 (i%2==1) = LOWER -> CHEST/LATS je 2x/Woche, QUADS 2x/Woche
-  assertClose(sessionTargets[0].CHEST,6,"CHEST: 12 Wochensaetze / 2 Expositionen = 6 pro Session (dieselbe Rechnung wie STEP 03s weeklyTarget/frequency)");
-  assertClose(sessionTargets[2].CHEST,6,"CHEST erhaelt in JEDER seiner Expositionen denselben Anteil (gleichmaessige Teilung, keine erfundene round-robin/Rest-Logik)");
-  assertEq(sessionTargets[1].CHEST,undefined,"CHEST wird an LOWER-Tagen nicht trainiert -> kein Eintrag");
-  assertClose(sessionTargets[1].QUADS,4,"QUADS: 8/2=4 pro LOWER-Session");
-  assertThrows(()=>TV.computeSessionVolumeTargets(weeklyVolumeTargets,{training_weekdays:[0]},[]),"computeSessionVolumeTargets ohne sessionTemplateSequence wirft");
+  // Tage 0,2 (i%2==0) = UPPER, Tage 1,3 (i%2==1) = LOWER
+  assertClose(sessionTargets[0].CHEST,6,"CHEST Exposition 1: 12*0.5=6 (Fixture-Gewicht, keine erfundene Formel)");
+  assertClose(sessionTargets[2].CHEST,6,"CHEST Exposition 2: 12*0.5=6");
+  assertEq(sessionTargets[1].CHEST,undefined,"CHEST wird an LOWER-Tagen nicht trainiert -> kein Eintrag (Eligibility bleibt unveraendert aus sessionTemplateSequence)");
+  assertClose(sessionTargets[1].QUADS,2,"QUADS Exposition 1 (Tag 1): 8*0.25=2 — UNgleiche Gewichtung, zeigt dass kein Equal-Split erzwungen wird");
+  assertClose(sessionTargets[3].QUADS,6,"QUADS Exposition 2 (Tag 3): 8*0.75=6");
+
+  assertThrows(()=>TV.computeSessionVolumeTargets(weeklyVolumeTargets,{training_weekdays:[0]},[],sessionDistributionWeights),"computeSessionVolumeTargets ohne sessionTemplateSequence wirft");
+  assertThrows(()=>TV.computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence),"computeSessionVolumeTargets OHNE sessionDistributionWeights wirft (kein impliziter Equal-Split mehr — STEP-04-Korrektur)");
+  assertThrows(()=>TV.computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence,{CHEST:[0.5,0.4],LATS:[0.5,0.5],QUADS:[0.25,0.75]}),"sessionDistributionWeights, die sich nicht zu 1 summieren, wirft");
+  assertThrows(()=>TV.computeSessionVolumeTargets(weeklyVolumeTargets,splitStructure,sessionTemplateSequence,{CHEST:[1],LATS:[0.5,0.5],QUADS:[0.25,0.75]}),"sessionDistributionWeights mit falscher Laenge (passt nicht zur Anzahl Expositionen) wirft");
 }
 
 console.log("========== STEP-03-Integration mit echten VolumeTargets ==========");
@@ -364,10 +396,12 @@ console.log("========== STEP-03-Integration mit echten VolumeTargets =========="
   const sessionCapacityResult=TP.resolveSessionCapacity({session_time_budget_min:60,reserve_s:0,goal:"HYPERTROPHY",actual_session_duration_factor:1.0});
   const sessionCapacity=sessionCapacityResult.sessionCapacity;
 
+  const integrationTargetMuscles=["CHEST","LATS","QUADS","HAMSTRINGS","GLUTES","TRICEPS","BICEPS","UPPER_BACK","FRONT_DELT","SIDE_DELT","REAR_DELT","CALVES","ABS"];
   const volumeResult=TV.resolveVolumeTargets({
     planRequirements,
-    targetMuscles:["CHEST","LATS","QUADS","HAMSTRINGS","GLUTES","TRICEPS","BICEPS","UPPER_BACK","FRONT_DELT","SIDE_DELT","REAR_DELT","CALVES","ABS"],
+    targetMuscles:integrationTargetMuscles,
     weeklyDeliverableVolumeCapacity:200, // Test-Fixture, siehe Kopf-Kommentar L2 — kein Produktions-Default
+    allocationOrder:integrationTargetMuscles, // Test-Fixture, NICHT normativ (siehe Kopf-Kommentar L3) — CHEST ist Prioritaet und nimmt an der Konkurrenz ohnehin nicht teil
     limitingConstraint:"P3_TIME",
     evaluationContext:ctx,
   });
@@ -395,7 +429,21 @@ console.log("========== STEP-03-Integration mit echten VolumeTargets =========="
   assert(splitResult.status==="OK"||splitResult.status==="NEEDS_VOLUME_ADJUSTMENT",splitResult.status,"STEP-03-Split-Engine akzeptiert die von Pack 04 berechneten echten VolumeTargets end-to-end (Status: "+splitResult.status+")");
 
   if(splitResult.status==="OK"){
-    const sessionTargets=TV.computeSessionVolumeTargets(volumeResult.weeklyVolumeTargets,splitResult.splitStructure,sessionTemplatesFixture[splitResult.splitStructure.split_type]);
+    const winningSequence=sessionTemplatesFixture[splitResult.splitStructure.split_type];
+    // Test-only Bequemlichkeitsfunktion: baut EINE moegliche (nicht
+    // normative) Gewichtsverteilung, nur um die STEP-03-Integration
+    // end-to-end durchspielen zu koennen — computeSessionVolumeTargets
+    // selbst erfindet diese Gewichte NICHT (STEP-04-Korrektur).
+    function equalWeightTestFixture(weeklyVolumeTargets,weekdays,sequence){
+      const T=sequence.length,weights={};
+      Object.keys(weeklyVolumeTargets).forEach(muscle=>{
+        const count=weekdays.filter((wd,i)=>sequence[i%T].muscles.indexOf(muscle)!==-1).length;
+        if(count>0)weights[muscle]=Array(count).fill(1/count);
+      });
+      return weights;
+    }
+    const distributionWeights=equalWeightTestFixture(volumeResult.weeklyVolumeTargets,splitResult.splitStructure.training_weekdays,winningSequence);
+    const sessionTargets=TV.computeSessionVolumeTargets(volumeResult.weeklyVolumeTargets,splitResult.splitStructure,winningSequence,distributionWeights);
     assertEq(sessionTargets.length,splitResult.splitStructure.training_weekdays.length,"Phase 5 (SessionVolumeTargets) laesst sich direkt an das STEP-03-Ergebnis anschliessen — ein Eintrag je Session-Instanz");
   }
 }
