@@ -41,6 +41,13 @@
      Kalenderperiode) — bewusst getrennt von chart-resolution.js (dort nur
      die Aggregation INNERHALB des Fensters). -->
 <script src="period-nav.js"></script>
+<!-- TRAINING SYSTEM v1.4.1, Implementation Pack 01/14: Foundation/Core
+     Types/Datenmodell (P0-P7, EvaluationContext/Determinismus, Confidence-
+     Modell, vollstaendiges TEIL-23-Datenmodell) + zugehoerige
+     localStorage-Persistenz-/Migrationsschicht. Reine Datentypen/
+     Persistenz, keine Engine-Logik (siehe Datei-Kopfkommentare). -->
+<script src="training-domain.js"></script>
+<script src="training-storage.js"></script>
 <style>
 /* ===== DESIGN-TOKENS =====
    Alle Farben liegen in CSS-Variablen. Dark Mode tauscht nur die Variablen —
@@ -7160,6 +7167,14 @@ function App(){
     if(theme==="auto")delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme=theme;
   },[theme]);
+  /* TRAINING-Foundation (Pack 01/14): einmaliger, idempotenter Migrations-
+     Bootstrap fuer die neue "tracker_training_*"-Persistenz — schreibt
+     beim allerersten Aufruf nur die Schema-Versionsmarke, veraendert
+     danach nichts mehr. Beruehrt ausschliesslich die neuen Training-Keys,
+     nie bestehende Ernaehrungs-/Gewichts-/Sport-Daten. Erzeugt bewusst
+     KEIN UserTrainingProfile o.ae. (keine erfundenen Nutzerdaten) — das
+     bleibt einem spaeteren Onboarding-Pack vorbehalten. */
+  useEffect(()=>{migrateTrainingStorage();},[]);
   const [tab,setTab]=useState("heute");
   const [verlaufSeg,setVerlaufSeg]=useState(null); // von aussen vorgegebenes Startsegment fuer Verlauf
   /* Navigation von Dashboard-Widgets: wechselt den Tab und merkt optional
