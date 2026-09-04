@@ -192,24 +192,65 @@ console.log("========== Koerpergewicht: kompletter Monat OHNE jede Messung =====
 
 /* ================= X-ACHSEN-TICKS ================= */
 
-console.log("========== pickTimeTicks: Ausduennung getrennt von der Punktzahl (3M/6M-KW-Beispiel) ==========");
+function weekPoints(startWs,count){
+  const out=[];
+  for(let i=0;i<count;i++){const d=new Date(startWs);d.setDate(d.getDate()+i*7);out.push({ts:d.getTime(),y:d.getFullYear(),m:d.getMonth(),d:d.getDate()});}
+  return out;
+}
+function idxGaps(ticks){
+  const gaps=[];
+  for(let i=1;i<ticks.length;i++)gaps.push(ticks[i].idx-ticks[i-1].idx);
+  return gaps;
+}
+
+console.log("========== pickStrideTicks: fester, gleichmaessiger Rhythmus (6M: jede 2. KW) ==========");
 {
-  // ~13 Kalenderwochen (3M) -> bei maxCount 7 automatisch auf 7 Labels ausgeduennt,
-  // alle 13 Wochen bleiben aber echte, anwaehlbare Datenpunkte.
-  const weeks=[];
-  let ws=weekStartDate(2026,4,15);
-  for(let i=0;i<13;i++){const d=new Date(ws);d.setDate(d.getDate()+i*7);weeks.push({ts:d.getTime(),y:d.getFullYear(),m:d.getMonth(),d:d.getDate()});}
-  const ticks=CR.pickTimeTicks(weeks,7);
-  assertEq(weeks.length,13,"3M-Beispiel: 13 echte Wochen-Datenpunkte bleiben vollstaendig vorhanden");
-  assertEq(ticks.length,7,"Aber nur 7 davon werden als X-Achsen-Label ausgewaehlt");
-  assert(ticks.some(t=>t.idx===0)&&ticks.some(t=>t.idx===12),"Erste und letzte Kalenderwoche sind immer dabei");
+  const weeks=weekPoints(weekStartDate(2026,1,15),26); // ~26 Kalenderwochen (6M)
+  const ticks=CR.pickStrideTicks(weeks,2);
+  assertEq(weeks.length,26,"6M-Beispiel: 26 echte Wochen-Datenpunkte bleiben vollstaendig vorhanden");
+  assertEq(ticks.length,13,"Jede 2. Kalenderwoche beschriftet (13 von 26)");
+  assert(idxGaps(ticks).every(g=>g===2),"Der Index-Abstand zwischen den Labels ist UEBERALL exakt 2 — kein unregelmaessiger Sprung");
+  assertEq(ticks[0].idx,0,"Erste sichtbare Kalenderwoche ist immer dabei");
 }
 {
-  // 12M: bis zu 13 Monats-Buckets sollen NIE ausgeduennt werden (siehe StatDetailPage/maxTickCount=13)
+  assertEq(CR.pickStrideTicks([],3).length,0,"Leeres Array: keine Ticks, kein Crash");
+  const single=weekPoints(weekStartDate(2026,7,1),1);
+  assertEq(CR.pickStrideTicks(single,2).length,1,"Ein einzelner Punkt bleibt trotz Schrittweite 2 sichtbar (Index 0 immer dabei)");
+}
+
+console.log("========== pickEvenStrideTicks: 3M soll JEDE Kalenderwoche zeigen (kein Ausduennen bei ueblichen 13-14 Wochen) ==========");
+{
+  const weeks=weekPoints(weekStartDate(2026,4,15),13); // typisches 3M-Rolling-Fenster
+  const ticks=CR.pickEvenStrideTicks(weeks,15);
+  assertEq(ticks.length,13,"13 Kalenderwochen bei Deckel 15: ALLE werden beschriftet, keine Ausduennung");
+  assert(idxGaps(ticks).every(g=>g===1),"Lueckenlos: jede einzelne Kalenderwoche hat ein Label");
+}
+{
+  const weeks=weekPoints(weekStartDate(2026,4,15),14); // volles Kalenderquartal, oft 14 Wochen
+  const ticks=CR.pickEvenStrideTicks(weeks,15);
+  assertEq(ticks.length,14,"14 Kalenderwochen bei Deckel 15: ebenfalls ALLE beschriftet");
+}
+
+console.log("========== pickEvenStrideTicks: NIE eine unregelmaessige Folge wie '23,25,27,29,32,34,36' ==========");
+{
+  // Regressionstest fuer genau den in der Aufgabenstellung kritisierten Fall:
+  // 14 Wochen-Datenpunkte bei einem Deckel von 7 duerfen NICHT ungleichmaessig
+  // ausgeduennt werden (das alte, zeit-ziel-basierte Verfahren erzeugte hier
+  // Sprung-Muster wie 2,2,2,2,3,2,2 statt eines konstanten Rhythmus).
+  const weeks=weekPoints(weekStartDate(2026,4,15),14);
+  const ticks=CR.pickEvenStrideTicks(weeks,7);
+  const gaps=idxGaps(ticks);
+  assert(gaps.every(g=>g===gaps[0]),"ALLE Index-Abstaende zwischen den Labels sind identisch (konstanter Rhythmus, kein Sprung)");
+  assertEq(ticks[0].idx,0,"Beginnt immer bei der ersten sichtbaren Kalenderwoche");
+}
+
+console.log("========== pickEvenStrideTicks: 12M zeigt IMMER alle sichtbaren Monate ==========");
+{
   const months=[];
   for(let i=0;i<13;i++)months.push({ts:i,y:2025,m:i%12,d:1});
-  const ticks=CR.pickTimeTicks(months,13);
-  assertEq(ticks.length,13,"12M mit maxTickCount=13: ALLE Monats-Buckets werden beschriftet, keine Ausduennung");
+  const ticks=CR.pickEvenStrideTicks(months,13);
+  assertEq(ticks.length,13,"12M mit Deckel 13: ALLE Monats-Buckets werden beschriftet, keine Ausduennung");
+  assert(idxGaps(ticks).every(g=>g===1),"Lueckenlos: jeder Monat hat ein Label");
 }
 
 console.log("========== pickWeekAnchoredDayTicks (1M: Starttag + Montage) ==========");
