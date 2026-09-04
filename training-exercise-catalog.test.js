@@ -8,12 +8,15 @@
    Funktionen/Enums aus BEIDEN als bare Identifier nutzt (movement_similarity
    braucht z.B. MOVEMENT_PATTERN_ID/isRegisteredMovementSubpatternId aus
    training-domain.js; validateCatalogLints braucht validateAnatomySubregionTag
-   aus training-volume-engine.js). */
+   aus training-volume-engine.js). Seit STEP06 zusaetzlich training-
+   equipment.js (validateCatalogLints Lint #16 nutzt resolveSetupPredicate/
+   buildLocationInventoryView als bare Identifier). */
 const fs=require("fs");
 const path=require("path");
 const vm=require("vm");
 vm.runInThisContext(fs.readFileSync(path.join(__dirname,"training-domain.js"),"utf8"),{filename:"training-domain.js"});
 vm.runInThisContext(fs.readFileSync(path.join(__dirname,"training-volume-engine.js"),"utf8"),{filename:"training-volume-engine.js"});
+vm.runInThisContext(fs.readFileSync(path.join(__dirname,"training-equipment.js"),"utf8"),{filename:"training-equipment.js"});
 const EC=require("./training-exercise-catalog.js");
 const TD=require("./training-domain.js");
 
@@ -239,6 +242,10 @@ console.log("========== §29.13 Catalog-Lints: einzeln erzwungen (mit absichtlic
   const dupBranch=catalog.map(e=>Object.assign({},e));
   dupBranch[0]=Object.assign({},dupBranch[0],{equipment_setups:[["BARBELL_LOADABLE"],["BARBELL_LOADABLE"]]});
   assert(EC.validateCatalogLints(dupBranch).some(e=>e.indexOf("CAT-LINT-16")!==-1),"Lint #16 (keine redundante doppelte OR-Branch) schlaegt an, wenn zwei equipment_setups-Branches identisch sind");
+  // STEP06: Lint #16 loest jetzt zusaetzlich jeden Tag gegen die echte §29.4-Predicate-Semantik auf (training-equipment.js).
+  const impossibleTag=catalog.map(e=>Object.assign({},e));
+  impossibleTag[0]=Object.assign({},impossibleTag[0],{equipment_setups:[["NOT_A_REAL_PREDICATE_OR_SUBTYPE"]]});
+  assert(EC.validateCatalogLints(impossibleTag).some(e=>e.indexOf("CAT-LINT-16")!==-1&&e.indexOf("impossible")!==-1),"Lint #16 (STEP06: echte Predicate-Aufloesung) schlaegt an, wenn ein Tag zu keinem §29.4-Shorthand/§29.1-Subtype aufloest");
 
   // Lint #18: normative Identifier muessen durch bestehende Registries bzw. den Baseline-Wertevorrat aufloesen.
   const badGoal=catalog.map(e=>Object.assign({},e));
@@ -259,10 +266,10 @@ console.log("========== §29.13 Catalog-Lints: einzeln erzwungen (mit absichtlic
     assert(!!EC.CATALOG_LINT_STATUS[lintNo],"CATALOG_LINT_STATUS enthaelt einen Eintrag fuer Lint #"+lintNo);
     assert(["IMPLEMENTED","PARTIAL","NOT_TESTABLE"].indexOf(EC.CATALOG_LINT_STATUS[lintNo].status)!==-1,"Lint #"+lintNo+" hat einen der 3 zulaessigen Status-Werte");
   }
-  assertEq(EC.CATALOG_LINT_STATUS[12].status,"PARTIAL","Lint #12 ist ehrlich als PARTIAL markiert (PER_HAND/PER_SIDE/TOTAL ist ein LoadProfileVersion-Laufzeitdatum, kein Catalog-Feld)");
-  assertEq(EC.CATALOG_LINT_STATUS[15].status,"NOT_TESTABLE","Lint #15 ist ehrlich als NOT_TESTABLE markiert (Substitution-/Equipment-Matching-Engine existiert nicht)");
-  assertEq(EC.CATALOG_LINT_STATUS[16].status,"PARTIAL","Lint #16 ist ehrlich als PARTIAL markiert (echte Unmoeglichkeit braucht eine Equipment-Mutual-Exclusivity-Registry)");
-  const fullyImplemented=[1,2,3,4,5,6,7,8,9,10,11,13,14,17,18];
+  assertEq(EC.CATALOG_LINT_STATUS[12].status,"PARTIAL","Lint #12 bleibt ehrlich als PARTIAL markiert (STEP06: PER_HAND/PER_SIDE/TOTAL jetzt real pruefbar+getestet in training-equipment.js, aber LoadProfileVersion ist strukturell nie ein Catalog-A/B/C-Feld)");
+  assertEq(EC.CATALOG_LINT_STATUS[15].status,"IMPLEMENTED","Lint #15 ist seit STEP06 als IMPLEMENTED markiert (isLoadEquivalentInstance() in training-equipment.js beweist strukturell keine Aequivalenz-Inferenz aus subtype)");
+  assertEq(EC.CATALOG_LINT_STATUS[16].status,"PARTIAL","Lint #16 bleibt ehrlich als PARTIAL markiert (STEP06: echte §29.4-Predicate-Aufloesung jetzt gebaut, aber physische Mutual-Exclusivity bleibt unbelegt)");
+  const fullyImplemented=[1,2,3,4,5,6,7,8,9,10,11,13,14,15,17,18];
   fullyImplemented.forEach(n=>assertEq(EC.CATALOG_LINT_STATUS[n].status,"IMPLEMENTED","Lint #"+n+" ist als vollstaendig IMPLEMENTED markiert"));
 
   // Die REALE, unveraenderte 125-Record-Baseline muss bei alledem 0 Lint-Fehler haben (kein Fake-PASS: die neue, strengere Logik darf keine echten Regressionen uebersehen ODER faelschlich melden).

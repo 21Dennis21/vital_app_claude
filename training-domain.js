@@ -220,6 +220,90 @@ function loadAxisClass(loadMechanism,hasVariantChain){
   return LOAD_AXIS_CLASS.NON_REP;
 }
 
+/* ================= §29.1 Equipment Family / Subtype Registry (STEP 06) =================
+   Woertlich aus §29.1. STEP01 liess EquipmentDefinitionVersion.family/
+   .subtype bewusst als offene Strings (siehe Datei-Kopfkommentar: "viele
+   Enum-Wertelisten ... werden in diesem Pack NICHT aufgezaehlt, weil Paket
+   01 sie nicht enthaelt"); STEP06 schliesst sie jetzt hier, analog zur
+   STEP-05-Schliessung von movement_pattern.
+   Fuer SELECTORIZED_MACHINE/PLATE_LOADED_MACHINE nennt §29.1 KEINE
+   Subtype-Liste ("machine_functional_subtype required") — die eigentliche
+   Differenzierung liegt dort in §29.2 (MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY),
+   nicht in einer Subtype-Liste dieser Registry. EXTENDED nennt §29.1
+   woertlich "specialty implements not required for baseline feasibility"
+   und definiert explizit KEINE Subtype-Liste. Fuer diese 3 Familien wird
+   daher KEIN Subtype-Wertevorrat erfunden (isValidEquipmentSubtype lässt
+   dort jeden nicht-leeren String zu); alle anderen 7 Familien sind ein
+   geschlossener Wertevorrat exakt nach §29.1. */
+const EQUIPMENT_FAMILY_SUBTYPE_REGISTRY=Object.freeze({
+  FREE_WEIGHT:Object.freeze(["OLYMPIC_BARBELL","STANDARD_BARBELL","EZ_CURL_BAR","TRAP_BAR","SAFETY_SQUAT_BAR","SWISS_MULTI_GRIP_BAR","FIXED_DUMBBELL","ADJUSTABLE_DUMBBELL","LOADABLE_DUMBBELL","KETTLEBELL","PLATES","MICROPLATES"]),
+  SUPPORT:Object.freeze(["FLAT_BENCH","ADJUSTABLE_BENCH","PREACHER_BENCH","ROMAN_CHAIR","GHD","NORDIC_BENCH","BOX_STEP","PAD_SUPPORT","FIXED_SUPPORT","SLIDERS","AB_WHEEL"]),
+  RACK_STATION:Object.freeze(["POWER_RACK","HALF_RACK","SQUAT_STAND","BENCH_RACK","SMITH_MACHINE","GUIDED_BAR"]),
+  CABLE:Object.freeze(["SINGLE_FIXED_PULLEY","SINGLE_ADJUSTABLE_COLUMN","DUAL_ADJUSTABLE_PULLEY","FUNCTIONAL_TRAINER","CABLE_CROSSOVER","LAT_PULLDOWN_STATION","SEATED_ROW_STATION","COMBO_PULLDOWN_ROW"]),
+  SELECTORIZED_MACHINE:null,
+  PLATE_LOADED_MACHINE:null,
+  BODYWEIGHT:Object.freeze(["FLOOR","PULLUP_BAR","DIP_STATION","PARALLEL_BARS","RINGS","SUSPENSION_TRAINER","WALK_SPACE"]),
+  RESISTANCE_ACCESSORY:Object.freeze(["LOOP_BAND","TUBE_BAND","LONG_BAND","DIP_BELT","WEIGHT_VEST","ANKLE_WEIGHT","ANCHOR_POINT"]),
+  SPECIAL_CORE:Object.freeze(["LANDMINE","BELT_SQUAT","SLED"]),
+  EXTENDED:null,
+});
+const EQUIPMENT_FAMILIES_REQUIRING_MACHINE_FUNCTIONAL_SUBTYPE=Object.freeze(["SELECTORIZED_MACHINE","PLATE_LOADED_MACHINE"]);
+function isValidEquipmentFamily(family){
+  return Object.prototype.hasOwnProperty.call(EQUIPMENT_FAMILY_SUBTYPE_REGISTRY,family);
+}
+function isValidEquipmentSubtype(family,subtype){
+  if(!isValidEquipmentFamily(family))return false;
+  const list=EQUIPMENT_FAMILY_SUBTYPE_REGISTRY[family];
+  if(list===null)return typeof subtype==="string"&&subtype.length>0;
+  return list.indexOf(subtype)!==-1;
+}
+/* ================= §29.2 Machine Functional Subtype Registry (STEP 06) ================= */
+const MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY=Object.freeze([
+  "CHEST_PRESS_FLAT","CHEST_PRESS_INCLINE","SHOULDER_PRESS","PECTORAL_FLY","REVERSE_FLY","LATERAL_RAISE",
+  "PULLDOWN","ROW","PULLOVER","BICEPS_CURL","TRICEPS_EXTENSION","TRICEPS_PRESS","LEG_PRESS_45",
+  "LEG_PRESS_HORIZONTAL","HACK_SQUAT","PENDULUM_SQUAT","BELT_SQUAT","LEG_EXTENSION","LEG_CURL_SEATED",
+  "LEG_CURL_LYING","HIP_ABDUCTION","HIP_ADDUCTION","HIP_EXTENSION_GLUTE","HIP_THRUST","CALF_RAISE",
+  "ABDOMINAL_FLEXION","BACK_EXTENSION","ASSISTED_PULLUP_DIP",
+]);
+/* ================= §29.3 Capability Registry (STEP 06) =================
+   Namespaced: CapabilityPredicate{namespace,operator,value} validiert
+   namespace+value gegen dieses Registry. `operator` besitzt in den fuer
+   dieses Pack verfuegbaren Quellen (§29.3 selbst, §1.4) keinen woertlich
+   genannten geschlossenen Wertevorrat (der lebt laut STEP05-Filequelle in
+   §23.1, ausdruecklich "nur zur Einordnung, NICHT implementiert") — hier
+   daher bewusst NICHT erfunden, `operator` bleibt ein Pflichtfeld ohne
+   Enum-Pruefung (siehe createCapabilityPredicate). */
+const CAPABILITY_REGISTRY=Object.freeze({
+  PATH:Object.freeze(["FREE","GUIDED_LINEAR","GUIDED_ARC","CONVERGING","DIVERGING","USER_DEFINED_CABLE"]),
+  PULLEY_POSITION:Object.freeze(["HIGH","MID","LOW","HEIGHT_ADJUSTABLE"]),
+  LATERALITY:Object.freeze(["BILATERAL_DEPENDENT","BILATERAL_INDEPENDENT","UNILATERAL_SUPPORTED"]),
+  SUPPORT:Object.freeze(["CHEST_SUPPORTED","BACK_SUPPORTED","SEATED","STANDING","PRONE","SUPINE","LOWER_LEG_ANCHORED"]),
+  BENCH:Object.freeze(["FLAT","INCLINE_ADJUSTABLE","DECLINE_CAPABLE"]),
+  RACK:Object.freeze(["SQUAT_HEIGHT","BENCH_HEIGHT","SAFETY_ARMS","PULLUP_BAR","ROW_HEIGHT"]),
+  BODYWEIGHT:Object.freeze(["PULLUP","DIP","ROW","SUSPENSION","EXTERNAL_LOAD_ATTACHABLE","WALK_SPACE"]),
+  ASSISTANCE:Object.freeze(["COUNTERWEIGHT_ASSISTANCE","BAND_ASSISTANCE"]),
+  CABLE_ATTACHMENT:Object.freeze(["SINGLE_D_HANDLE","PAIR_D_HANDLES","ROPE","STRAIGHT_BAR","EZ_BAR","WIDE_BAR","NEUTRAL_PULLDOWN_HANDLE","NEUTRAL_ROW_HANDLE","ANKLE_STRAP"]),
+  LOADABLE:Object.freeze(["PLATE_LOADABLE","STACK_SELECTABLE","DUMBBELL_SELECTABLE","BAND_RESISTANCE","BODYWEIGHT_PLUS_LOAD"]),
+  ANCHOR:Object.freeze(["LOW","MID","HIGH"]),
+});
+function isValidCapabilityNamespace(namespace){
+  return Object.prototype.hasOwnProperty.call(CAPABILITY_REGISTRY,namespace);
+}
+function isValidCapabilityValue(namespace,value){
+  return isValidCapabilityNamespace(namespace)&&CAPABILITY_REGISTRY[namespace].indexOf(value)!==-1;
+}
+/* ================= §9.1 LoadProfileVersion — Enum-Wertevorraete (STEP 06) =================
+   Woertlich aus §9.1. STEP01 hatte createLoadProfileVersion bereits als
+   Pflichtfeld-Struktur angelegt, aber ohne Enum-Pruefung der einzelnen
+   Wertelisten (freie Strings) — wird hier, als Primary-Scope TEIL 9 dieses
+   Packs, geschlossen. */
+const LOAD_UNIT=Object.freeze({KG:"KG",LB:"LB",BAND_LEVEL:"BAND_LEVEL",BODYWEIGHT_KG:"BODYWEIGHT_KG",ASSISTANCE_KG:"ASSISTANCE_KG",DISPLAY_UNIT:"DISPLAY_UNIT"});
+const DISPLAY_SEMANTICS=Object.freeze({TOTAL_LOAD:"TOTAL_LOAD",PER_HAND:"PER_HAND",PER_SIDE:"PER_SIDE",TOTAL_ADDED:"TOTAL_ADDED",STACK_LABEL:"STACK_LABEL",ADDED_LOAD:"ADDED_LOAD",ASSISTANCE:"ASSISTANCE",ORDINAL:"ORDINAL"});
+const LOAD_DIRECTION=Object.freeze({HIGHER_IS_MORE:"HIGHER_IS_MORE",LOWER_IS_MORE:"LOWER_IS_MORE"});
+const PAIR_SEMANTICS=Object.freeze({SINGLE:"SINGLE",PAIR_PER_HAND:"PAIR_PER_HAND",N_A:"N_A"});
+const PER_SIDE_SEMANTICS=Object.freeze({PER_SIDE:"PER_SIDE",TOTAL:"TOTAL",N_A:"N_A"});
+const RATIO_CONFIDENCE=Object.freeze({NONE:"NONE",LOW:"LOW",MEDIUM:"MEDIUM",HIGH:"HIGH"});
+
 /* ================= Kanonische fachliche Enums (Korrektur nach STEP-01-Review) =================
    Pack 01 selbst wiederholt die Master-v1.4.1-Registries nicht vollstaendig
    (viele Wertelisten stehen erst in Teil 29 bzw. anderen Packs). Fuer die
@@ -451,16 +535,42 @@ function createCuratedVeto(f){
   requireFields({...f,__type__:"CuratedVeto"},["from_exercise_id","to_exercise_id","reason"]);
   return {from_exercise_id:f.from_exercise_id,to_exercise_id:f.to_exercise_id,reason:f.reason};
 }
+/* KORREKTUR (STEP 06): family/subtype/machine_functional_subtype waren in
+   STEP01 bewusst offene Strings (siehe Datei-Kopfkommentar) — jetzt gegen
+   §29.1/§29.2 geschlossen. SELECTORIZED_MACHINE/PLATE_LOADED_MACHINE
+   verlangen laut §29.1 woertlich einen machine_functional_subtype; alle
+   anderen Familien duerfen ihn nicht fuehren (kein MACHINE(X)-Anspruch ohne
+   diese zwei Familien, sonst wuerde eine nicht gestuetzte Aequivalenz
+   suggeriert). */
 function createEquipmentDefinitionVersion(f){
   f=f||{};
   requireFields({...f,__type__:"EquipmentDefinitionVersion"},["id","version","canonical_name","family","subtype","status"]);
+  if(!isValidEquipmentFamily(f.family))throw new Error("training-domain: ungueltige EquipmentDefinitionVersion.family: "+JSON.stringify(f.family)+" (§29.1)");
+  if(!isValidEquipmentSubtype(f.family,f.subtype))throw new Error("training-domain: ungueltiger EquipmentDefinitionVersion.subtype '"+f.subtype+"' fuer family '"+f.family+"' (§29.1)");
+  const requiresMachineSubtype=EQUIPMENT_FAMILIES_REQUIRING_MACHINE_FUNCTIONAL_SUBTYPE.indexOf(f.family)!==-1;
+  if(requiresMachineSubtype){
+    if(f.machine_functional_subtype==null)throw new Error("training-domain: EquipmentDefinitionVersion.family '"+f.family+"' erfordert machine_functional_subtype (§29.1)");
+    if(MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY.indexOf(f.machine_functional_subtype)===-1)throw new Error("training-domain: ungueltiger machine_functional_subtype: "+JSON.stringify(f.machine_functional_subtype)+" (§29.2)");
+  }else if(f.machine_functional_subtype!=null){
+    throw new Error("training-domain: machine_functional_subtype ist nur fuer SELECTORIZED_MACHINE/PLATE_LOADED_MACHINE zulaessig, nicht fuer family '"+f.family+"' (§29.1)");
+  }
   return {id:f.id,version:f.version,canonical_name:f.canonical_name,family:f.family,subtype:f.subtype,
     machine_functional_subtype:f.machine_functional_subtype!==undefined?f.machine_functional_subtype:null,
     default_capability_schema:f.default_capability_schema||[],status:f.status};
 }
+/* KORREKTUR (STEP 06): inventory_state war in STEP01 ein ungeprueftes
+   Pflichtfeld — jetzt gegen INVENTORY_STATE (§1.4/§23.2) geschlossen.
+   equivalence_group_id bleibt bewusst ein freier, optionaler Identifier
+   (kein geschlossenes Registry noetig: §11.8 definiert ihn als kuratierte,
+   fallweise vergebene Kennung, kein Enum) — INVARIANT LB-7/Catalog-Lint
+   #15 verlangen nur, dass NIE aus family/subtype/machine_functional_subtype
+   auf Aequivalenz geschlossen wird (siehe training-equipment.js
+   isLoadEquivalentInstance()), nicht dass equivalence_group_id selbst aus
+   einer Liste stammt. */
 function createEquipmentInstance(f){
   f=f||{};
   requireFields({...f,__type__:"EquipmentInstance"},["id","location_id","equipment_definition_version_id","inventory_state"]);
+  validateEnumValue(f.inventory_state,INVENTORY_STATE,"inventory_state");
   return {id:f.id,location_id:f.location_id,equipment_definition_version_id:f.equipment_definition_version_id,
     inventory_state:f.inventory_state,capability_values:f.capability_values||[],
     load_profile_version_id:f.load_profile_version_id!==undefined?f.load_profile_version_id:null,
@@ -471,6 +581,7 @@ function createEquipmentInstance(f){
 function createAttachmentInstance(f){
   f=f||{};
   requireFields({...f,__type__:"AttachmentInstance"},["id","location_id","equipment_definition_version_id","inventory_state"]);
+  validateEnumValue(f.inventory_state,INVENTORY_STATE,"inventory_state");
   return {id:f.id,location_id:f.location_id,equipment_definition_version_id:f.equipment_definition_version_id,
     capability_values:f.capability_values||[],inventory_state:f.inventory_state};
 }
@@ -479,16 +590,30 @@ function createEquipmentProfileVersion(f){
   requireFields({...f,__type__:"EquipmentProfileVersion"},["id","location_id","version","created_at"]);
   return {id:f.id,location_id:f.location_id,version:f.version,equipment_instance_ids:f.equipment_instance_ids||[],created_at:f.created_at};
 }
+/* KORREKTUR (STEP 06): namespace/value waren in STEP01 ungeprueft — jetzt
+   gegen §29.3 CAPABILITY_REGISTRY geschlossen. `operator` bleibt bewusst
+   ungeprueft (siehe CAPABILITY_REGISTRY-Kommentar oben: kein woertlicher
+   Wertevorrat in den fuer dieses Pack verfuegbaren Quellen). */
 function createCapabilityPredicate(f){
   f=f||{};
   requireFields({...f,__type__:"CapabilityPredicate"},["namespace","operator","value"]);
+  if(!isValidCapabilityNamespace(f.namespace))throw new Error("training-domain: ungueltiger CapabilityPredicate.namespace: "+JSON.stringify(f.namespace)+" (§29.3)");
+  if(!isValidCapabilityValue(f.namespace,f.value))throw new Error("training-domain: ungueltiger CapabilityPredicate.value '"+f.value+"' fuer namespace '"+f.namespace+"' (§29.3)");
   return {namespace:f.namespace,operator:f.operator,value:f.value};
 }
 /* §9.1 — jede numerisch/ordinal progressierbare Equipment-Instanz besitzt
    eine versionierte, explizite Lastsemantik. */
+/* KORREKTUR (STEP 06): die 6 Enum-Felder waren in STEP01 ungeprueft (freie
+   Strings) — jetzt gegen die woertlichen §9.1-Wertelisten geschlossen. */
 function createLoadProfileVersion(f){
   f=f||{};
   requireFields({...f,__type__:"LoadProfileVersion"},["id","equipment_instance_id","version","load_unit","display_semantics","direction","pair_semantics","per_side_semantics","ratio_confidence","effective_load_unknown","microloading_available"]);
+  validateEnumValue(f.load_unit,LOAD_UNIT,"load_unit");
+  validateEnumValue(f.display_semantics,DISPLAY_SEMANTICS,"display_semantics");
+  validateEnumValue(f.direction,LOAD_DIRECTION,"direction");
+  validateEnumValue(f.pair_semantics,PAIR_SEMANTICS,"pair_semantics");
+  validateEnumValue(f.per_side_semantics,PER_SIDE_SEMANTICS,"per_side_semantics");
+  validateEnumValue(f.ratio_confidence,RATIO_CONFIDENCE,"ratio_confidence");
   return {
     id:f.id,equipment_instance_id:f.equipment_instance_id,version:f.version,
     load_unit:f.load_unit,display_semantics:f.display_semantics,direction:f.direction,
@@ -579,6 +704,7 @@ const AVAILABILITY_STATE=Object.freeze({AVAILABLE:"AVAILABLE",TEMPORARILY_UNAVAI
 function createAvailabilityEvent(f){
   f=f||{};
   requireFields({...f,__type__:"AvailabilityEvent"},["id","equipment_instance_id","state","starts_at","reason","recorded_at"]);
+  validateEnumValue(f.state,AVAILABILITY_STATE,"state"); // KORREKTUR (STEP 06): war ungeprueft
   return {id:f.id,equipment_instance_id:f.equipment_instance_id,
     session_instance_id:f.session_instance_id!==undefined?f.session_instance_id:null,
     state:f.state,starts_at:f.starts_at,expires_at:f.expires_at!==undefined?f.expires_at:null,
@@ -588,6 +714,8 @@ const INVENTORY_STATE=Object.freeze({PRESENT:"PRESENT",NOT_PRESENT:"NOT_PRESENT"
 function createLocationInventoryEvent(f){
   f=f||{};
   requireFields({...f,__type__:"LocationInventoryEvent"},["id","location_id","from_state","to_state","source","effective_at","recorded_at"]);
+  validateEnumValue(f.from_state,INVENTORY_STATE,"from_state"); // KORREKTUR (STEP 06): war ungeprueft
+  validateEnumValue(f.to_state,INVENTORY_STATE,"to_state");
   return {id:f.id,location_id:f.location_id,
     equipment_instance_id:f.equipment_instance_id!==undefined?f.equipment_instance_id:null,
     capability_key:f.capability_key!==undefined?f.capability_key:null,
@@ -1091,6 +1219,10 @@ if(typeof module!=="undefined" && module.exports){
     CONFIDENCE_LEVELS,CONFIDENCE_ORDER,compareConfidence,
     roundVolumeToHalfSet,roundToAvailableSteps,roundTimeSpanMinutes,
     LOAD_MECHANISM_REGISTRY,LOAD_AXIS_CLASS,loadAxisClass,
+    EQUIPMENT_FAMILY_SUBTYPE_REGISTRY,EQUIPMENT_FAMILIES_REQUIRING_MACHINE_FUNCTIONAL_SUBTYPE,
+    isValidEquipmentFamily,isValidEquipmentSubtype,MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY,
+    CAPABILITY_REGISTRY,isValidCapabilityNamespace,isValidCapabilityValue,
+    LOAD_UNIT,DISPLAY_SEMANTICS,LOAD_DIRECTION,PAIR_SEMANTICS,PER_SIDE_SEMANTICS,RATIO_CONFIDENCE,
     validateEnumValue,validateEnumArray,validateNumericRange,validateMuscleContributionBands,
     TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
     LIMITING_CONSTRAINT,VOLUME_TOLERANCE_STATUS,

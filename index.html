@@ -73,6 +73,17 @@
      Kopfkommentar fuer die expliziten externen Pflicht-Inputs, die
      dieses Pack bewusst nicht selbst erfindet). -->
 <script src="training-volume-engine.js"></script>
+<!-- TRAINING SYSTEM v1.4.1, Implementation Pack 06/14: Equipment/Locations/
+     Feasibility/Support/Load Granularity — schliesst die Equipment Family/
+     Subtype-, Machine-Functional-Subtype- und Capability-Registry (§29.1-
+     §29.3, direkt in training-domain.js) und liefert die Setup-Predicate-
+     Language/OR-of-AND-Satisfiability (§29.4), resolve_steps (§9.2), die
+     Load-Mechanism<->LoadProfileVersion-Semantikpruefung (§29.5/§9.1) sowie
+     reine Klassifikationsfunktionen fuer Maschinen-Aequivalenz (§11.8),
+     Migration-Tiers und Support-States (§1.4) als reine Funktionsschicht.
+     Wird von der UI noch NICHT aufgerufen — keine Exercise Selection, keine
+     Slot Generation (siehe Datei-Kopfkommentar). -->
+<script src="training-equipment.js"></script>
 <!-- TRAINING SYSTEM v1.4.1, Implementation Pack 05/14: Exercise Catalog/
      Movement & Muscle Taxonomy — schliesst die kanonische movement_pattern-/
      movement_subpattern-Registry (§5.1, direkt in training-domain.js),
@@ -3147,18 +3158,24 @@ function SettingsRow({label,value,onClick}){
    Ersatz fuer den vollstaendigen TEIL-29-Katalog (spaeteres Pack): reine
    editierbare Startschaetzungen. Stabile IDs, damit wiederholtes Speichern
    idempotent bleibt statt bei jedem Onboarding-Durchlauf neue Definitionen
-   anzulegen. */
+   anzulegen.
+   KORREKTUR (STEP 06): family/subtype waren Paket-02-Platzhalter-Strings
+   ("BENCH","RACK","MACHINE","BODYWEIGHT_APPARATUS","BAND","OLYMPIC_BAR" etc.),
+   die keinem Eintrag der §29.1 Equipment Family/Subtype Registry entsprachen
+   (die jetzt in training-domain.js geschlossen ist und ungueltige Werte
+   ablehnt). Auf die naechstliegenden kanonischen §29.1-Werte korrigiert;
+   IDs/Namen/UI unveraendert. */
 const TRAINING_EQUIPMENT_PRESETS=[
-  {id:"eqdef_barbell_plates",name:"Langhantel + Scheiben",family:"FREE_WEIGHT",subtype:"OLYMPIC_BAR"},
-  {id:"eqdef_dumbbells",name:"Kurzhanteln",family:"FREE_WEIGHT",subtype:"DUMBBELL"},
-  {id:"eqdef_bench",name:"Verstellbare Bank",family:"BENCH",subtype:"ADJUSTABLE"},
-  {id:"eqdef_rack",name:"Kraftstation / Rack",family:"RACK",subtype:"POWER_RACK"},
-  {id:"eqdef_cable_machine",name:"Kabelzug-Turm",family:"MACHINE",subtype:"CABLE"},
-  {id:"eqdef_pull_up_bar",name:"Klimmzugstange",family:"BODYWEIGHT_APPARATUS",subtype:"PULL_UP_BAR"},
-  {id:"eqdef_dip_station",name:"Dip-Station",family:"BODYWEIGHT_APPARATUS",subtype:"DIP_STATION"},
-  {id:"eqdef_rings",name:"Ringe",family:"BODYWEIGHT_APPARATUS",subtype:"RINGS"},
-  {id:"eqdef_suspension_trainer",name:"Schlingentrainer",family:"BODYWEIGHT_APPARATUS",subtype:"SUSPENSION_TRAINER"},
-  {id:"eqdef_resistance_bands",name:"Widerstandsbänder",family:"BAND",subtype:"RESISTANCE_BAND"},
+  {id:"eqdef_barbell_plates",name:"Langhantel + Scheiben",family:"FREE_WEIGHT",subtype:"OLYMPIC_BARBELL"},
+  {id:"eqdef_dumbbells",name:"Kurzhanteln",family:"FREE_WEIGHT",subtype:"FIXED_DUMBBELL"},
+  {id:"eqdef_bench",name:"Verstellbare Bank",family:"SUPPORT",subtype:"ADJUSTABLE_BENCH"},
+  {id:"eqdef_rack",name:"Kraftstation / Rack",family:"RACK_STATION",subtype:"POWER_RACK"},
+  {id:"eqdef_cable_machine",name:"Kabelzug-Turm",family:"CABLE",subtype:"FUNCTIONAL_TRAINER"},
+  {id:"eqdef_pull_up_bar",name:"Klimmzugstange",family:"BODYWEIGHT",subtype:"PULLUP_BAR"},
+  {id:"eqdef_dip_station",name:"Dip-Station",family:"BODYWEIGHT",subtype:"DIP_STATION"},
+  {id:"eqdef_rings",name:"Ringe",family:"BODYWEIGHT",subtype:"RINGS"},
+  {id:"eqdef_suspension_trainer",name:"Schlingentrainer",family:"BODYWEIGHT",subtype:"SUSPENSION_TRAINER"},
+  {id:"eqdef_resistance_bands",name:"Widerstandsbänder",family:"RESISTANCE_ACCESSORY",subtype:"LOOP_BAND"},
 ];
 
 /* "equipment_profile_confirmed" (§1.2 REQUIRED-Feld 6, hier nicht als
