@@ -7,60 +7,102 @@
    ausdruecklich referenzierten Dependency-Contract-Auszuege §0.2-0.5,
    §4.2, §4.5, §4.6, §5.3, §5.5(Kopf), §17.3, §17.4, §21.6, §23.0).
 
-   ABSICHTLICH NUR DIESER SCOPE:
+   ===========================================================================
+   STEP-03 TARGETED SPEC-CONFORMANCE CORRECTION (INVARIANT G-D3)
+   ===========================================================================
+   Diese Datei wurde nach der ersten STEP-03-Umsetzung korrigiert: mehrere
+   zuvor als "dokumentierte Interpretation" bezeichnete Werte/Strukturen
+   waren tatsaechlich FREIE Entwicklerinterpretationen ohne Deckung in
+   v1.4.1 und wurden entfernt. Details siehe STEP-03-Korrekturbericht.
+   Kurzfassung der Aenderungen:
+
+   1. `min_viable_session_slots` wird NICHT mehr aus §17.3 rueckwaerts
+      abgeleitet (das war eine erfundene Produktregel). v1.4.1 nennt fuer
+      dieses Feld nur den Namen, keine Formel/Werte. Es ist jetzt ein
+      PFLICHT-externer Input `minViableSessionSlotsBySplit` (wie
+      VolumeTargets/equipmentCoverageBySplit) — kein Default im
+      Produktionscode, siehe checkSF2.
+
+   2. `muscle_frequency_map`: Fuer 8 der 9 Splits gibt §3.1 einen exakten
+      Punktwert bzw. eine exakte Formel woertlich an (FULL_BODY "=Tage",
+      UPPER_LOWER "Tage/2", UPPER_LOWER_FULL "1.67x", PUSH_PULL "2x", PPL
+      "1x", PPL_X2 "2x", UPPER_LOWER_X3 "3x", BODY_PART_SPLIT "1x") — diese
+      sind wortgetreu uebernommen, keine Interpretation. NUR PPL_UL_HYBRID
+      nennt einen BEREICH ("1.6-2x"), keinen Punktwert. Die vorige Version
+      hat diesen Bereich still auf 1.8 (Mittelwert) reduziert — das war
+      unzulaessig (siehe Aufgabenstellung) und wurde entfernt. Der Wert
+      muss jetzt explizit extern uebergeben werden (`frequencyOverrides.
+      PPL_UL_HYBRID`), sonst wirft computeMuscleFrequency.
+
+   3. `session_templates[]`-INHALT (welche Muskeln pro Template, in welcher
+      Reihenfolge auf welchen Tag) ist in Pack 03 NICHT spezifiziert — nur
+      der Feldname wird genannt. Die vorige Version hatte dafuer eine
+      komplette, frei erfundene Muskel-Kategorisierung (PUSH/PULL/LEGS/
+      UPPER/LOWER/FULL/PART_A..E mit konkreten Muskellisten) als
+      Produktkonstante hartkodiert — das ist exakt die in G-D3 verbotene
+      freie Interpretation eines Datenmodells. Diese Konstanten
+      (SPLIT_TEMPLATE_MUSCLES, SPLIT_GOVERNED_MUSCLES) wurden vollstaendig
+      entfernt. SF4 (Regeneration), SP1 (Peak-Session-Saetze) und SP5
+      (Regenerationsabstand) benoetigen fachlich zwingend, welche Muskeln
+      an welchem Tag eines Splits trainiert werden — dieser Wert kommt
+      jetzt als PFLICHT-externer Input `sessionTemplateSequenceBySplit`
+      herein (Form: {split_type: [{name, muscles:[canonical_muscle_id,...]},
+      ...]}). Das ist Exercise-Catalog-/Bewegungsmuster-Registry-Wissen
+      (§5.1/§6, ausserhalb dieses Packs), keine Split-Engine-Fachregel.
+      SF3 und SF6 ("fuer jeden Muskel ...") brauchen dagegen KEINE
+      Kategorisierung mehr: sie werden jetzt woertlich auf jeden Muskel
+      angewendet, der ueberhaupt einen Eintrag in VolumeTargets hat.
+
+   4. Wochentagsverteilung: die vorige Version hat bei fehlenden expliziten
+      `training_weekdays` eine selbst erfundene "Gleichverteilungs"-
+      Formel verwendet. v1.4.1 definiert dafuer keinen Algorithmus.
+      `resolveTrainingWeekdays` verlangt jetzt IMMER explizite
+      `training_weekdays` (bereits ein Profilfeld seit Paket 02) und wirft
+      andernfalls einen klaren Fehler, statt eine Verteilung zu erfinden.
+
+   5. SP4 (Prioritaetsmuskel-Score) bei ZWEI gleichzeitigen Prioritaets-
+      muskeln (§4.5 erlaubt max. 2): eine Aggregation ueber mehrere
+      Muskel-Scores wird HIER NICHT gebraucht, weil frequency(split,muskel)
+      in diesem (jetzt korrigierten) Modell fuer JEDEN Muskel desselben
+      Splits identisch ist (ein einziger Wert pro Split, siehe Punkt 2) —
+      jeder Prioritaetsmuskel liefert also zwangslaeufig denselben
+      Score, unabhaengig von einer Aggregationsfunktion. Es musste daher
+      keine Aggregationsregel erfunden werden (siehe scoreSP4).
+
+   6. SP6 hatte einen erfundenen Basiswert 50. §3.3 nennt fuer SP6
+      AUSSCHLIESSLICH die additiven Modifikatoren (+40/-20). Basis ist
+      jetzt 0 (additive Identitaet — die einzige Zahl, die keine
+      zusaetzliche Annahme braucht), keine erfundene Konstante.
+
+   7. SF5 behandelt eine explizit als "UNKNOWN" markierte Abdeckung jetzt
+      korrekt als NICHT erfuellt (nie stillschweigend als erfuellt
+      gewertet); ein komplett fehlender Eintrag wirft weiterhin (kein
+      stiller Default, kein angenommenes Equipment).
+
+   Verbleibende, nicht aufloesbare Struktur-Luecke (siehe STEP-03-
+   Korrekturbericht Punkt 6): keine — alle o.g. Werte sind jetzt entweder
+   woertlich aus §3.1 uebernommen oder als expliziter, versionierter
+   externer Input modelliert, den der Aufrufer (Tests via Fixture, ein
+   spaeteres Pack in Produktion) beibringen muss. Es gibt keinen in
+   Produktionscode gebackenen erfundenen Wert mehr.
+
+   ABSICHTLICH WEITERHIN NUR DIESER SCOPE:
    - Phase 1 (Requirements Resolution) und Phase 2 (Time Budget
      Resolution/SessionCapacity) sind ECHTE, vollstaendig implementierte
      reine Funktionen.
    - Phase 4 (Split Selection/Split Engine) ist eine ECHTE, vollstaendige
      reine Funktion inkl. SF1-SF6, SP1-SP6, Tie-Breaker und Fallback exakt
-     nach §3.
-   - Die restlichen 13 Pipeline-Phasen (insbesondere Phase 3 Volume Target
-     Resolution) sind ausschliesslich als dokumentierte technische
-     Contracts/Grenzen abgebildet (PLAN_GENERATION_PHASES) — NICHT als
-     Engine-Logik. Die Split Engine akzeptiert `VolumeTargets` bewusst als
-     externen, bereits berechneten Input (Plain-Object `{muscle: fraktionale
-     Woechentliche Zielsaetze}`) statt sie selbst zu berechnen — das ist
-     Aufgabe von STEP 04. Tests uebergeben dafuer explizite Fixture-Werte.
-   - Ebenso wird die Equipment-/Muster-Abdeckung fuer SF5 (haengt an
-     Exercise-Catalog-Daten aus TEIL 29, ausserhalb dieses Packs) als
-     externer Input `equipmentCoverageBySplit` erwartet, nicht selbst aus
-     einem (nicht vorhandenen) Katalog berechnet.
+     nach §3 — jetzt mit den o.g. Werten als Pflicht-Inputs statt
+     Erfindung.
+   - Die restlichen 13 Pipeline-Phasen bleiben ausschliesslich als
+     dokumentierte technische Contracts/Grenzen abgebildet
+     (PLAN_GENERATION_PHASES). VolumeTargets bleiben ein externer,
+     bereits berechneter Input (STEP 04).
 
-   KORREKTUR AN training-domain.js (siehe dort): PlanSlot.slot_function.
-   primary_muscle_bands[] ist jetzt korrekt eine Liste von {canonical_
-   volume_muscle_id, contribution_band}-Paaren (§5.3-Exzerpt dieses Packs),
-   nicht mehr eine Liste blosser Muskel-ID-Strings — noetig fuer INVARIANT
-   S-3 (Same-Day-Overlap, siehe determineSameDayOverlap unten).
-
-   DOKUMENTIERTE INTERPRETATIONEN (siehe STEP-03-Abschlussbericht fuer die
-   vollstaendige Begruendung; hier nur die technischen Eckpunkte):
-   1. `muscle_frequency_map`/`session_templates` sind pro Split als
-      GLEICHFOERMIGER Wert bzw. eine Liste von Muskelkategorie-Labels
-      (PUSH/PULL/LEGS/UPPER/LOWER/FULL/PART_A..E) modelliert, mechanisch aus
-      Trainingstagen und Template-Zyklus abgeleitet (computeMuscleFrequency)
-      — nicht aus einer (hier nicht vorhandenen) Exercise-Catalog-
-      Bewegungsmuster-Zuordnung. Fuer 7 von 9 Splits reproduziert diese
-      Ableitung den in §3.1 genannten Wert exakt; bei den zwei "Hybrid"-
-      Splits (UPPER_LOWER_FULL, PPL_UL_HYBRID) weicht der abgeleitete Wert
-      vom dort genannten Richtwert ab, weil dessen exakte Herleitung eine
-      granulare Bewegungsmuster-Zuordnung braeuchte, die explizit ausserhalb
-      dieses Packs liegt (Exercise Catalog/Exercise Selection).
-   2. `min_viable_session_slots` ist nicht explizit numerisch in Paket 03
-      angegeben. Es wird deterministisch ueber die bereits in diesem Pack
-      exakt spezifizierte §17.3-Formel aus der jeweils UNTEREN Grenze der in
-      §3.1 genannten "typischen Sessionlaenge" abgeleitet (Referenzwerte
-      goal=HYPERTROPHY, reserve_s=0, actual_session_duration_factor=1.0) —
-      mechanisch aus Pack-eigenen Daten, keine freie Zahl.
-   3. Wochentagsverteilung: Paket 02 dokumentiert "gleichmaessig verteilt"
-      als Default fuer `training_weekdays`, ohne einen Algorithmus zu
-      nennen. resolveTrainingWeekdays() implementiert eine deterministische
-      Gleichverteilung (Bresenham-artig), verwendet aber immer zuerst
-      explizit vom Nutzer gesetzte `training_weekdays`, falls vorhanden.
-   4. Muskel-Kategorisierung (PUSH/PULL/LEGS, CORE separat) ist als
-      begruendete, dokumentierte Zuordnung der 18 kanonischen Muskel-IDs
-      implementiert (SPLIT_TEMPLATE_MUSCLES) — Rumpf (ABS/OBLIQUES) bleibt
-      bewusst ausserhalb der Split-Frequenz-Betrachtung, weil §5.5 Punkt 4
-      dafuer eine eigene, spaetere Slot-Generation-Regel vorsieht. */
+   KORREKTUR AN training-domain.js (siehe dort, unveraendert aus der
+   ersten STEP-03-Umsetzung): PlanSlot.slot_function.primary_muscle_bands[]
+   ist korrekt eine Liste von {canonical_volume_muscle_id, contribution_
+   band}-Paaren (§5.3-Exzerpt dieses Packs). */
 
 /* ================= 2.1/2.2 — Plan Generation Pipeline: Phasen als
    technische Contracts/Grenzen (KEINE Engine-Logik ausser Phase 1/2/4) ===== */
@@ -162,29 +204,11 @@ function resolveSessionCapacity({session_time_budget_min,reserve_s,goal,actual_s
   return {status:"OK",sessionCapacity:{brutto_budget_s,netto_s,burdened_set_s,max_working_sets,raw_max_slots,max_slots,goal}};
 }
 
-/* ================= §3.1 — Split-Kandidatenraum + Metadaten ================= */
-/* Muskel-Kategorisierung: siehe Dateikopf-Kommentar Punkt 4. Rumpf (ABS/
-   OBLIQUES) bleibt ausserhalb der Split-Frequenz-Betrachtung. */
-const SPLIT_TEMPLATE_MUSCLES=Object.freeze({
-  PUSH:Object.freeze(["CHEST","FRONT_DELT","SIDE_DELT","TRICEPS"]),
-  PULL:Object.freeze(["LATS","UPPER_BACK","REAR_DELT","BICEPS","FOREARM","LOWER_BACK"]),
-  LEGS:Object.freeze(["QUADS","HAMSTRINGS","GLUTES","ADDUCTORS","ABDUCTORS","CALVES"]),
-  UPPER:Object.freeze(["CHEST","FRONT_DELT","SIDE_DELT","TRICEPS","LATS","UPPER_BACK","REAR_DELT","BICEPS","FOREARM","LOWER_BACK"]),
-  LOWER:Object.freeze(["QUADS","HAMSTRINGS","GLUTES","ADDUCTORS","ABDUCTORS","CALVES"]),
-  FULL:Object.freeze(["CHEST","FRONT_DELT","SIDE_DELT","TRICEPS","LATS","UPPER_BACK","REAR_DELT","BICEPS","FOREARM","LOWER_BACK","QUADS","HAMSTRINGS","GLUTES","ADDUCTORS","ABDUCTORS","CALVES"]),
-  PART_A:Object.freeze(["CHEST"]),
-  PART_B:Object.freeze(["LATS","UPPER_BACK","LOWER_BACK"]),
-  PART_C:Object.freeze(["FRONT_DELT","SIDE_DELT","REAR_DELT"]),
-  PART_D:Object.freeze(["BICEPS","TRICEPS","FOREARM"]),
-  PART_E:Object.freeze(["QUADS","HAMSTRINGS","GLUTES","ADDUCTORS","ABDUCTORS","CALVES"]),
-});
-const SPLIT_GOVERNED_MUSCLES=Object.freeze(SPLIT_TEMPLATE_MUSCLES.FULL.slice());
-
-function deriveMinViableSessionSlots(typicalSessionLengthMinLowerBound){
-  const result=resolveSessionCapacity({session_time_budget_min:typicalSessionLengthMinLowerBound,reserve_s:0,goal:"HYPERTROPHY",actual_session_duration_factor:1.0});
-  return result.status==="OK"?result.sessionCapacity.max_slots:2;
-}
-
+/* ================= §3.1 — Split-Kandidatenraum ================= */
+/* NUR woertlich aus §3.1 uebernommene Metadaten: split_type,
+   valid_training_days, typical_session_length_min. min_viable_session_slots
+   und session_templates[]-Inhalt sind NICHT Teil dieser Konstante (siehe
+   Kopf-Kommentar Punkte 1+3) — sie kommen als externe Pflicht-Inputs. */
 const SPLIT_TYPE=Object.freeze({
   FULL_BODY:"FULL_BODY",UPPER_LOWER:"UPPER_LOWER",UPPER_LOWER_FULL:"UPPER_LOWER_FULL",
   PUSH_PULL:"PUSH_PULL",PPL:"PPL",PPL_X2:"PPL_X2",PPL_UL_HYBRID:"PPL_UL_HYBRID",
@@ -192,49 +216,58 @@ const SPLIT_TYPE=Object.freeze({
 });
 
 const SPLIT_CANDIDATES=Object.freeze({
-  FULL_BODY:Object.freeze({split_type:"FULL_BODY",valid_training_days:Object.freeze([2,3,4]),session_templates:Object.freeze(["FULL"]),typical_session_length_min:Object.freeze({min:45,max:90}),min_viable_session_slots:deriveMinViableSessionSlots(45)}),
-  UPPER_LOWER:Object.freeze({split_type:"UPPER_LOWER",valid_training_days:Object.freeze([2,4]),session_templates:Object.freeze(["UPPER","LOWER"]),typical_session_length_min:Object.freeze({min:45,max:75}),min_viable_session_slots:deriveMinViableSessionSlots(45)}),
-  UPPER_LOWER_FULL:Object.freeze({split_type:"UPPER_LOWER_FULL",valid_training_days:Object.freeze([3]),session_templates:Object.freeze(["UPPER","LOWER","FULL"]),typical_session_length_min:Object.freeze({min:50,max:75}),min_viable_session_slots:deriveMinViableSessionSlots(50)}),
-  PUSH_PULL:Object.freeze({split_type:"PUSH_PULL",valid_training_days:Object.freeze([4]),session_templates:Object.freeze(["PUSH","PULL"]),typical_session_length_min:Object.freeze({min:45,max:70}),min_viable_session_slots:deriveMinViableSessionSlots(45)}),
-  PPL:Object.freeze({split_type:"PPL",valid_training_days:Object.freeze([3]),session_templates:Object.freeze(["PUSH","PULL","LEGS"]),typical_session_length_min:Object.freeze({min:60,max:90}),min_viable_session_slots:deriveMinViableSessionSlots(60)}),
-  PPL_X2:Object.freeze({split_type:"PPL_X2",valid_training_days:Object.freeze([6]),session_templates:Object.freeze(["PUSH","PULL","LEGS"]),typical_session_length_min:Object.freeze({min:40,max:70}),min_viable_session_slots:deriveMinViableSessionSlots(40)}),
-  PPL_UL_HYBRID:Object.freeze({split_type:"PPL_UL_HYBRID",valid_training_days:Object.freeze([5]),session_templates:Object.freeze(["PUSH","PULL","LEGS","UPPER","LOWER"]),typical_session_length_min:Object.freeze({min:50,max:80}),min_viable_session_slots:deriveMinViableSessionSlots(50)}),
-  UPPER_LOWER_X3:Object.freeze({split_type:"UPPER_LOWER_X3",valid_training_days:Object.freeze([6]),session_templates:Object.freeze(["UPPER","LOWER"]),typical_session_length_min:Object.freeze({min:40,max:60}),min_viable_session_slots:deriveMinViableSessionSlots(40)}),
-  BODY_PART_SPLIT:Object.freeze({split_type:"BODY_PART_SPLIT",valid_training_days:Object.freeze([5]),session_templates:Object.freeze(["PART_A","PART_B","PART_C","PART_D","PART_E"]),typical_session_length_min:Object.freeze({min:50,max:80}),min_viable_session_slots:deriveMinViableSessionSlots(50)}),
+  FULL_BODY:Object.freeze({split_type:"FULL_BODY",valid_training_days:Object.freeze([2,3,4]),typical_session_length_min:Object.freeze({min:45,max:90})}),
+  UPPER_LOWER:Object.freeze({split_type:"UPPER_LOWER",valid_training_days:Object.freeze([2,4]),typical_session_length_min:Object.freeze({min:45,max:75})}),
+  UPPER_LOWER_FULL:Object.freeze({split_type:"UPPER_LOWER_FULL",valid_training_days:Object.freeze([3]),typical_session_length_min:Object.freeze({min:50,max:75})}),
+  PUSH_PULL:Object.freeze({split_type:"PUSH_PULL",valid_training_days:Object.freeze([4]),typical_session_length_min:Object.freeze({min:45,max:70})}),
+  PPL:Object.freeze({split_type:"PPL",valid_training_days:Object.freeze([3]),typical_session_length_min:Object.freeze({min:60,max:90})}),
+  PPL_X2:Object.freeze({split_type:"PPL_X2",valid_training_days:Object.freeze([6]),typical_session_length_min:Object.freeze({min:40,max:70})}),
+  PPL_UL_HYBRID:Object.freeze({split_type:"PPL_UL_HYBRID",valid_training_days:Object.freeze([5]),typical_session_length_min:Object.freeze({min:50,max:80})}),
+  UPPER_LOWER_X3:Object.freeze({split_type:"UPPER_LOWER_X3",valid_training_days:Object.freeze([6]),typical_session_length_min:Object.freeze({min:40,max:60})}),
+  BODY_PART_SPLIT:Object.freeze({split_type:"BODY_PART_SPLIT",valid_training_days:Object.freeze([5]),typical_session_length_min:Object.freeze({min:50,max:80})}),
 });
 /* DECISION (§3.4-Kommentar): BODY_PART_SPLIT bleibt ein zulaessiger
    Kandidat und wird NICHT per Hard Filter ausgeschlossen — siehe SF1-SF6
    unten: keiner davon nennt BODY_PART_SPLIT explizit. */
 
-/* ================= Wochentagsverteilung (siehe Dateikopf Punkt 3) ================= */
+/* ================= Wochentage: reiner Pass-Through, KEIN erfundener
+   Verteilungsalgorithmus (siehe Kopf-Kommentar Punkt 4) ================= */
 function resolveTrainingWeekdays(trainingDaysPerWeek,explicitWeekdays){
-  if(explicitWeekdays&&explicitWeekdays.length===trainingDaysPerWeek){
-    return explicitWeekdays.slice().sort((a,b)=>a-b);
+  if(!explicitWeekdays||explicitWeekdays.length!==trainingDaysPerWeek){
+    throw new Error("training-plan-engine: resolveTrainingWeekdays benoetigt explizite training_weekdays der Laenge "+trainingDaysPerWeek+" — v1.4.1 Pack 03 definiert keinen Algorithmus, um Trainingstage auf konkrete Wochentage zu verteilen; das ist eine Nutzer-/Scheduling-Entscheidung (UserTrainingProfile.training_weekdays, Paket 02), kein aus der Split Engine ableitbarer Wert. Es darf hier keine Verteilung erfunden werden.");
   }
-  const days=[];
-  for(let i=0;i<trainingDaysPerWeek;i++){
-    const wd=Math.round(i*7/trainingDaysPerWeek)%7;
-    if(days.indexOf(wd)===-1)days.push(wd);
-  }
-  return days.sort((a,b)=>a-b);
+  return explicitWeekdays.slice().sort((a,b)=>a-b);
 }
 function areWeekdaysConsecutive(a,b){
   const diff=Math.abs(a-b);
   return diff===1||diff===6;
 }
 
-/* ================= Muskelfrequenz (siehe Dateikopf Punkt 1) ================= */
-/* Fuer die 2 dokumentierten Hybrid-Faelle liegt kein aus Templates
-   mechanisch ableitbarer Einzelwert vor (siehe Dateikopf) — hier wird der
-   in §3.1 genannte Wert (bzw. bei einer Spanne deren Mittelwert) direkt
-   uebernommen, alle anderen 7 Splits werden aus training_days/Template-
-   Anzahl abgeleitet (reproduziert den §3.1-Wert exakt bei deren
-   kanonischer Tageszahl). */
-const HYBRID_FREQUENCY_OVERRIDES=Object.freeze({UPPER_LOWER_FULL:1.67,PPL_UL_HYBRID:1.8});
-function computeMuscleFrequency(splitType,trainingDays){
-  if(HYBRID_FREQUENCY_OVERRIDES[splitType]!==undefined)return HYBRID_FREQUENCY_OVERRIDES[splitType];
-  const meta=SPLIT_CANDIDATES[splitType];
-  return trainingDays/meta.session_templates.length;
+/* ================= §3.1 Muskelfrequenz — woertliche Formeln ================= */
+/* 8 der 9 Splits: exakter Punktwert/Formel direkt aus §3.1 uebernommen
+   (keine Interpretation). PPL_UL_HYBRID ABSICHTLICH NICHT enthalten: §3.1
+   nennt dafuer nur einen Bereich (1.6-2x), keinen Punktwert. Ein Bereich
+   darf nicht still auf seinen Mittelpunkt reduziert werden — der Aufrufer
+   muss einen Punktwert explizit ueber frequencyOverrides.PPL_UL_HYBRID
+   vorgeben (Tests: klar deklarierte Fixture; Produktion: erst moeglich,
+   sobald eine spaetere Spec-Praezisierung oder ein versioniertes Tuning
+   diesen Punktwert definiert). */
+const SPLIT_FREQUENCY_FORMULA=Object.freeze({
+  FULL_BODY:(days)=>days,
+  UPPER_LOWER:(days)=>days/2,
+  UPPER_LOWER_FULL:()=>1.67,
+  PUSH_PULL:()=>2,
+  PPL:()=>1,
+  PPL_X2:()=>2,
+  UPPER_LOWER_X3:()=>3,
+  BODY_PART_SPLIT:()=>1,
+});
+function computeMuscleFrequency(splitType,trainingDays,frequencyOverrides){
+  const formula=SPLIT_FREQUENCY_FORMULA[splitType];
+  if(formula)return formula(trainingDays);
+  const override=frequencyOverrides?frequencyOverrides[splitType]:undefined;
+  if(override==null)throw new Error("training-plan-engine: computeMuscleFrequency("+splitType+") — §3.1 nennt fuer diesen Split nur einen Frequenzbereich (kein Punktwert) und frequencyOverrides."+splitType+" wurde nicht uebergeben. Ein Bereich darf nicht durch Mittelwertbildung stillschweigend aufgeloest werden.");
+  return override;
 }
 
 /* ================= §3.2 — Hard Filters SF1-SF6 ================= */
@@ -245,28 +278,35 @@ function computeMuscleFrequency(splitType,trainingDays){
 function checkSF1(splitMeta,trainingDays){
   return splitMeta.valid_training_days.indexOf(trainingDays)!==-1;
 }
-function checkSF2(splitMeta,sessionCapacity){
-  return splitMeta.min_viable_session_slots<=sessionCapacity.max_slots;
+/* min_viable_session_slots ist ein PFLICHT-externer Input (siehe Kopf-
+   Kommentar Punkt 1) — kein Default, keine Ableitung hier. */
+function checkSF2(splitMeta,sessionCapacity,minViableSessionSlots){
+  if(minViableSessionSlots==null)throw new Error("training-plan-engine: checkSF2("+splitMeta.split_type+") benoetigt minViableSessionSlots — v1.4.1 (§3.1) nennt min_viable_session_slots nur als Metadatenfeld-Namen ohne Formel/Werte je Split; muss vom Aufrufer explizit als versionierte Config uebergeben werden.");
+  return minViableSessionSlots<=sessionCapacity.max_slots;
 }
-function checkSF3(splitMeta,trainingDays,volumeTargets,sessionCapSets){
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
-  return SPLIT_GOVERNED_MUSCLES.every(m=>{
+/* "Fuer jeden Muskel im Plan" = jeder Schluessel in VolumeTargets — keine
+   Kategorisierung/Filterung noetig oder zulaessig (siehe Kopf-Kommentar
+   Punkt 3). */
+function checkSF3(splitMeta,trainingDays,volumeTargets,sessionCapSets,frequencyOverrides){
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
+  return Object.keys(volumeTargets).every(m=>{
     const weeklyTarget=volumeTargets[m];
     if(weeklyTarget==null)return true;
     return (weeklyTarget/freq)<=sessionCapSets;
   });
 }
-function checkSF4(splitMeta,trainingDays,weekdays,volumeTargets){
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
-  const templates=splitMeta.session_templates;
-  const T=templates.length;
-  const dayTemplates=weekdays.map((wd,i)=>({weekday:wd,category:templates[i%T]}));
-  for(let i=0;i<dayTemplates.length;i++){
-    for(let j=i+1;j<dayTemplates.length;j++){
-      if(!areWeekdaysConsecutive(dayTemplates[i].weekday,dayTemplates[j].weekday))continue;
-      const musclesA=SPLIT_TEMPLATE_MUSCLES[dayTemplates[i].category];
-      const musclesB=SPLIT_TEMPLATE_MUSCLES[dayTemplates[j].category];
-      const shared=musclesA.filter(m=>musclesB.indexOf(m)!==-1);
+/* sessionTemplateSequence: PFLICHT-externer Input {name, muscles[]}[] fuer
+   GENAU diesen Split (siehe Kopf-Kommentar Punkt 3) — Pack 03 definiert
+   weder Template-Namen/Reihenfolge noch Muskelinhalt. */
+function checkSF4(splitMeta,trainingDays,weekdays,volumeTargets,sessionTemplateSequence,frequencyOverrides){
+  if(!Array.isArray(sessionTemplateSequence)||!sessionTemplateSequence.length)throw new Error("training-plan-engine: checkSF4("+splitMeta.split_type+") benoetigt sessionTemplateSequence — siehe Kopf-Kommentar Punkt 3 (v1.4.1 definiert session_templates[]-Inhalt nicht).");
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
+  const T=sessionTemplateSequence.length;
+  const dayMuscles=weekdays.map((wd,i)=>({weekday:wd,muscles:sessionTemplateSequence[i%T].muscles}));
+  for(let i=0;i<dayMuscles.length;i++){
+    for(let j=i+1;j<dayMuscles.length;j++){
+      if(!areWeekdaysConsecutive(dayMuscles[i].weekday,dayMuscles[j].weekday))continue;
+      const shared=dayMuscles[i].muscles.filter(m=>dayMuscles[j].muscles.indexOf(m)!==-1);
       for(const m of shared){
         const weeklyTarget=volumeTargets[m];
         if(weeklyTarget==null)continue;
@@ -276,41 +316,50 @@ function checkSF4(splitMeta,trainingDays,weekdays,volumeTargets){
   }
   return true;
 }
+/* equipmentCoverageBySplit[split_type] ist entweder eine Zahl 0..1 oder der
+   String "UNKNOWN". Ein fehlender Eintrag wirft (kein stiller Default,
+   kein angenommenes Equipment). "UNKNOWN" gilt NIE als erfuellt (nie
+   stillschweigend als erfuellt gewertet — siehe Aufgabenstellung Punkt G). */
 function checkSF5(splitMeta,equipmentCoverageBySplit){
-  const coverage=equipmentCoverageBySplit?equipmentCoverageBySplit[splitMeta.split_type]:undefined;
-  if(coverage==null)throw new Error("training-plan-engine: equipmentCoverageBySplit["+splitMeta.split_type+"] fehlt — SF5 erfordert eine Equipment-/Muster-Abdeckungsquote aus dem (in diesem Pack nicht vorhandenen) Exercise-Catalog-Kontext; muss vom Aufrufer explizit uebergeben werden");
+  if(!equipmentCoverageBySplit||!Object.prototype.hasOwnProperty.call(equipmentCoverageBySplit,splitMeta.split_type)){
+    throw new Error("training-plan-engine: equipmentCoverageBySplit["+splitMeta.split_type+"] fehlt — SF5 erfordert eine Equipment-/Muster-Abdeckungsquote aus dem (in diesem Pack nicht vorhandenen) Exercise-Catalog-Kontext; muss vom Aufrufer explizit uebergeben werden.");
+  }
+  const coverage=equipmentCoverageBySplit[splitMeta.split_type];
+  if(coverage==="UNKNOWN")return false;
+  if(typeof coverage!=="number")throw new Error("training-plan-engine: equipmentCoverageBySplit["+splitMeta.split_type+"] muss eine Zahl 0..1 oder der String \"UNKNOWN\" sein, erhalten: "+JSON.stringify(coverage));
   return coverage>=0.6;
 }
-function checkSF6(splitMeta,trainingDays,volumeTargets){
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
-  return Object.keys(volumeTargets).every(m=>{
-    if(SPLIT_GOVERNED_MUSCLES.indexOf(m)===-1)return true;
-    return freq>=1;
-  });
+/* frequency(split,muskel) ist in diesem Modell fuer jeden Muskel desselben
+   Splits identisch (ein Punktwert pro Split, §3.1) — SF6 reduziert sich
+   damit auf eine einzige Pruefung, unabhaengig davon, welche/wie viele
+   Muskeln VolumeTargets enthaelt. */
+function checkSF6(splitMeta,trainingDays,volumeTargets,frequencyOverrides){
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
+  return freq>=1;
 }
 /* Wertet alle 6 Hard Filters aus. sessionCapSets ist der SF3-Parameter
-   (12 normal, 16 in Fallback-Stufe 1 — §3.5). */
+   (12 normal, 16 in Fallback-Stufe 1 — §3.5). ctx.minViableSessionSlots und
+   ctx.sessionTemplateSequence sind die bereits fuer GENAU diesen Split
+   aufgeloesten externen Werte (siehe filterSplitCandidates/selectSplit). */
 function evaluateHardFilters(splitMeta,ctx){
-  const {trainingDays,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets}=ctx;
+  const {trainingDays,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets,minViableSessionSlots,sessionTemplateSequence,frequencyOverrides}=ctx;
   const failures=[];
   if(!checkSF1(splitMeta,trainingDays))failures.push("SF1");
-  if(!checkSF2(splitMeta,sessionCapacity))failures.push("SF2");
-  if(!checkSF3(splitMeta,trainingDays,volumeTargets,sessionCapSets))failures.push("SF3");
-  if(!checkSF4(splitMeta,trainingDays,weekdays,volumeTargets))failures.push("SF4");
+  if(!checkSF2(splitMeta,sessionCapacity,minViableSessionSlots))failures.push("SF2");
+  if(!checkSF3(splitMeta,trainingDays,volumeTargets,sessionCapSets,frequencyOverrides))failures.push("SF3");
+  if(!checkSF4(splitMeta,trainingDays,weekdays,volumeTargets,sessionTemplateSequence,frequencyOverrides))failures.push("SF4");
   if(!checkSF5(splitMeta,equipmentCoverageBySplit))failures.push("SF5");
-  if(!checkSF6(splitMeta,trainingDays,volumeTargets))failures.push("SF6");
+  if(!checkSF6(splitMeta,trainingDays,volumeTargets,frequencyOverrides))failures.push("SF6");
   return {pass:failures.length===0,failures};
 }
 
 /* ================= §3.3 — Soft Score SP1-SP6 (Summe 100) ================= */
-function computePeakSessionSets(splitMeta,trainingDays,weekdays,volumeTargets){
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
-  const templates=splitMeta.session_templates;
-  const T=templates.length;
+function computePeakSessionSets(splitMeta,trainingDays,weekdays,volumeTargets,sessionTemplateSequence,frequencyOverrides){
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
+  const T=sessionTemplateSequence.length;
   let peak=0;
   weekdays.forEach((wd,i)=>{
-    const category=templates[i%T];
-    const muscles=SPLIT_TEMPLATE_MUSCLES[category];
+    const muscles=sessionTemplateSequence[i%T].muscles;
     let sessionSets=0;
     muscles.forEach(m=>{
       if(volumeTargets[m]==null)return;
@@ -332,19 +381,19 @@ function targetFrequencyFromWeeklyVolume(weeklyVol){
   if(weeklyVol<=20)return 2;
   return 3;
 }
-function scoreSP2(splitMeta,goal,trainingDays,volumeTargets){
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
+function scoreSP2(splitMeta,goal,trainingDays,volumeTargets,frequencyOverrides){
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
   if(goal===TRAINING_GOAL.STRENGTH){
     /* §4.6: fuer STRENGTH ist die >=2-Exposure-Praeferenz ausschliesslich
        P5-Optimierung, "1 Exposure/Woche bleibt gueltig und erzeugt weder
        ERROR noch INFEASIBLE" und "fehlende Machbarkeit erzeugt keinen
        Hard-Malus" — es gibt keinen im Pack genannten Punktwert fuer diese
        Praeferenz, daher: volle Punktzahl, solange ueberhaupt mindestens 1
-       Exposure erreicht wird (durch SF6 fuer jeden survivinerenden
+       Exposure erreicht wird (durch SF6 fuer jeden survivierenden
        Kandidaten ohnehin garantiert). */
     return freq>=1?100:0;
   }
-  const muscles=Object.keys(volumeTargets).filter(m=>SPLIT_GOVERNED_MUSCLES.indexOf(m)!==-1);
+  const muscles=Object.keys(volumeTargets);
   if(!muscles.length)return 100;
   const scores=muscles.map(m=>{
     const targetFreq=targetFrequencyFromWeeklyVolume(volumeTargets[m]);
@@ -353,19 +402,21 @@ function scoreSP2(splitMeta,goal,trainingDays,volumeTargets){
   });
   return scores.reduce((a,b)=>a+b,0)/scores.length;
 }
-function scoreSP4(splitMeta,trainingDays,priorityMuscles){
+function scoreSP4(splitMeta,trainingDays,priorityMuscles,frequencyOverrides){
   if(!priorityMuscles||!priorityMuscles.length)return 100;
-  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays);
-  const perMuscle=freq>=2?100:(freq>=1?60:30);
-  return Math.min.apply(null,priorityMuscles.map(()=>perMuscle));
+  const freq=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
+  /* Aggregation ueber mehrere Prioritaetsmuskeln (max. 2, §4.5) ist mit
+     diesem Modell nicht mehrdeutig: frequency(split,muskel) ist fuer JEDEN
+     Muskel desselben Splits identisch (ein Punktwert pro Split, §3.1) —
+     jeder Prioritaetsmuskel liefert also exakt denselben Score. Es musste
+     dafuer keine Aggregationsregel (min/max/Durchschnitt) erfunden werden. */
+  return freq>=2?100:(freq>=1?60:30);
 }
-function computeMuscleExposureWeekdays(splitMeta,weekdays,muscleId){
-  const templates=splitMeta.session_templates;
-  const T=templates.length;
+function computeMuscleExposureWeekdays(weekdays,sessionTemplateSequence,muscleId){
+  const T=sessionTemplateSequence.length;
   const exposureDays=[];
   weekdays.forEach((wd,i)=>{
-    const category=templates[i%T];
-    if(SPLIT_TEMPLATE_MUSCLES[category].indexOf(muscleId)!==-1)exposureDays.push(wd);
+    if(sessionTemplateSequence[i%T].muscles.indexOf(muscleId)!==-1)exposureDays.push(wd);
   });
   return exposureDays.sort((a,b)=>a-b);
 }
@@ -387,11 +438,11 @@ function gapHoursToScore(hours){
   if(hours<=24)return 40;
   return 40+(hours-24)/(48-24)*(100-40);
 }
-function scoreSP5(splitMeta,weekdays,volumeTargets){
-  const muscles=Object.keys(volumeTargets).filter(m=>SPLIT_GOVERNED_MUSCLES.indexOf(m)!==-1);
+function scoreSP5(weekdays,volumeTargets,sessionTemplateSequence){
+  const muscles=Object.keys(volumeTargets);
   if(!muscles.length)return 100;
   const scores=muscles.map(m=>{
-    const exposureDays=computeMuscleExposureWeekdays(splitMeta,weekdays,m);
+    const exposureDays=computeMuscleExposureWeekdays(weekdays,sessionTemplateSequence,m);
     const hours=averageGapHours(exposureDays);
     return hours==null?100:gapHoursToScore(hours);
   });
@@ -399,24 +450,41 @@ function scoreSP5(splitMeta,weekdays,volumeTargets){
 }
 const SP6_BEGINNER_UNSUITABLE_SPLITS=Object.freeze(["PPL","BODY_PART_SPLIT","PPL_X2"]);
 function scoreSP6(splitMeta,preferredSplit,experienceLevel){
-  let score=50;
+  /* §3.3 SP6 nennt AUSSCHLIESSLICH die additiven Modifikatoren (+40/-20),
+     keinen Basiswert. 0 ist die additive Identitaet — die einzige Zahl,
+     die hier keine zusaetzliche Annahme braucht (kein erfundener
+     Basiswert wie z.B. 50). */
+  let score=0;
   if(preferredSplit&&preferredSplit===splitMeta.split_type)score+=40;
   if(experienceLevel===EXPERIENCE_LEVEL.BEGINNER&&SP6_BEGINNER_UNSUITABLE_SPLITS.indexOf(splitMeta.split_type)!==-1)score-=20;
   return Math.max(0,Math.min(100,score));
 }
 const SP_WEIGHTS=Object.freeze({SP1:30,SP2:20,SP3:20,SP4:12,SP5:10,SP6:8});
-function scoreSplitCandidate(splitMeta,planRequirements,volumeTargets,sessionCapacity,weekdays){
+/* externalConfig: {equipmentCoverageBySplit, minViableSessionSlotsBySplit,
+   sessionTemplateSequenceBySplit, frequencyOverrides?} — siehe Kopf-
+   Kommentar. Alle vier Felder sind Werte, die v1.4.1 Pack 03 nicht selbst
+   definiert (ausser dem woertlichen §3.1-Frequenzformeln, die
+   computeMuscleFrequency direkt enthaelt und die frequencyOverrides nur
+   fuer PPL_UL_HYBRID ergaenzt). */
+function requireSessionTemplateSequence(splitType,sessionTemplateSequenceBySplit){
+  const seq=sessionTemplateSequenceBySplit?sessionTemplateSequenceBySplit[splitType]:undefined;
+  if(!Array.isArray(seq)||!seq.length)throw new Error("training-plan-engine: sessionTemplateSequenceBySplit["+splitType+"] fehlt — v1.4.1 (§3.1) nennt 'session_templates[]' nur als Metadatenfeld-Namen, ohne Template-Namen/Reihenfolge/Muskelinhalt (Exercise-Catalog-Wissen, ausserhalb dieses Packs). Muss vom Aufrufer explizit als versionierter Input uebergeben werden.");
+  return seq;
+}
+function scoreSplitCandidate(splitMeta,planRequirements,volumeTargets,sessionCapacity,weekdays,externalConfig){
+  const {sessionTemplateSequenceBySplit,frequencyOverrides}=externalConfig;
   const trainingDays=planRequirements.training_days_per_week;
-  const peakSets=computePeakSessionSets(splitMeta,trainingDays,weekdays,volumeTargets);
+  const sessionTemplateSequence=requireSessionTemplateSequence(splitMeta.split_type,sessionTemplateSequenceBySplit);
+  const peakSets=computePeakSessionSets(splitMeta,trainingDays,weekdays,volumeTargets,sessionTemplateSequence,frequencyOverrides);
   const estimatedPeakSessionS=peakSets*sessionCapacity.burdened_set_s;
   const sp1=scoreSP1(peakSets,sessionCapacity.max_working_sets);
-  const sp2=scoreSP2(splitMeta,planRequirements.goal,trainingDays,volumeTargets);
+  const sp2=scoreSP2(splitMeta,planRequirements.goal,trainingDays,volumeTargets,frequencyOverrides);
   const sp3=scoreSP3(estimatedPeakSessionS,sessionCapacity.brutto_budget_s);
-  const sp4=scoreSP4(splitMeta,trainingDays,planRequirements.priority_muscles);
-  const sp5=scoreSP5(splitMeta,weekdays,volumeTargets);
+  const sp4=scoreSP4(splitMeta,trainingDays,planRequirements.priority_muscles,frequencyOverrides);
+  const sp5=scoreSP5(weekdays,volumeTargets,sessionTemplateSequence);
   const sp6=scoreSP6(splitMeta,planRequirements.preferred_split,planRequirements.experience_level);
   const total=(sp1*SP_WEIGHTS.SP1+sp2*SP_WEIGHTS.SP2+sp3*SP_WEIGHTS.SP3+sp4*SP_WEIGHTS.SP4+sp5*SP_WEIGHTS.SP5+sp6*SP_WEIGHTS.SP6)/100;
-  const frequency=computeMuscleFrequency(splitMeta.split_type,trainingDays);
+  const frequency=computeMuscleFrequency(splitMeta.split_type,trainingDays,frequencyOverrides);
   return {split_type:splitMeta.split_type,breakdown:{SP1:sp1,SP2:sp2,SP3:sp3,SP4:sp4,SP5:sp5,SP6:sp6},total,estimatedPeakSessionS,frequency};
 }
 /* Tie-Breaker exakt in dieser Reihenfolge: 1) hoeherer SP1, 2) niedrigere
@@ -433,29 +501,40 @@ function compareSplitCandidates(a,b){
 /* ================= §3.5 — Fallback ================= */
 /* Filtert die Kandidatenliste; gibt {survivors, sessionCapSetsUsed,
    warning?} zurueck. */
-function filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,equipmentCoverageBySplit,weekdays,sessionCapSets){
-  const ctx={trainingDays:planRequirements.training_days_per_week,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets};
-  return Object.keys(SPLIT_CANDIDATES).filter(k=>evaluateHardFilters(SPLIT_CANDIDATES[k],ctx).pass).map(k=>SPLIT_CANDIDATES[k]);
+function filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,externalConfig,weekdays,sessionCapSets){
+  const {equipmentCoverageBySplit,minViableSessionSlotsBySplit,sessionTemplateSequenceBySplit,frequencyOverrides}=externalConfig;
+  return Object.keys(SPLIT_CANDIDATES).filter(k=>{
+    const splitMeta=SPLIT_CANDIDATES[k];
+    const minViableSessionSlots=minViableSessionSlotsBySplit?minViableSessionSlotsBySplit[k]:undefined;
+    const sessionTemplateSequence=requireSessionTemplateSequence(k,sessionTemplateSequenceBySplit);
+    const ctx={trainingDays:planRequirements.training_days_per_week,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets,minViableSessionSlots,sessionTemplateSequence,frequencyOverrides};
+    return evaluateHardFilters(splitMeta,ctx).pass;
+  }).map(k=>SPLIT_CANDIDATES[k]);
 }
 /* Phase 4 — Split Selection (Split Engine). INPUT: PlanRequirements,
    VolumeTargets (externer, in STEP 04 zu berechnender Input),
-   SessionCapacity, equipmentCoverageBySplit (externer, an den (hier nicht
-   vorhandenen) Exercise-Catalog gebundener Input, Map split_type->0..1).
+   SessionCapacity, externalConfig ({equipmentCoverageBySplit,
+   minViableSessionSlotsBySplit, sessionTemplateSequenceBySplit,
+   frequencyOverrides?}) — allesamt Werte, die v1.4.1 Pack 03 nicht selbst
+   definiert (siehe Kopf-Kommentar) und die daher zwingend extern/
+   versioniert hereinkommen muessen; kein Default in Produktionscode.
    OUTPUT: {status:"OK", splitStructure, warnings[]} | {status:"FAILURE",
    failure} | {status:"NEEDS_VOLUME_ADJUSTMENT", repairRequest, warnings[]}
    (letzteres ist der in §3.5 Schritt 2 geforderte strukturierte Fallback-/
    Repair-Request an STEP 04, statt selbst Volumenziele zu erfinden). */
-function selectSplit(planRequirements,volumeTargets,sessionCapacity,equipmentCoverageBySplit){
+function selectSplit(planRequirements,volumeTargets,sessionCapacity,externalConfig){
   if(!planRequirements)throw new Error("training-plan-engine: selectSplit benoetigt PlanRequirements");
   if(!volumeTargets)throw new Error("training-plan-engine: selectSplit benoetigt VolumeTargets (externer Input, siehe STEP 04)");
   if(!sessionCapacity)throw new Error("training-plan-engine: selectSplit benoetigt SessionCapacity");
+  if(!externalConfig)throw new Error("training-plan-engine: selectSplit benoetigt externalConfig {equipmentCoverageBySplit, minViableSessionSlotsBySplit, sessionTemplateSequenceBySplit, frequencyOverrides?} — diese Werte definiert v1.4.1 Pack 03 nicht selbst (siehe Kopf-Kommentar), sie muessen extern/versioniert hereinkommen.");
+  const {equipmentCoverageBySplit,minViableSessionSlotsBySplit,sessionTemplateSequenceBySplit,frequencyOverrides}=externalConfig;
   const weekdays=resolveTrainingWeekdays(planRequirements.training_days_per_week,planRequirements.training_weekdays);
   const warnings=[];
 
-  let survivors=filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,equipmentCoverageBySplit,weekdays,12);
+  let survivors=filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,externalConfig,weekdays,12);
   if(!survivors.length){
     // Fallback Stufe 1: SF3 auf 16 lockern (SF4/SF5 NIE gelockert — INVARIANT S-2).
-    survivors=filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,equipmentCoverageBySplit,weekdays,16);
+    survivors=filterSplitCandidates(planRequirements,volumeTargets,sessionCapacity,externalConfig,weekdays,16);
     if(survivors.length)warnings.push("SF3_RELAXED_TO_16");
   }
   if(!survivors.length){
@@ -463,7 +542,9 @@ function selectSplit(planRequirements,volumeTargets,sessionCapacity,equipmentCov
     // gegen FULL_BODY selbst geprueft), Volumenziele an Capacity anpassen
     // ist STEP-04-Aufgabe -> strukturierter Repair-Request statt Erfindung.
     const fullBody=SPLIT_CANDIDATES.FULL_BODY;
-    const fullBodyCheck=evaluateHardFilters(fullBody,{trainingDays:planRequirements.training_days_per_week,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets:16});
+    const fbMinViableSessionSlots=minViableSessionSlotsBySplit?minViableSessionSlotsBySplit.FULL_BODY:undefined;
+    const fbSessionTemplateSequence=requireSessionTemplateSequence("FULL_BODY",sessionTemplateSequenceBySplit);
+    const fullBodyCheck=evaluateHardFilters(fullBody,{trainingDays:planRequirements.training_days_per_week,weekdays,volumeTargets,sessionCapacity,equipmentCoverageBySplit,sessionCapSets:16,minViableSessionSlots:fbMinViableSessionSlots,sessionTemplateSequence:fbSessionTemplateSequence,frequencyOverrides});
     const sf2Violated=fullBodyCheck.failures.indexOf("SF2")!==-1;
     if(sf2Violated){
       return {status:"FAILURE",failure:createFailureResult({
@@ -485,7 +566,7 @@ function selectSplit(planRequirements,volumeTargets,sessionCapacity,equipmentCov
     return {
       status:"NEEDS_VOLUME_ADJUSTMENT",
       warnings,
-      splitStructure:createSplitStructure(fullBody,planRequirements,weekdays),
+      splitStructure:createSplitStructure(fullBody,planRequirements,weekdays,fbMinViableSessionSlots,fbSessionTemplateSequence,frequencyOverrides),
       repairRequest:{
         type:"CAP_VOLUME_TARGETS_TO_SESSION_CAPACITY",
         reason:"NO_VIABLE_SPLIT_AFTER_SF3_RELAXATION",
@@ -496,25 +577,27 @@ function selectSplit(planRequirements,volumeTargets,sessionCapacity,equipmentCov
     };
   }
 
-  const scored=survivors.map(s=>scoreSplitCandidate(s,planRequirements,volumeTargets,sessionCapacity,weekdays));
+  const scored=survivors.map(s=>scoreSplitCandidate(s,planRequirements,volumeTargets,sessionCapacity,weekdays,externalConfig));
   scored.sort(compareSplitCandidates);
   const winner=scored[0];
+  const winnerMinViableSessionSlots=minViableSessionSlotsBySplit?minViableSessionSlotsBySplit[winner.split_type]:undefined;
+  const winnerSessionTemplateSequence=requireSessionTemplateSequence(winner.split_type,sessionTemplateSequenceBySplit);
   return {
     status:"OK",
     warnings,
-    splitStructure:createSplitStructure(SPLIT_CANDIDATES[winner.split_type],planRequirements,weekdays),
+    splitStructure:createSplitStructure(SPLIT_CANDIDATES[winner.split_type],planRequirements,weekdays,winnerMinViableSessionSlots,winnerSessionTemplateSequence,frequencyOverrides),
     scoreBreakdown:winner,
     allScores:scored,
   };
 }
-function createSplitStructure(splitMeta,planRequirements,weekdays){
+function createSplitStructure(splitMeta,planRequirements,weekdays,minViableSessionSlots,sessionTemplateSequence,frequencyOverrides){
   return {
     split_type:splitMeta.split_type,
     training_days_per_week:planRequirements.training_days_per_week,
     training_weekdays:weekdays,
-    session_templates:splitMeta.session_templates.slice(),
-    muscle_frequency:computeMuscleFrequency(splitMeta.split_type,planRequirements.training_days_per_week),
-    min_viable_session_slots:splitMeta.min_viable_session_slots,
+    session_templates:sessionTemplateSequence.map(t=>t.name),
+    muscle_frequency:computeMuscleFrequency(splitMeta.split_type,planRequirements.training_days_per_week,frequencyOverrides),
+    min_viable_session_slots:minViableSessionSlots,
   };
 }
 
@@ -551,7 +634,7 @@ if(typeof module!=="undefined" && module.exports){
   module.exports={
     PLAN_GENERATION_PHASES,MAX_PHASE11_TO_PHASE4_REROUTES,
     TIME_CAPACITY_PLANNING_CONFIG,resolvePlanRequirements,resolveSessionCapacity,
-    SPLIT_TYPE,SPLIT_CANDIDATES,SPLIT_TEMPLATE_MUSCLES,SPLIT_GOVERNED_MUSCLES,
+    SPLIT_TYPE,SPLIT_CANDIDATES,
     resolveTrainingWeekdays,areWeekdaysConsecutive,computeMuscleFrequency,
     checkSF1,checkSF2,checkSF3,checkSF4,checkSF5,checkSF6,evaluateHardFilters,
     computePeakSessionSets,scoreSP1,scoreSP2,scoreSP3,scoreSP4,scoreSP5,scoreSP6,targetFrequencyFromWeeklyVolume,

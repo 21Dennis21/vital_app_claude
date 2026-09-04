@@ -2,6 +2,18 @@
    (TRAINING SYSTEM v1.4.1, IMPLEMENTATION PACK 03/14: Plan Requirements/
    Plan Generation Pipeline (Grenzen)/Split Engine).
 
+   WICHTIG (STEP-03 Spec-Conformance-Korrektur): mehrere Werte, die die
+   erste Fassung dieser Engine noch selbst berechnet/hartkodiert hatte
+   (min_viable_session_slots je Split, PPL_UL_HYBRID-Frequenz, Muskelinhalt
+   der session_templates[] je Split), sind jetzt PFLICHT-externe Inputs,
+   weil v1.4.1 Pack 03 dafuer keine Formel/Werte nennt (siehe Kopf-
+   Kommentar in training-plan-engine.js). Die folgenden TEST_* -Konstanten
+   sind AUSDRUECKLICH NICHT normativ — sie dienen ausschliesslich dazu, die
+   Algorithmen (SF1-SF6, SP1-SP6, Fallback) in diesem Test mit konkreten
+   Zahlen/Strukturen auszufuehren. Kein Produktionscode liest diese
+   Konstanten; sie werden hier nur an die Engine-Funktionen als expliziter
+   Parameter uebergeben (siehe scoreSplitCandidate/selectSplit-Signatur).
+
    training-domain.js definiert seine Funktionen/Enums als globale Browser-
    Funktionen (kein CommonJS-Modul) — training-plan-engine.js nutzt sie
    bewusst als bare Identifier (analog training-storage.js/training-
@@ -29,9 +41,10 @@ function assertClose(actual,expected,label){
   if(ok){passed++;}else{failed++;console.error("❌ FAIL:",label,"— erwartet:",expected,"erhalten:",actual);}
 }
 
+const ALL_MUSCLES=Object.keys(TD.CANONICAL_VOLUME_MUSCLE_ID);
 function uniformVolumeTargets(value){
   const vt={};
-  TP.SPLIT_GOVERNED_MUSCLES.forEach(m=>vt[m]=value);
+  ALL_MUSCLES.forEach(m=>vt[m]=value);
   return vt;
 }
 function fullCoverage(){
@@ -44,24 +57,90 @@ function basePlanRequirements(overrides){
     user_id:"u1",goal:"HYPERTROPHY",experience_level:"INTERMEDIATE",user_skill_level:2,
     training_days_per_week:4,session_time_budget_min:60,actual_session_duration_factor:1.0,
     priority_muscles:[],preferred_split:null,rest_preference:"STANDARD",uses_rir:false,
-    primary_location_id:"loc1",training_weekdays:null,
+    primary_location_id:"loc1",training_weekdays:[1,2,3,4],
   },overrides||{});
 }
 function capacityFor(days,minutes,goal){
   const r=TP.resolveSessionCapacity({session_time_budget_min:minutes,reserve_s:0,goal:goal||"HYPERTROPHY",actual_session_duration_factor:1.0});
   return r.sessionCapacity;
 }
+/* Explizite training_weekdays je Trainingstage-Anzahl fuer Tests, die
+   keine eigenen weekdays via basePlanRequirements mitbringen. Rein
+   arbitraere, aber deterministische Testwahl (0=Montag ... 6=Sonntag) —
+   NICHT als normativer Verteilungsalgorithmus zu verstehen (siehe
+   training-plan-engine.js: resolveTrainingWeekdays verlangt jetzt IMMER
+   explizite Wochentage, es gibt keinen eingebauten Algorithmus mehr). */
+const TEST_WEEKDAYS_BY_DAYS={
+  2:[0,3],3:[0,2,4],4:[0,1,3,4],5:[0,1,2,3,4],6:[0,1,2,3,4,5],
+};
 
-console.log("========== §3.1 Split-Kandidatenraum: alle 9 Typen mit Metadaten ==========");
+/* ===================================================================
+   TEST-FIXTURE: min_viable_session_slots je Split (NICHT normativ!)
+   v1.4.1 (§3.1) nennt dieses Feld nur namentlich, ohne Formel/Werte.
+   Diese Zahlen sind rein testintern gewaehlt (hier: bequem aus der bereits
+   an anderer Stelle exakt spezifizierten §17.3-Kapazitaetsformel auf die
+   jeweils UNTERE Grenze der §3.1-"typischen Sessionlaenge" angewendet,
+   NUR um in Tests plausible, interne konsistente Zahlen zu haben) und
+   duerfen NIEMALS als Produktionsdefault interpretiert werden.
+   =================================================================== */
+const TEST_MIN_VIABLE_SESSION_SLOTS={
+  FULL_BODY:5,UPPER_LOWER:5,UPPER_LOWER_FULL:6,PUSH_PULL:5,PPL:7,
+  PPL_X2:5,PPL_UL_HYBRID:6,UPPER_LOWER_X3:5,BODY_PART_SPLIT:6,
+};
+
+/* ===================================================================
+   TEST-FIXTURE: sessionTemplateSequenceBySplit (NICHT normativ!)
+   v1.4.1 Pack 03 definiert weder Template-Namen/Reihenfolge noch
+   Muskelinhalt der session_templates[] — das ist Exercise-Catalog-/
+   Bewegungsmuster-Registry-Wissen ausserhalb dieses Packs. Die folgende
+   Zuordnung ist eine rein synthetische Test-Konstruktion (3 beliebige
+   Muskel-Buckets A/B/C), NICHT eine Behauptung ueber echte Anatomie oder
+   ueber die "richtige" Aufteilung eines Splits.
+   =================================================================== */
+const FIX_A=["CHEST","FRONT_DELT","TRICEPS"];
+const FIX_B=["LATS","UPPER_BACK","BICEPS"];
+const FIX_C=["QUADS","HAMSTRINGS","GLUTES"];
+const FIX_ALL=ALL_MUSCLES.slice();
+function tmpl(name,muscles){return {name,muscles};}
+const TEST_SESSION_TEMPLATES={
+  FULL_BODY:[tmpl("FULL",FIX_ALL)],
+  UPPER_LOWER:[tmpl("UPPER",FIX_A.concat(FIX_B)),tmpl("LOWER",FIX_C)],
+  UPPER_LOWER_FULL:[tmpl("UPPER",FIX_A.concat(FIX_B)),tmpl("LOWER",FIX_C),tmpl("FULL",FIX_ALL)],
+  PUSH_PULL:[tmpl("PUSH",FIX_A),tmpl("PULL",FIX_B)],
+  PPL:[tmpl("PUSH",FIX_A),tmpl("PULL",FIX_B),tmpl("LEGS",FIX_C)],
+  PPL_X2:[tmpl("PUSH",FIX_A),tmpl("PULL",FIX_B),tmpl("LEGS",FIX_C)],
+  PPL_UL_HYBRID:[tmpl("PUSH",FIX_A),tmpl("PULL",FIX_B),tmpl("LEGS",FIX_C),tmpl("UPPER",FIX_A.concat(FIX_B)),tmpl("LOWER",FIX_C)],
+  UPPER_LOWER_X3:[tmpl("UPPER",FIX_A.concat(FIX_B)),tmpl("LOWER",FIX_C)],
+  BODY_PART_SPLIT:[tmpl("PART_A",FIX_A),tmpl("PART_B",FIX_B),tmpl("PART_C",FIX_C),tmpl("PART_D",["ABS"]),tmpl("PART_E",["CALVES"])],
+};
+/* Bequemlichkeitsfunktion fuer den haeufigsten Testfall: vollstaendige,
+   testinterne externalConfig fuer selectSplit()/scoreSplitCandidate(). */
+function testExternalConfig(overrides){
+  return Object.assign({
+    equipmentCoverageBySplit:fullCoverage(),
+    minViableSessionSlotsBySplit:Object.assign({},TEST_MIN_VIABLE_SESSION_SLOTS),
+    sessionTemplateSequenceBySplit:JSON.parse(JSON.stringify(TEST_SESSION_TEMPLATES)),
+    /* §3.1 nennt fuer PPL_UL_HYBRID nur den Bereich 1.6-2x, keinen
+       Punktwert. 1.8 ist HIER ausdruecklich nur eine Test-Fixture
+       innerhalb dieses Bereichs, KEINE normative Aufloesung (siehe
+       training-plan-engine.js computeMuscleFrequency-Kommentar). */
+    frequencyOverrides:{PPL_UL_HYBRID:1.8},
+  },overrides||{});
+}
+
+console.log("========== §3.1 Split-Kandidatenraum: alle 9 Typen mit woertlichen Metadaten ==========");
 {
   const expectedTypes=["FULL_BODY","UPPER_LOWER","UPPER_LOWER_FULL","PUSH_PULL","PPL","PPL_X2","PPL_UL_HYBRID","UPPER_LOWER_X3","BODY_PART_SPLIT"];
   assertEq(Object.keys(TP.SPLIT_CANDIDATES).sort(),expectedTypes.slice().sort(),"alle 9 kanonischen Split-Typen sind vorhanden");
   expectedTypes.forEach(t=>{
     const meta=TP.SPLIT_CANDIDATES[t];
     assert(Array.isArray(meta.valid_training_days)&&meta.valid_training_days.length>0,t+": valid_training_days vorhanden");
-    assert(Array.isArray(meta.session_templates)&&meta.session_templates.length>0,t+": session_templates vorhanden");
-    assert(typeof meta.min_viable_session_slots==="number","min_viable_session_slots vorhanden ("+t+")");
     assert(typeof meta.typical_session_length_min.min==="number"&&typeof meta.typical_session_length_min.max==="number",t+": typical_session_length_min vorhanden");
+    /* min_viable_session_slots und session_templates[]-Inhalt sind KEINE
+       Produktionsmetadaten mehr (siehe STEP-03-Korrektur) — bewusst NICHT
+       auf SPLIT_CANDIDATES getestet. */
+    assert(!("min_viable_session_slots" in meta),t+": min_viable_session_slots ist NICHT mehr Teil der Produktionsmetadaten (kein erfundener Default)");
+    assert(!("session_templates" in meta),t+": session_templates ist NICHT mehr Teil der Produktionsmetadaten (kein erfundener Muskelinhalt)");
   });
   assertEq(TP.SPLIT_CANDIDATES.FULL_BODY.valid_training_days,[2,3,4],"FULL_BODY: 2-4 Tage");
   assertEq(TP.SPLIT_CANDIDATES.UPPER_LOWER.valid_training_days,[2,4],"UPPER_LOWER: nur 2 oder 4 Tage");
@@ -72,6 +151,24 @@ console.log("========== §3.1 Split-Kandidatenraum: alle 9 Typen mit Metadaten =
   assertEq(TP.SPLIT_CANDIDATES.PPL_UL_HYBRID.valid_training_days,[5],"PPL_UL_HYBRID: nur 5 Tage");
   assertEq(TP.SPLIT_CANDIDATES.UPPER_LOWER_X3.valid_training_days,[6],"UPPER_LOWER_X3: nur 6 Tage");
   assertEq(TP.SPLIT_CANDIDATES.BODY_PART_SPLIT.valid_training_days,[5],"BODY_PART_SPLIT: nur 5 Tage");
+}
+
+console.log("========== §3.1 Muskelfrequenz: woertliche Formeln, PPL_UL_HYBRID erfordert externen Wert ==========");
+{
+  assertEq(TP.computeMuscleFrequency("FULL_BODY",3),3,"FULL_BODY: Frequenz = Tage (woertlich)");
+  assertEq(TP.computeMuscleFrequency("FULL_BODY",4),4,"FULL_BODY: Frequenz = Tage (woertlich), 4 Tage");
+  assertEq(TP.computeMuscleFrequency("UPPER_LOWER",4),2,"UPPER_LOWER: Frequenz = Tage/2 (woertlich)");
+  assertEq(TP.computeMuscleFrequency("UPPER_LOWER",2),1,"UPPER_LOWER: Frequenz = Tage/2 bei 2 Tagen");
+  assertEq(TP.computeMuscleFrequency("UPPER_LOWER_FULL",3),1.67,"UPPER_LOWER_FULL: Frequenz = 1.67 (woertlich aus §3.1-Tabelle, KEINE Interpretation)");
+  assertEq(TP.computeMuscleFrequency("PUSH_PULL",4),2,"PUSH_PULL: Frequenz = 2 (woertlich)");
+  assertEq(TP.computeMuscleFrequency("PPL",3),1,"PPL: Frequenz = 1 (woertlich)");
+  assertEq(TP.computeMuscleFrequency("PPL_X2",6),2,"PPL_X2: Frequenz = 2 (woertlich)");
+  assertEq(TP.computeMuscleFrequency("UPPER_LOWER_X3",6),3,"UPPER_LOWER_X3: Frequenz = 3 (woertlich)");
+  assertEq(TP.computeMuscleFrequency("BODY_PART_SPLIT",5),1,"BODY_PART_SPLIT: Frequenz = 1 (woertlich)");
+
+  assertThrows(()=>TP.computeMuscleFrequency("PPL_UL_HYBRID",5),"PPL_UL_HYBRID OHNE frequencyOverrides wirft (§3.1 nennt nur Bereich 1.6-2x, kein Punktwert — KEIN stiller Mittelwert)");
+  assertEq(TP.computeMuscleFrequency("PPL_UL_HYBRID",5,{PPL_UL_HYBRID:1.6}),1.6,"PPL_UL_HYBRID mit explizitem Override am unteren Rand des Bereichs");
+  assertEq(TP.computeMuscleFrequency("PPL_UL_HYBRID",5,{PPL_UL_HYBRID:2}),2,"PPL_UL_HYBRID mit explizitem Override am oberen Rand des Bereichs");
 }
 
 console.log("========== §2.2 Phase 1 — Requirements Resolution ==========");
@@ -116,37 +213,49 @@ console.log("========== §17.3 Phase 2 — SessionCapacity ==========");
   assert(factorTest1.sessionCapacity.max_working_sets<hyp.sessionCapacity.max_working_sets,"hoeherer actual_session_duration_factor senkt max_working_sets (mehr Zeit pro Satz veranschlagt)");
 }
 
+console.log("========== Wochentage: KEIN erfundener Verteilungsalgorithmus mehr ==========");
+{
+  assertThrows(()=>TP.resolveTrainingWeekdays(4,null),"resolveTrainingWeekdays OHNE explizite Wochentage wirft (kein eingebauter Verteilungsalgorithmus mehr)");
+  assertThrows(()=>TP.resolveTrainingWeekdays(4,[0,1]),"resolveTrainingWeekdays mit falscher Laenge wirft");
+  assertEq(TP.resolveTrainingWeekdays(3,[4,0,2]),[0,2,4],"resolveTrainingWeekdays sortiert explizite Wochentage, erfindet aber nichts");
+}
+
 console.log("========== §3.2 Hard Filters SF1-SF6 einzeln ==========");
 {
   const cap60=capacityFor(4,60,"HYPERTROPHY");
   const vt=uniformVolumeTargets(10);
-  const weekdays4=TP.resolveTrainingWeekdays(4,null);
+  const weekdays4=TEST_WEEKDAYS_BY_DAYS[4];
 
   // SF1
   assert(TP.checkSF1(TP.SPLIT_CANDIDATES.PUSH_PULL,4),"SF1: PUSH_PULL bei 4 Tagen erfuellt");
   assert(!TP.checkSF1(TP.SPLIT_CANDIDATES.PUSH_PULL,3),"SF1: PUSH_PULL bei 3 Tagen verletzt (nur 4 Tage gueltig)");
   assert(!TP.checkSF1(TP.SPLIT_CANDIDATES.PPL,4),"SF1: PPL bei 4 Tagen verletzt (nur 3 Tage gueltig)");
 
-  // SF2
+  // SF2 — min_viable_session_slots ist jetzt ein expliziter Parameter (Test-Fixture)
   const tinyCapacity={max_slots:1,max_working_sets:3,burdened_set_s:155,brutto_budget_s:3600};
-  assert(!TP.checkSF2(TP.SPLIT_CANDIDATES.FULL_BODY,tinyCapacity),"SF2: FULL_BODY verletzt bei max_slots=1 (min_viable_session_slots > 1)");
-  assert(TP.checkSF2(TP.SPLIT_CANDIDATES.FULL_BODY,cap60),"SF2: FULL_BODY erfuellt bei ausreichender Kapazitaet (60min)");
+  assertThrows(()=>TP.checkSF2(TP.SPLIT_CANDIDATES.FULL_BODY,cap60),"SF2 ohne minViableSessionSlots wirft (kein stiller Default, v1.4.1 nennt keine Formel/Werte)");
+  assert(!TP.checkSF2(TP.SPLIT_CANDIDATES.FULL_BODY,tinyCapacity,TEST_MIN_VIABLE_SESSION_SLOTS.FULL_BODY),"SF2: FULL_BODY verletzt bei max_slots=1 (Test-Fixture min_viable_session_slots > 1)");
+  assert(TP.checkSF2(TP.SPLIT_CANDIDATES.FULL_BODY,cap60,TEST_MIN_VIABLE_SESSION_SLOTS.FULL_BODY),"SF2: FULL_BODY erfuellt bei ausreichender Kapazitaet (60min)");
 
   // SF3 (12er Cap) — sehr hohes Volumen bei niedriger Frequenz verletzt SF3
   const highVt=uniformVolumeTargets(30); // 30/freq(PPL=1)=30 > 12
   assert(!TP.checkSF3(TP.SPLIT_CANDIDATES.PPL,3,highVt,12),"SF3: PPL bei Frequenz 1 und 30 Saetzen/Woche verletzt 12er-Cap");
   assert(TP.checkSF3(TP.SPLIT_CANDIDATES.PPL,3,uniformVolumeTargets(12),12),"SF3: PPL bei genau 12 Saetzen/Woche (Frequenz 1) erfuellt den 12er-Cap (Grenzwert inklusiv)");
 
-  // SF4 — hohe Dosis auf ueberlappenden Kategorien an Kalender-aufeinanderfolgenden Tagen
-  const heavyVt=uniformVolumeTargets(30); // FULL_BODY Frequenz bei 4 Tagen = 4 -> 30/4=7.5 <10, also anpassen:
+  // SF4 — hohe Dosis auf ueberlappenden Kategorien an Kalender-aufeinanderfolgenden Tagen.
+  // Test-Fixture: FULL_BODY = 1 Template, das ALLE Muskeln jeden Tag traegt.
+  const fullBodySeq=TEST_SESSION_TEMPLATES.FULL_BODY;
+  assertThrows(()=>TP.checkSF4(TP.SPLIT_CANDIDATES.FULL_BODY,4,weekdays4,uniformVolumeTargets(8)),"SF4 ohne sessionTemplateSequence wirft (v1.4.1 definiert Template-Muskelinhalt nicht, kein Default)");
   const veryHeavyVt=uniformVolumeTargets(44); // 44/4=11 >=10
-  assert(!TP.checkSF4(TP.SPLIT_CANDIDATES.FULL_BODY,4,weekdays4,veryHeavyVt),"SF4: FULL_BODY (jeder Tag = alle Muskeln) verletzt bei hoher Pro-Expositions-Dosis auf kalenderfolgenden Tagen");
-  assert(TP.checkSF4(TP.SPLIT_CANDIDATES.FULL_BODY,4,weekdays4,uniformVolumeTargets(8)),"SF4: FULL_BODY erfuellt bei niedriger Pro-Expositions-Dosis");
+  assert(!TP.checkSF4(TP.SPLIT_CANDIDATES.FULL_BODY,4,weekdays4,veryHeavyVt,fullBodySeq),"SF4: FULL_BODY (jeder Tag = alle Muskeln, Test-Fixture) verletzt bei hoher Pro-Expositions-Dosis auf kalenderfolgenden Tagen");
+  assert(TP.checkSF4(TP.SPLIT_CANDIDATES.FULL_BODY,4,weekdays4,uniformVolumeTargets(8),fullBodySeq),"SF4: FULL_BODY erfuellt bei niedriger Pro-Expositions-Dosis");
 
   // SF5
   assertThrows(()=>TP.checkSF5(TP.SPLIT_CANDIDATES.PPL,undefined),"SF5: fehlende equipmentCoverageBySplit wirft (kein stiller Default)");
   assert(TP.checkSF5(TP.SPLIT_CANDIDATES.PPL,{PPL:0.6}),"SF5: genau 60% Abdeckung erfuellt (Grenzwert inklusiv)");
   assert(!TP.checkSF5(TP.SPLIT_CANDIDATES.PPL,{PPL:0.59}),"SF5: unter 60% Abdeckung verletzt");
+  assert(!TP.checkSF5(TP.SPLIT_CANDIDATES.PPL,{PPL:"UNKNOWN"}),"SF5: explizit unbekannte Abdeckung (\"UNKNOWN\") gilt NIE als erfuellt (niemals stillschweigend erfuellt)");
+  assertThrows(()=>TP.checkSF5(TP.SPLIT_CANDIDATES.PPL,{PPL:"not-a-number"}),"SF5: ungueltiger (nicht-numerischer, nicht-UNKNOWN) Wert wirft");
 
   // SF6
   assert(TP.checkSF6(TP.SPLIT_CANDIDATES.UPPER_LOWER,2,uniformVolumeTargets(5)),"SF6: UPPER_LOWER bei 2 Tagen (Frequenz=1) erfuellt (>=1)");
@@ -154,18 +263,16 @@ console.log("========== §3.2 Hard Filters SF1-SF6 einzeln ==========");
 
 console.log("========== §3.5 Fallback: SF3 12->16, FULL_BODY-Erzwingung, SF2/SF4/SF5-Grenzen ==========");
 {
-  const equip=fullCoverage();
-
   // Fallback-Stufe 1 (SF3 12->16): bei 5 Trainingstagen sind PPL_UL_HYBRID
-  // (Frequenz 1.8) und BODY_PART_SPLIT (Frequenz 1) die einzigen SF1-
-  // Kandidaten. Bei 22 Saetzen/Woche verletzen BEIDE den 12er-Cap
-  // (22/1.8=12.2>12; 22/1=22>12), aber PPL_UL_HYBRID besteht den auf 16
-  // gelockerten Cap (22/1.8=12.2<=16); BODY_PART_SPLIT bleibt weiterhin
-  // ueber 16 (22/1=22>16).
+  // (Test-Fixture-Frequenz 1.8) und BODY_PART_SPLIT (Frequenz 1, woertlich)
+  // die einzigen SF1-Kandidaten. Bei 22 Saetzen/Woche verletzen BEIDE den
+  // 12er-Cap (22/1.8=12.2>12; 22/1=22>12), aber PPL_UL_HYBRID besteht den
+  // auf 16 gelockerten Cap (22/1.8=12.2<=16); BODY_PART_SPLIT bleibt
+  // weiterhin ueber 16 (22/1=22>16).
   const cap5=capacityFor(5,90,"HYPERTROPHY");
   const vt22=uniformVolumeTargets(22);
-  const planReq5=basePlanRequirements({training_days_per_week:5,session_time_budget_min:90});
-  const result=TP.selectSplit(planReq5,vt22,cap5,equip);
+  const planReq5=basePlanRequirements({training_days_per_week:5,session_time_budget_min:90,training_weekdays:TEST_WEEKDAYS_BY_DAYS[5]});
+  const result=TP.selectSplit(planReq5,vt22,cap5,testExternalConfig());
   assertEq(result.status,"OK","Fallback-Stufe 1 (SF3 12->16) liefert am Ende einen gueltigen Kandidaten");
   assert(result.warnings.indexOf("SF3_RELAXED_TO_16")!==-1,"Warnung SF3_RELAXED_TO_16 wird gesetzt");
   assertEq(result.splitStructure.split_type,"PPL_UL_HYBRID","der bei 16 ueberlebende Kandidat (PPL_UL_HYBRID) wird gewaehlt, BODY_PART_SPLIT bleibt weiterhin SF3-verletzt");
@@ -177,7 +284,7 @@ console.log("========== §3.5 Fallback: SF3 12->16, FULL_BODY-Erzwingung, SF2/SF
   const noEquip={};
   Object.keys(TP.SPLIT_CANDIDATES).forEach(k=>noEquip[k]=0.0);
   const planReq4=basePlanRequirements({training_days_per_week:4,session_time_budget_min:60});
-  const result2=TP.selectSplit(planReq4,uniformVolumeTargets(8),cap4,noEquip);
+  const result2=TP.selectSplit(planReq4,uniformVolumeTargets(8),cap4,testExternalConfig({equipmentCoverageBySplit:noEquip}));
   assertEq(result2.status,"FAILURE","Wenn SF5 fuer ALLE Kandidaten (inkl. FULL_BODY) verletzt ist, bleibt das Ergebnis FAILURE — SF5 wird NIE gelockert");
   assertEq(result2.failure.code,"NO_VIABLE_SPLIT","Failure-Code ist NO_VIABLE_SPLIT");
 
@@ -189,8 +296,8 @@ console.log("========== §3.5 Fallback: SF3 12->16, FULL_BODY-Erzwingung, SF2/SF
   // 50/3=16.67>16) -> FULL_BODY_FORCED mit strukturiertem Repair-Request.
   const cap6=capacityFor(6,60,"HYPERTROPHY");
   const vt50=uniformVolumeTargets(50);
-  const planReq6=basePlanRequirements({training_days_per_week:6,session_time_budget_min:60});
-  const result3=TP.selectSplit(planReq6,vt50,cap6,equip);
+  const planReq6=basePlanRequirements({training_days_per_week:6,session_time_budget_min:60,training_weekdays:TEST_WEEKDAYS_BY_DAYS[6]});
+  const result3=TP.selectSplit(planReq6,vt50,cap6,testExternalConfig());
   assertEq(result3.status,"NEEDS_VOLUME_ADJUSTMENT","Wenn nach Stufe 1 kein Kandidat uebrig bleibt, liefert die Engine NEEDS_VOLUME_ADJUSTMENT statt selbst Volumenziele zu erfinden");
   assert(result3.warnings.indexOf("FULL_BODY_FORCED")!==-1,"Warnung FULL_BODY_FORCED wird gesetzt");
   assertEq(result3.splitStructure.split_type,"FULL_BODY","erzwungener Split ist FULL_BODY (trotz SF1-Ausschluss bei 6 Tagen)");
@@ -198,8 +305,8 @@ console.log("========== §3.5 Fallback: SF3 12->16, FULL_BODY-Erzwingung, SF2/SF
   assert(!!result3.repairRequest.note,"Repair-Request dokumentiert explizit, dass die eigentliche Anpassung STEP 04 obliegt");
 
   // SF2-Verletzung von FULL_BODY selbst -> INFEASIBLE (kein weiterer Fallback).
-  const tinyCap={max_slots:2,max_working_sets:6,burdened_set_s:155,brutto_budget_s:1200}; // < FULL_BODY.min_viable_session_slots
-  const result4=TP.selectSplit(planReq6,uniformVolumeTargets(8),tinyCap,equip);
+  const tinyCap={max_slots:2,max_working_sets:6,burdened_set_s:155,brutto_budget_s:1200}; // < FULL_BODY-Test-Fixture min_viable_session_slots (5)
+  const result4=TP.selectSplit(planReq6,uniformVolumeTargets(8),tinyCap,testExternalConfig());
   assertEq(result4.status,"FAILURE","FULL_BODY verletzt SF2 (max_slots zu klein) -> FAILURE (INFEASIBLE), kein weiterer Fallback");
   assertEq(result4.failure.code,"NO_VIABLE_SPLIT","Failure-Code ist NO_VIABLE_SPLIT");
 }
@@ -215,16 +322,18 @@ console.log("========== §3.3 Soft Score SP1-SP6 einzeln ==========");
   assertClose(TP.scoreSP3(3960,3600),90,"SP3: 10% Ueberhang -> 90");
   assertClose(TP.scoreSP3(5040,3600),60,"SP3: 40% Ueberhang -> 60");
 
+  // SP6: Basis ist jetzt 0 (additive Identitaet), NICHT mehr ein erfundener
+  // Wert wie 50 — §3.3 nennt ausschliesslich die +40/-20-Modifikatoren.
   const beg=TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,null,"BEGINNER");
   const notBeg=TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,null,"INTERMEDIATE");
-  assertEq(beg,30,"SP6: Beginner-Malus auf PPL exakt -20 (Basis 50 -> 30)");
-  assertEq(notBeg,50,"SP6: kein Malus fuer Intermediate auf PPL (Basis 50)");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL_X2,null,"BEGINNER"),30,"SP6: Beginner-Malus auf PPL_X2");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.BODY_PART_SPLIT,null,"BEGINNER"),30,"SP6: Beginner-Malus auf BODY_PART_SPLIT");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.FULL_BODY,null,"BEGINNER"),50,"SP6: KEIN Beginner-Malus auf FULL_BODY");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"PPL","ADVANCED"),90,"SP6: preferred_split-Treffer exakt +40 (Basis 50 -> 90)");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"UPPER_LOWER","ADVANCED"),50,"SP6: kein Bonus ohne Treffer");
-  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"PPL","BEGINNER"),70,"SP6: Treffer(+40) und Beginner-Malus(-20) kombinieren sich (50+40-20=70)");
+  assertEq(beg,0,"SP6: Beginner-Malus auf PPL ohne Praeferenz -> clamped auf 0 (Basis 0, -20 geklemmt)");
+  assertEq(notBeg,0,"SP6: kein Malus, keine Praeferenz -> Basis 0");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL_X2,null,"BEGINNER"),0,"SP6: Beginner-Malus auf PPL_X2 -> geklemmt auf 0");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.BODY_PART_SPLIT,null,"BEGINNER"),0,"SP6: Beginner-Malus auf BODY_PART_SPLIT -> geklemmt auf 0");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.FULL_BODY,null,"BEGINNER"),0,"SP6: KEIN Beginner-Malus auf FULL_BODY, keine Praeferenz -> Basis 0");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"PPL","ADVANCED"),40,"SP6: preferred_split-Treffer exakt +40 (Basis 0 -> 40)");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"UPPER_LOWER","ADVANCED"),0,"SP6: kein Bonus ohne Treffer -> Basis 0");
+  assertEq(TP.scoreSP6(TP.SPLIT_CANDIDATES.PPL,"PPL","BEGINNER"),20,"SP6: Treffer(+40) und Beginner-Malus(-20) kombinieren sich (0+40-20=20)");
 
   assertEq(TP.scoreSP4(TP.SPLIT_CANDIDATES.PPL,3,[]),100,"SP4: keine Prioritaetsmuskeln -> 100");
   const freqPPL_X2=TP.computeMuscleFrequency("PPL_X2",6);
@@ -233,6 +342,11 @@ console.log("========== §3.3 Soft Score SP1-SP6 einzeln ==========");
   const freqPPL=TP.computeMuscleFrequency("PPL",3);
   assertEq(freqPPL,1,"Kontrolle: PPL-Frequenz genau 1 fuer den folgenden SP4-Test");
   assertEq(TP.scoreSP4(TP.SPLIT_CANDIDATES.PPL,3,["CHEST"]),60,"SP4: Prioritaetsmuskel mit Frequenz genau 1 -> 60");
+  // 2 gleichzeitige Prioritaetsmuskeln (§4.5 erlaubt max. 2): keine
+  // Aggregations-Mehrdeutigkeit, weil frequency(split,muskel) fuer jeden
+  // Muskel desselben Splits identisch ist (siehe Kopf-Kommentar Punkt 5) —
+  // beide liefern denselben Score, egal welche 2 Muskeln gewaehlt werden.
+  assertEq(TP.scoreSP4(TP.SPLIT_CANDIDATES.PPL,3,["CHEST","LATS"]),60,"SP4: 2 Prioritaetsmuskeln liefern denselben Score wie 1 (keine erfundene Aggregation noetig, da frequency split-einheitlich ist)");
 
   // STRENGTH: keine Hard-Malus fuer <2 Exposures (§4.6 P5-Praeferenz)
   assertEq(TP.scoreSP2(TP.SPLIT_CANDIDATES.PPL,"STRENGTH",3,uniformVolumeTargets(10)),100,"SP2 STRENGTH: 1 Exposure/Woche bleibt voll gueltig, kein Hard-Malus (§4.6)");
@@ -242,7 +356,7 @@ console.log("========== §3.3 Soft Score SP1-SP6 einzeln ==========");
   // bei 3 Tagen) darf fuer STRENGTH keinesfalls durch SF1-SF6 ausgeschlossen
   // werden, nur weil es unter 2 Exposures/Woche bleibt — INVARIANT V-2.
   const capStrength=capacityFor(3,90,"STRENGTH");
-  const checkStrength=TP.evaluateHardFilters(TP.SPLIT_CANDIDATES.PPL,{trainingDays:3,weekdays:TP.resolveTrainingWeekdays(3,null),volumeTargets:uniformVolumeTargets(10),sessionCapacity:capStrength,equipmentCoverageBySplit:fullCoverage(),sessionCapSets:12});
+  const checkStrength=TP.evaluateHardFilters(TP.SPLIT_CANDIDATES.PPL,{trainingDays:3,weekdays:TEST_WEEKDAYS_BY_DAYS[3],volumeTargets:uniformVolumeTargets(10),sessionCapacity:capStrength,equipmentCoverageBySplit:fullCoverage(),sessionCapSets:12,minViableSessionSlots:TEST_MIN_VIABLE_SESSION_SLOTS.PPL,sessionTemplateSequence:TEST_SESSION_TEMPLATES.PPL});
   assert(checkStrength.pass,"PPL (Frequenz 1, <2 Exposures) besteht fuer STRENGTH weiterhin alle Hard Filters — die 2x-Praeferenz ist ausschliesslich P5/Score, nie ein Hard Filter");
 
   // HYP/GF: Abweichung von der §4.6-Zielfrequenz kostet 25 Punkte je Stufe
@@ -282,7 +396,7 @@ console.log("========== BODY_PART_SPLIT bleibt legaler Kandidat (kein Hard-Filte
 {
   const cap=capacityFor(5,70,"HYPERTROPHY");
   const vt=uniformVolumeTargets(10);
-  const check=TP.evaluateHardFilters(TP.SPLIT_CANDIDATES.BODY_PART_SPLIT,{trainingDays:5,weekdays:TP.resolveTrainingWeekdays(5,null),volumeTargets:vt,sessionCapacity:cap,equipmentCoverageBySplit:fullCoverage(),sessionCapSets:12});
+  const check=TP.evaluateHardFilters(TP.SPLIT_CANDIDATES.BODY_PART_SPLIT,{trainingDays:5,weekdays:TEST_WEEKDAYS_BY_DAYS[5],volumeTargets:vt,sessionCapacity:cap,equipmentCoverageBySplit:fullCoverage(),sessionCapSets:12,minViableSessionSlots:TEST_MIN_VIABLE_SESSION_SLOTS.BODY_PART_SPLIT,sessionTemplateSequence:TEST_SESSION_TEMPLATES.BODY_PART_SPLIT});
   assert(check.pass,"BODY_PART_SPLIT besteht SF1-SF6 unter normalen Bedingungen (kein struktureller Ausschluss)");
 }
 
@@ -292,7 +406,7 @@ console.log("========== preferred_split ist niemals ein Hard Filter (kein Bypass
   // gueltig) und darf trotz Praeferenz NIEMALS gewaehlt werden.
   const cap=capacityFor(4,60,"HYPERTROPHY");
   const planReq=basePlanRequirements({training_days_per_week:4,preferred_split:"PPL"});
-  const result=TP.selectSplit(planReq,uniformVolumeTargets(10),cap,fullCoverage());
+  const result=TP.selectSplit(planReq,uniformVolumeTargets(10),cap,testExternalConfig());
   assertEq(result.status,"OK","Split-Auswahl gelingt trotz nicht erfuellbarer Praeferenz");
   assert(result.splitStructure.split_type!=="PPL","PPL wird trotz preferred_split NIEMALS gewaehlt, wenn es SF1 verletzt (INVARIANT S-1)");
   assert(result.allScores.every(s=>s.split_type!=="PPL"),"PPL taucht nicht einmal in der Kandidatenliste auf (SF1-gefiltert)");
@@ -321,10 +435,10 @@ console.log("========== INVARIANT S-3 Same-Day-Overlap ==========");
 console.log("========== Determinismus: identischer Input liefert identischen Output ==========");
 {
   const cap=capacityFor(5,70,"HYPERTROPHY");
-  const planReq=basePlanRequirements({training_days_per_week:5,priority_muscles:["CHEST"],preferred_split:"PPL_UL_HYBRID"});
+  const planReq=basePlanRequirements({training_days_per_week:5,priority_muscles:["CHEST"],preferred_split:"PPL_UL_HYBRID",training_weekdays:TEST_WEEKDAYS_BY_DAYS[5]});
   const vt=uniformVolumeTargets(12);
-  const r1=TP.selectSplit(planReq,vt,cap,fullCoverage());
-  const r2=TP.selectSplit(planReq,vt,cap,fullCoverage());
+  const r1=TP.selectSplit(planReq,vt,cap,testExternalConfig());
+  const r2=TP.selectSplit(planReq,vt,cap,testExternalConfig());
   assertEq(r1.splitStructure,r2.splitStructure,"INVARIANT G-3: identischer Input + identischer Kontext -> identisches SplitStructure-Ergebnis");
   assertEq(r1.scoreBreakdown,r2.scoreBreakdown,"INVARIANT G-3: identische Score-Aufschluesselung bei wiederholtem Aufruf");
 }
@@ -336,7 +450,7 @@ console.log("========== §3.4 Typische Szenarien als Verifikation (NICHT als Loo
   // Ausschluss durch SF1 allein); die Auswahl zwischen beiden ist dann
   // tatsaechlich eine Score-Frage (SP1-SP6), nicht mehr reine SF1-Konsequenz.
   const cap2=capacityFor(2,60,"HYPERTROPHY");
-  const result2days=TP.selectSplit(basePlanRequirements({training_days_per_week:2,session_time_budget_min:60}),uniformVolumeTargets(8),cap2,fullCoverage());
+  const result2days=TP.selectSplit(basePlanRequirements({training_days_per_week:2,session_time_budget_min:60,training_weekdays:TEST_WEEKDAYS_BY_DAYS[2]}),uniformVolumeTargets(8),cap2,testExternalConfig());
   assertEq(result2days.status,"OK","2 Trainingstage: Split-Auswahl gelingt");
   assertEq(result2days.allScores.map(s=>s.split_type).sort(),["FULL_BODY","UPPER_LOWER"],"2 Trainingstage: FULL_BODY und UPPER_LOWER sind die einzigen SF1-Kandidaten (§3.1)");
   assert(["FULL_BODY","UPPER_LOWER"].indexOf(result2days.splitStructure.split_type)!==-1,"2 Trainingstage: Gewinner ist einer der beiden SF1-Kandidaten");
@@ -344,8 +458,8 @@ console.log("========== §3.4 Typische Szenarien als Verifikation (NICHT als Loo
   // Hoehere Prioritaet auf preferred_split zeigt sich exakt als +40 in SP6,
   // veraendert aber niemals das Ergebnis von SF1-SF6 (reine Score-Wirkung).
   const cap4=capacityFor(4,60,"HYPERTROPHY");
-  const withoutPref=TP.selectSplit(basePlanRequirements({training_days_per_week:4}),uniformVolumeTargets(10),cap4,fullCoverage());
-  const withPref=TP.selectSplit(basePlanRequirements({training_days_per_week:4,preferred_split:"FULL_BODY"}),uniformVolumeTargets(10),cap4,fullCoverage());
+  const withoutPref=TP.selectSplit(basePlanRequirements({training_days_per_week:4}),uniformVolumeTargets(10),cap4,testExternalConfig());
+  const withPref=TP.selectSplit(basePlanRequirements({training_days_per_week:4,preferred_split:"FULL_BODY"}),uniformVolumeTargets(10),cap4,testExternalConfig());
   const fullBodyWithoutPref=withoutPref.allScores.find(s=>s.split_type==="FULL_BODY");
   const fullBodyWithPref=withPref.allScores.find(s=>s.split_type==="FULL_BODY");
   assertEq(fullBodyWithPref.breakdown.SP6-fullBodyWithoutPref.breakdown.SP6,40,"preferred_split-Treffer erhoeht SP6 von FULL_BODY um genau 40 Punkte, unabhaengig vom Gesamtranking");
