@@ -602,10 +602,29 @@ function createSlotExecution(f){
 const SLOT_ROLE=Object.freeze({PRIMARY:"PRIMARY",SECONDARY:"SECONDARY",ISOLATION:"ISOLATION",ACCESSORY:"ACCESSORY"});
 const REP_CHARACTER=Object.freeze({HEAVY:"HEAVY",MODERATE:"MODERATE",LIGHT:"LIGHT"});
 const REQUIRED_PROGRESSIBILITY=Object.freeze({HIGH:"HIGH",MEDIUM:"MEDIUM",LOW:"LOW"});
+/* KORREKTUR (Paket 03, §5.3-Dependency-Exzerpt wortgetreu): PlanSlot.
+   slot_function.primary_muscle_bands[] ist laut Master-Spec "canonical_
+   volume_muscle_id + contribution band" — also eine Liste von {canonical_
+   volume_muscle_id, contribution_band}-Paaren, NICHT eine Liste blosser
+   Muskel-ID-Strings. STEP 01 hatte dieses Feld (mangels des zu diesem
+   Zeitpunkt noch nicht vorliegenden §5.3-Exzerpts) faelschlich nur als
+   Array reiner CANONICAL_VOLUME_MUSCLE_ID-Werte validiert. Konflikt
+   dokumentiert und gemaess v1.4.1 aufgeloest: jeder Eintrag ist jetzt ein
+   validiertes {canonical_volume_muscle_id, contribution_band}-Objekt.
+   Dieser Fix ist fuer STEP 03 zwingend, weil INVARIANT S-3 (Same-Day-
+   Overlap) genau diese contribution_band-Information braucht (identischer
+   PRIMARY_HIGH-Volume-Muskel). */
+function validateMuscleContributionBands(bands,fieldLabel){
+  (bands||[]).forEach(b=>{
+    if(!b||typeof b!=="object")throw new Error("training-domain: "+fieldLabel+"-Eintrag muss ein Objekt {canonical_volume_muscle_id, contribution_band} sein, erhalten: "+JSON.stringify(b));
+    validateEnumValue(b.canonical_volume_muscle_id,CANONICAL_VOLUME_MUSCLE_ID,fieldLabel+".canonical_volume_muscle_id");
+    validateEnumValue(b.contribution_band,MUSCLE_CONTRIBUTION_BAND,fieldLabel+".contribution_band");
+  });
+}
 function createSlotFunction(f){
   f=f||{};
   requireFields({...f,__type__:"SlotFunction"},["movement_pattern","role","rep_character"]);
-  validateEnumArray(f.primary_muscle_bands,CANONICAL_VOLUME_MUSCLE_ID,"primary_muscle_bands");
+  validateMuscleContributionBands(f.primary_muscle_bands,"primary_muscle_bands");
   return {movement_pattern:f.movement_pattern,
     movement_subpattern:f.movement_subpattern!==undefined?f.movement_subpattern:null,
     primary_muscle_bands:f.primary_muscle_bands||[],role:f.role,rep_character:f.rep_character};
@@ -979,7 +998,7 @@ if(typeof module!=="undefined" && module.exports){
     CONFIDENCE_LEVELS,CONFIDENCE_ORDER,compareConfidence,
     roundVolumeToHalfSet,roundToAvailableSteps,roundTimeSpanMinutes,
     LOAD_MECHANISM_REGISTRY,LOAD_AXIS_CLASS,loadAxisClass,
-    validateEnumValue,validateEnumArray,validateNumericRange,
+    validateEnumValue,validateEnumArray,validateNumericRange,validateMuscleContributionBands,
     TRAINING_GOAL,EXPERIENCE_SELF,EXPERIENCE_LEVEL,MUSCLE_CONTRIBUTION_BAND,CANONICAL_VOLUME_MUSCLE_ID,
     REST_PREFERENCE,PREFERRED_SPLIT,TRAINING_LOCATION_TYPE,USER_TRAINING_PROFILE_FIELD_BOUNDS,
     MOVEMENT_PATTERN_REGISTRY,MOVEMENT_SUBPATTERN_REGISTRY,
