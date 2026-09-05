@@ -47,6 +47,7 @@ const ENGINE_TESTS=[
   "training-volume-engine.test.js",
   "training-exercise-catalog.test.js",
   "training-equipment.test.js",
+  "training-catalog-predicate-coverage.test.js",
 ];
 const BROWSER_TESTS=[
   "browser-scenarios-1to4.test.js",
@@ -63,6 +64,7 @@ const BROWSER_TESTS=[
   "browser-calendar-monthview-ux.test.js",
   "browser-training-onboarding.test.js",
   "browser-equipment-manager.test.js",
+  "browser-equipment-attachments.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}
