@@ -62,6 +62,7 @@ const BROWSER_TESTS=[
   "browser-forecast-diagnostic-sheet.test.js",
   "browser-calendar-monthview-ux.test.js",
   "browser-training-onboarding.test.js",
+  "browser-equipment-manager.test.js",
 ];
 
 const results=[]; // {name,ok,ms,detail,summaryLine}

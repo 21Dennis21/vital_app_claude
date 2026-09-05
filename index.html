@@ -3154,29 +3154,361 @@ function SettingsRow({label,value,onClick}){
   );
 }
 
-/* Minimal-Set fuer Onboarding-Equipment-Presets (Paket 02) — bewusst KEIN
-   Ersatz fuer den vollstaendigen TEIL-29-Katalog (spaeteres Pack): reine
-   editierbare Startschaetzungen. Stabile IDs, damit wiederholtes Speichern
-   idempotent bleibt statt bei jedem Onboarding-Durchlauf neue Definitionen
-   anzulegen.
-   KORREKTUR (STEP 06): family/subtype waren Paket-02-Platzhalter-Strings
-   ("BENCH","RACK","MACHINE","BODYWEIGHT_APPARATUS","BAND","OLYMPIC_BAR" etc.),
-   die keinem Eintrag der §29.1 Equipment Family/Subtype Registry entsprachen
-   (die jetzt in training-domain.js geschlossen ist und ungueltige Werte
-   ablehnt). Auf die naechstliegenden kanonischen §29.1-Werte korrigiert;
-   IDs/Namen/UI unveraendert. */
-const TRAINING_EQUIPMENT_PRESETS=[
-  {id:"eqdef_barbell_plates",name:"Langhantel + Scheiben",family:"FREE_WEIGHT",subtype:"OLYMPIC_BARBELL"},
-  {id:"eqdef_dumbbells",name:"Kurzhanteln",family:"FREE_WEIGHT",subtype:"FIXED_DUMBBELL"},
-  {id:"eqdef_bench",name:"Verstellbare Bank",family:"SUPPORT",subtype:"ADJUSTABLE_BENCH"},
-  {id:"eqdef_rack",name:"Kraftstation / Rack",family:"RACK_STATION",subtype:"POWER_RACK"},
-  {id:"eqdef_cable_machine",name:"Kabelzug-Turm",family:"CABLE",subtype:"FUNCTIONAL_TRAINER"},
-  {id:"eqdef_pull_up_bar",name:"Klimmzugstange",family:"BODYWEIGHT",subtype:"PULLUP_BAR"},
-  {id:"eqdef_dip_station",name:"Dip-Station",family:"BODYWEIGHT",subtype:"DIP_STATION"},
-  {id:"eqdef_rings",name:"Ringe",family:"BODYWEIGHT",subtype:"RINGS"},
-  {id:"eqdef_suspension_trainer",name:"Schlingentrainer",family:"BODYWEIGHT",subtype:"SUSPENSION_TRAINER"},
-  {id:"eqdef_resistance_bands",name:"Widerstandsbänder",family:"RESISTANCE_ACCESSORY",subtype:"LOOP_BAND"},
-];
+/* ================= STEP 06.1: vollstaendige Equipment-Domain-UI =================
+   Ersetzt die bisherige 10-Item-Demo-Liste (TRAINING_EQUIPMENT_PRESETS,
+   Paket 02) durch eine direkte Anbindung an die echte STEP01/06-Domain:
+   §29.1 Equipment Family/Subtype Registry, §29.2 Machine Functional
+   Subtype Registry, §29.3 Capability Registry, EquipmentDefinitionVersion/
+   EquipmentInstance/EquipmentProfileVersion/LoadProfileVersion (alle
+   Factories/Storage-Funktionen existierten bereits seit STEP01, waren aber
+   nie an die UI angebunden). Keine zweite Geraeteliste: jede
+   Auswahlmoeglichkeit kommt direkt aus EQUIPMENT_FAMILY_SUBTYPE_REGISTRY/
+   MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY (training-domain.js, bare global via
+   <script>-Tag). Nur die deutschen ANZEIGE-Labels unten sind neu —
+   persistiert werden ausschliesslich die kanonischen IDs. */
+
+/* EXTENDED bleibt laut §29.1 ohne eigene Subtype-Liste und "not required
+   for baseline feasibility" — bewusst NICHT im Picker (dokumentierte
+   Abgrenzung it Pack 06, keine Codeluecke). */
+const EQUIPMENT_PICKER_FAMILIES=["FREE_WEIGHT","SUPPORT","RACK_STATION","CABLE","SELECTORIZED_MACHINE","PLATE_LOADED_MACHINE","BODYWEIGHT","RESISTANCE_ACCESSORY","SPECIAL_CORE"];
+const EQUIPMENT_FAMILY_LABELS={
+  FREE_WEIGHT:"Freie Gewichte",SUPPORT:"Bänke & Stützen",RACK_STATION:"Racks & Stationen",
+  CABLE:"Kabelzug",SELECTORIZED_MACHINE:"Maschine (Gewichtsblock)",PLATE_LOADED_MACHINE:"Maschine (Hantelscheiben)",
+  BODYWEIGHT:"Körpergewicht",RESISTANCE_ACCESSORY:"Bänder & Zubehör",SPECIAL_CORE:"Spezialgeräte",
+};
+const EQUIPMENT_SUBTYPE_LABELS={
+  OLYMPIC_BARBELL:"Olympia-Langhantel",STANDARD_BARBELL:"Standard-Langhantel",EZ_CURL_BAR:"SZ-Curlstange",
+  TRAP_BAR:"Trap-/Hex-Bar",SAFETY_SQUAT_BAR:"Safety-Squat-Bar",SWISS_MULTI_GRIP_BAR:"Multigriff-Stange",
+  FIXED_DUMBBELL:"Kurzhantel (fest)",ADJUSTABLE_DUMBBELL:"Kurzhantel (verstellbar)",LOADABLE_DUMBBELL:"Kurzhantel (ladbar)",
+  KETTLEBELL:"Kettlebell",PLATES:"Gewichtsscheiben",MICROPLATES:"Mikro-Scheiben",
+  FLAT_BENCH:"Flachbank",ADJUSTABLE_BENCH:"Verstellbare Bank",PREACHER_BENCH:"Scott-Bank",
+  ROMAN_CHAIR:"Roman Chair",GHD:"GHD-Gerät",NORDIC_BENCH:"Nordic-Curl-Bank",BOX_STEP:"Box/Step",
+  PAD_SUPPORT:"Polster-Stütze",FIXED_SUPPORT:"Feste Stütze",SLIDERS:"Sliders",AB_WHEEL:"Ab Wheel",
+  POWER_RACK:"Power Rack",HALF_RACK:"Half Rack",SQUAT_STAND:"Squat Stand",BENCH_RACK:"Bank-Rack",
+  SMITH_MACHINE:"Smith Machine",GUIDED_BAR:"Geführte Stange",
+  SINGLE_FIXED_PULLEY:"Einzel-Umlenkrolle (fest)",SINGLE_ADJUSTABLE_COLUMN:"Kabelsäule (verstellbar)",
+  DUAL_ADJUSTABLE_PULLEY:"Doppel-Kabelturm (verstellbar)",FUNCTIONAL_TRAINER:"Functional Trainer",
+  CABLE_CROSSOVER:"Cable Crossover",LAT_PULLDOWN_STATION:"Latzug-Station",SEATED_ROW_STATION:"Rudermaschine (Kabel)",
+  COMBO_PULLDOWN_ROW:"Kombigerät Latzug/Rudern",
+  FLOOR:"Boden",PULLUP_BAR:"Klimmzugstange",DIP_STATION:"Dip-Station",PARALLEL_BARS:"Barren",
+  RINGS:"Ringe",SUSPENSION_TRAINER:"Schlingentrainer",WALK_SPACE:"Lauf-/Gehfläche",
+  LOOP_BAND:"Loop Band",TUBE_BAND:"Tube Band",LONG_BAND:"Langes Band",DIP_BELT:"Dip-Gurt",
+  WEIGHT_VEST:"Gewichtsweste",ANKLE_WEIGHT:"Knöchelgewicht",ANCHOR_POINT:"Verankerungspunkt",
+  LANDMINE:"Landmine",BELT_SQUAT:"Belt Squat",SLED:"Schlitten",
+};
+const MACHINE_FUNCTIONAL_SUBTYPE_LABELS={
+  CHEST_PRESS_FLAT:"Brustpresse (flach)",CHEST_PRESS_INCLINE:"Brustpresse (schräg)",SHOULDER_PRESS:"Schulterpresse",
+  PECTORAL_FLY:"Butterfly / Pec Deck",REVERSE_FLY:"Reverse Fly",LATERAL_RAISE:"Seitheben-Maschine",
+  PULLDOWN:"Latzugmaschine",ROW:"Rudermaschine",PULLOVER:"Pullover-Maschine",BICEPS_CURL:"Bizeps-Curl-Maschine",
+  TRICEPS_EXTENSION:"Trizeps-Extension-Maschine",TRICEPS_PRESS:"Trizeps-Press-Maschine",
+  LEG_PRESS_45:"45°-Beinpresse",LEG_PRESS_HORIZONTAL:"Horizontale Beinpresse",HACK_SQUAT:"Hackenschmidt-Maschine",
+  PENDULUM_SQUAT:"Pendulum Squat",BELT_SQUAT:"Belt-Squat-Maschine",LEG_EXTENSION:"Beinstrecker",
+  LEG_CURL_SEATED:"Beinbeuger (sitzend)",LEG_CURL_LYING:"Beinbeuger (liegend)",HIP_ABDUCTION:"Abduktoren",
+  HIP_ADDUCTION:"Adduktoren",HIP_EXTENSION_GLUTE:"Hip-Extension-Maschine",HIP_THRUST:"Hip-Thrust-Maschine",
+  CALF_RAISE:"Wadenmaschine",ABDOMINAL_FLEXION:"Bauchmaschine",BACK_EXTENSION:"Rückenstrecker-Maschine",
+  ASSISTED_PULLUP_DIP:"Assisted Klimmzug/Dip",
+};
+const CAPABILITY_VALUE_LABELS={
+  FLAT:"Flach",INCLINE_ADJUSTABLE:"Schräg (Incline)",DECLINE_CAPABLE:"Negativ (Decline)",
+  BACK_SUPPORTED:"Rückenlehne",LOWER_LEG_ANCHORED:"Unterschenkel-Fixierung",
+  SQUAT_HEIGHT:"Kniebeugen-Höhe",BENCH_HEIGHT:"Bankdrücken-Höhe",SAFETY_ARMS:"Safety Arms",
+  PULLUP_BAR:"Klimmzugstange integriert",ROW_HEIGHT:"Rudern-Höhe",
+  HIGH:"Hoch",MID:"Mittig",LOW:"Tief",HEIGHT_ADJUSTABLE:"Höhenverstellbar",
+  SINGLE_D_HANDLE:"Einzel-D-Griff",PAIR_D_HANDLES:"Doppel-D-Griffe",ROPE:"Seil",STRAIGHT_BAR:"Gerade Stange",
+  EZ_BAR:"SZ-Stange",WIDE_BAR:"Breite Stange",NEUTRAL_PULLDOWN_HANDLE:"Neutraler Latzug-Griff",
+  NEUTRAL_ROW_HANDLE:"Neutraler Rudergriff",ANKLE_STRAP:"Fußmanschette",
+};
+/* Nur die Capability-Werte, die training-equipment.js (§29.4-Predicate-
+   Auflösung) tatsächlich konsumiert — kein ungenutztes PATH/LATERALITY/
+   LOADABLE-Feld anzeigen (Aufgabentext: keine unstrukturierte Checkbox-
+   Wand). */
+function equipmentCapabilityConfigFor(family,subtype){
+  if(family==="CABLE")return [
+    {namespace:"PULLEY_POSITION",label:"Umlenkrollen-Position",values:["HIGH","MID","LOW","HEIGHT_ADJUSTABLE"]},
+    {namespace:"CABLE_ATTACHMENT",label:"Vorhandene Griffe/Aufsätze",values:["SINGLE_D_HANDLE","PAIR_D_HANDLES","ROPE","STRAIGHT_BAR","EZ_BAR","WIDE_BAR","NEUTRAL_PULLDOWN_HANDLE","NEUTRAL_ROW_HANDLE","ANKLE_STRAP"]},
+  ];
+  if(family==="RACK_STATION")return [
+    {namespace:"RACK",label:"Ausstattung",values:["SQUAT_HEIGHT","BENCH_HEIGHT","SAFETY_ARMS","PULLUP_BAR","ROW_HEIGHT"]},
+  ];
+  if(family==="SUPPORT"&&subtype==="ADJUSTABLE_BENCH")return [
+    {namespace:"BENCH",label:"Positionen",values:["FLAT","INCLINE_ADJUSTABLE","DECLINE_CAPABLE"]},
+    {namespace:"SUPPORT",label:"Weitere Eigenschaften",values:["BACK_SUPPORTED"]},
+  ];
+  if(family==="SUPPORT"&&(subtype==="GHD"||subtype==="NORDIC_BENCH"))return [
+    {namespace:"SUPPORT",label:"Eigenschaften",values:["LOWER_LEG_ANCHORED"]},
+  ];
+  if(family==="RESISTANCE_ACCESSORY"&&subtype==="ANCHOR_POINT")return [
+    {namespace:"ANCHOR",label:"Höhe",values:["LOW","MID","HIGH"]},
+  ];
+  return null;
+}
+/* §9.1/§29.5: DUMBBELL_DISCRETE-Instanzen brauchen pair_semantics, um
+   SINGLE/PAIR/SINGLE_OR_PAIR ueberhaupt aufzuloesen (training-equipment.js
+   resolveDumbbellOrKettlebellQuantity) — ohne diese Angabe waere die
+   Instanz spaeter nie als PAIR nutzbar. SINGLE ist der ehrliche,
+   konservative Default ("einzeln verfuegbar"), keine Erfindung. */
+function equipmentNeedsPairSemantics(family,subtype){
+  return family==="FREE_WEIGHT"&&["FIXED_DUMBBELL","ADJUSTABLE_DUMBBELL","LOADABLE_DUMBBELL","KETTLEBELL"].indexOf(subtype)!==-1;
+}
+/* Maschinen (SELECTORIZED_MACHINE/PLATE_LOADED_MACHINE) brauchen ZWINGEND
+   ein LoadProfileVersion, sonst kann MACHINE(X) in training-equipment.js
+   nie satisfied=true liefern (kein Fallback wie bei Barbell+Plates). */
+function equipmentNeedsLoadProfile(family,subtype){
+  return equipmentNeedsPairSemantics(family,subtype)||family==="SELECTORIZED_MACHINE"||family==="PLATE_LOADED_MACHINE";
+}
+function equipmentLabelFor(family,subtype,mfs){
+  return mfs?(MACHINE_FUNCTIONAL_SUBTYPE_LABELS[mfs]||mfs):(EQUIPMENT_SUBTYPE_LABELS[subtype]||subtype);
+}
+/* Maschinen haben laut §29.1 keine eigene Subtype-Liste — subtype===mfs
+   (siehe EquipmentPickerPanel); die ID wird dafuer nicht redundant aus
+   beidem gebildet. */
+function equipmentDefinitionIdFor(family,subtype,mfs){
+  return mfs?["eqdef",family,mfs].join("_").toLowerCase():["eqdef",family,subtype].join("_").toLowerCase();
+}
+/* Reine Struktur-Ableitung eines LoadProfileVersion aus einem Auswahl-
+   Eintrag — KEINE erfundenen kg-Stufen (available_steps/base_load bleiben
+   unbelegt, effective_load_unknown=true, ratio_confidence=NONE): die
+   konkreten Zahlenwerte sind STEP09-Kalibrierungs-Scope. Nur die normativ
+   noetige STRUKTURELLE Semantik (§9.1: load_unit/display_semantics/
+   direction/pair_semantics/per_side_semantics) wird erfasst — exakt die
+   Felder, die training-equipment.js validateLoadProfileSemantics()/
+   resolveSetupPredicate() ohne Fallback braucht. */
+function buildLoadProfileFieldsFor(id,equipmentInstanceId,entry){
+  if(entry.family==="SELECTORIZED_MACHINE"){
+    return {id,equipment_instance_id:equipmentInstanceId,version:1,load_unit:"DISPLAY_UNIT",display_semantics:"STACK_LABEL",
+      direction:"HIGHER_IS_MORE",pair_semantics:"N_A",per_side_semantics:"N_A",ratio_confidence:"NONE",
+      effective_load_unknown:true,microloading_available:false};
+  }
+  if(entry.family==="PLATE_LOADED_MACHINE"){
+    const ds=entry.plateDisplaySemantics==="TOTAL_ADDED"?"TOTAL_ADDED":"PER_SIDE";
+    return {id,equipment_instance_id:equipmentInstanceId,version:1,load_unit:"KG",display_semantics:ds,
+      direction:"HIGHER_IS_MORE",pair_semantics:"N_A",per_side_semantics:ds==="PER_SIDE"?"PER_SIDE":"TOTAL",
+      ratio_confidence:"NONE",effective_load_unknown:true,microloading_available:false};
+  }
+  return {id,equipment_instance_id:equipmentInstanceId,version:1,load_unit:"KG",display_semantics:"PER_HAND",
+    direction:"HIGHER_IS_MORE",pair_semantics:entry.pairSemantics==="PAIR_PER_HAND"?"PAIR_PER_HAND":"SINGLE",
+    per_side_semantics:"N_A",ratio_confidence:"NONE",effective_load_unknown:true,microloading_available:false};
+}
+/* Rekonstruiert die Auswahl-Eintraege (fuer UI-Vorbelegung) direkt aus den
+   persistierten STEP01/06-Entities einer Location — kein Zwischenformat,
+   keine zweite Wahrheit. Funktioniert unveraendert fuer bereits vor
+   STEP06.1 angelegte (Paket-02-Presets-)Instanzen, da diese seit der
+   STEP06-Korrektur bereits kanonische family/subtype-Werte tragen. */
+function buildEquipmentEntriesFromLocation(locationId){
+  if(!locationId)return [];
+  const defsById={};
+  loadEquipmentDefinitionVersions().forEach(d=>{defsById[d.id]=d;});
+  const lpById={};
+  loadLoadProfileVersions().forEach(lp=>{lpById[lp.id]=lp;});
+  return loadEquipmentInstances()
+    .filter(i=>i.location_id===locationId&&i.inventory_state==="PRESENT")
+    .map(i=>{
+      const def=defsById[i.equipment_definition_version_id];
+      if(!def)return null;
+      const lp=i.load_profile_version_id?lpById[i.load_profile_version_id]:null;
+      const capabilities={};
+      (i.capability_values||[]).forEach(cp=>{(capabilities[cp.namespace]=capabilities[cp.namespace]||[]).push(cp.value);});
+      return {
+        family:def.family,subtype:def.subtype,machineFunctionalSubtype:def.machine_functional_subtype||null,
+        capabilities,pairSemantics:lp?lp.pair_semantics:null,
+        plateDisplaySemantics:def.family==="PLATE_LOADED_MACHINE"&&lp?lp.display_semantics:null,
+      };
+    }).filter(Boolean);
+}
+/* Schreibt eine vollstaendige Auswahl-Liste in reale STEP01/06-Entities:
+   EquipmentDefinitionVersion (idempotent je Typ), EquipmentInstance
+   (PRESENT fuer jeden Eintrag; zuvor PRESENT, jetzt fehlende Typen ->
+   NOT_PRESENT statt geloescht, §1.4-Guard: Historie bleibt erhalten),
+   LoadProfileVersion nur dort, wo STEP06 sie zwingend braucht (s.o.), neue
+   versionierte EquipmentProfileVersion (§1.4). Einzige Schreib-Stelle fuer
+   Equipment — von Onboarding UND vom staendigen Equipment-Manager
+   gleichermassen genutzt (kein Parallelpfad, kein Fake-PASS durch zwei
+   unterschiedliche Schreibwege). */
+function applyEquipmentSelection(locationId,entries){
+  const existingInstances=loadEquipmentInstances().filter(i=>i.location_id===locationId);
+  /* Bestehende Instanz ueber ihre EIGENE Definition (family/subtype/mfs)
+     wiederfinden statt ueber den frisch berechneten deterministischen
+     defId — sonst wuerde eine Alt-Instanz mit einer aelteren/anderen
+     Definition-Version-ID (z.B. Vor-STEP06.1-Presets wie "eqdef_barbell_
+     plates") bei jedem Speichern faelschlich als "neu" behandelt und eine
+     Parallel-Instanz erzeugt, statt deterministisch auf den kanonischen
+     Datensatz zu migrieren (§1.4: keine Parallelarchitektur, kein
+     Datenverlust). */
+  const existingDefsById={};
+  loadEquipmentDefinitionVersions().forEach(d=>{existingDefsById[d.id]=d;});
+  const keptInstanceIds={};
+  const presentInstanceIds=[];
+  entries.forEach(entry=>{
+    const defId=equipmentDefinitionIdFor(entry.family,entry.subtype,entry.machineFunctionalSubtype);
+    upsertEquipmentDefinitionVersion(createEquipmentDefinitionVersion({
+      id:defId,version:1,canonical_name:equipmentLabelFor(entry.family,entry.subtype,entry.machineFunctionalSubtype),
+      family:entry.family,subtype:entry.subtype,machine_functional_subtype:entry.machineFunctionalSubtype||null,status:"ACTIVE",
+    }));
+    const existingInstance=existingInstances.find(i=>{
+      const d=existingDefsById[i.equipment_definition_version_id];
+      return d&&d.family===entry.family&&d.subtype===entry.subtype&&(d.machine_functional_subtype||null)===(entry.machineFunctionalSubtype||null);
+    });
+    const instanceId=existingInstance?existingInstance.id:genTrainingId("eqi");
+    keptInstanceIds[instanceId]=true;
+    let loadProfileId=existingInstance?existingInstance.load_profile_version_id:null;
+    if(equipmentNeedsLoadProfile(entry.family,entry.subtype)){
+      if(!loadProfileId)loadProfileId=genTrainingId("lpv");
+      upsertLoadProfileVersion(createLoadProfileVersion(buildLoadProfileFieldsFor(loadProfileId,instanceId,entry)));
+    }
+    const capabilityValues=Object.keys(entry.capabilities||{}).reduce((arr,ns)=>
+      arr.concat((entry.capabilities[ns]||[]).map(v=>createCapabilityPredicate({namespace:ns,operator:"EQ",value:v}))),[]);
+    upsertEquipmentInstance(createEquipmentInstance({
+      id:instanceId,location_id:locationId,equipment_definition_version_id:defId,inventory_state:"PRESENT",
+      capability_values:capabilityValues,load_profile_version_id:loadProfileId,
+    }));
+    presentInstanceIds.push(instanceId);
+  });
+  existingInstances.filter(i=>!keptInstanceIds[i.id]&&i.inventory_state!=="NOT_PRESENT").forEach(i=>{
+    upsertEquipmentInstance(createEquipmentInstance({...i,inventory_state:"NOT_PRESENT"}));
+  });
+  const priorVersions=loadEquipmentProfileVersions().filter(v=>v.location_id===locationId);
+  const equipmentProfile=createEquipmentProfileVersion({
+    id:genTrainingId("eqpv"),location_id:locationId,
+    version:priorVersions.length?Math.max.apply(null,priorVersions.map(v=>v.version))+1:1,
+    equipment_instance_ids:presentInstanceIds,created_at:new Date().toISOString(),
+  });
+  upsertEquipmentProfileVersion(equipmentProfile);
+  return equipmentProfile;
+}
+
+/* Ein einzelner auswaehlbarer Geraete-Typ (Chip) inkl. optionalem
+   Detail-Bereich (pair_semantics/plate-Anzeige/Capabilities) — wird pro
+   Familien-Gruppe im EquipmentPickerPanel gerendert. */
+function EquipmentTypeRow({family,subtype,mfs,entry,onToggle,onUpdate}){
+  const selected=!!entry;
+  const capConfig=equipmentCapabilityConfigFor(family,subtype);
+  const needsPair=equipmentNeedsPairSemantics(family,subtype);
+  const isPlateLoaded=family==="PLATE_LOADED_MACHINE";
+  const showDetails=selected&&(capConfig||needsPair||isPlateLoaded);
+  return(
+    <div style={{marginBottom:10}}>
+      <button data-equipment-toggle={family+"|"+subtype+"|"+(mfs||"")} className={"chip"+(selected?" on":"")} onClick={()=>{tapH();onToggle();}}
+        style={{display:"flex",alignItems:"center",gap:7,padding:"13px 16px",borderRadius:14,width:"100%",textAlign:"left",
+          border:selected?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+          background:selected?"var(--accent-soft)":"var(--card)",color:selected?"var(--accent)":"var(--ink)",
+          fontSize:14,fontWeight:600}}>
+        {selected&&<span style={{fontSize:12}}>✓</span>}
+        <span style={{flex:1}}>{equipmentLabelFor(family,subtype,mfs)}</span>
+      </button>
+      {showDetails&&(
+        <div style={{marginTop:8,marginLeft:4,padding:"12px 14px",borderRadius:12,background:"var(--card2)",border:"1px solid var(--line)"}}>
+          {needsPair&&(
+            <div style={{marginBottom:(capConfig||isPlateLoaded)?12:0}}>
+              <div className="sub" style={{marginBottom:8,fontWeight:600}}>Wie ist es verfügbar?</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["SINGLE","Einzeln"],["PAIR_PER_HAND","Als Paar griffbereit"]].map(([val,label])=>{
+                  const on=(entry.pairSemantics||"SINGLE")===val;
+                  return(
+                    <button key={val} onClick={()=>{tapH();onUpdate({pairSemantics:val});}}
+                      style={{flex:1,padding:"10px 12px",borderRadius:10,fontSize:13,fontWeight:600,
+                        border:on?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+                        background:on?"var(--accent-soft)":"var(--card)",color:on?"var(--accent)":"var(--ink)"}}>{label}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {isPlateLoaded&&(
+            <div style={{marginBottom:capConfig?12:0}}>
+              <div className="sub" style={{marginBottom:8,fontWeight:600}}>Anzeige der Last</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["PER_SIDE","Pro Seite"],["TOTAL_ADDED","Gesamt"]].map(([val,label])=>{
+                  const on=(entry.plateDisplaySemantics||"PER_SIDE")===val;
+                  return(
+                    <button key={val} onClick={()=>{tapH();onUpdate({plateDisplaySemantics:val});}}
+                      style={{flex:1,padding:"10px 12px",borderRadius:10,fontSize:13,fontWeight:600,
+                        border:on?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+                        background:on?"var(--accent-soft)":"var(--card)",color:on?"var(--accent)":"var(--ink)"}}>{label}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {capConfig&&capConfig.map((group,gi)=>(
+            <div key={group.namespace} style={{marginBottom:gi===capConfig.length-1?0:12}}>
+              <div className="sub" style={{marginBottom:8,fontWeight:600}}>{group.label}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {group.values.map(v=>{
+                  const active=(entry.capabilities[group.namespace]||[]).indexOf(v)!==-1;
+                  return(
+                    <button key={v} onClick={()=>{tapH();
+                      const cur=entry.capabilities[group.namespace]||[];
+                      const next=active?cur.filter(x=>x!==v):cur.concat([v]);
+                      onUpdate({capabilities:{...entry.capabilities,[group.namespace]:next}});
+                    }} style={{padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600,
+                      border:active?"1.5px solid var(--accent)":"1.5px solid var(--line)",
+                      background:active?"var(--accent-soft)":"var(--card)",color:active?"var(--accent)":"var(--ink2)"}}>
+                      {active?"✓ ":""}{CAPABILITY_VALUE_LABELS[v]||v}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Voller Equipment-Picker gegen die reale §29.1/§29.2-Registry — ersetzt
+   TRAINING_EQUIPMENT_PRESETS ueberall (Onboarding UND staendiger Manager,
+   dieselbe Komponente, keine Parallel-UI). Suche + Familien-Abschnitte
+   statt einer einzigen unstrukturierten Checkbox-Wand. */
+function EquipmentPickerPanel({entries,onChange}){
+  const [search,setSearch]=useState("");
+  function keyFor(family,subtype,mfs){return family+"|"+subtype+"|"+(mfs||"");}
+  function findEntry(family,subtype,mfs){
+    const key=keyFor(family,subtype,mfs);
+    return entries.find(e=>keyFor(e.family,e.subtype,e.machineFunctionalSubtype)===key)||null;
+  }
+  function toggle(family,subtype,mfs){
+    const key=keyFor(family,subtype,mfs);
+    if(findEntry(family,subtype,mfs)){
+      onChange(entries.filter(e=>keyFor(e.family,e.subtype,e.machineFunctionalSubtype)!==key));
+    }else{
+      onChange(entries.concat([{family,subtype,machineFunctionalSubtype:mfs||null,capabilities:{},pairSemantics:null,plateDisplaySemantics:null}]));
+    }
+  }
+  function update(family,subtype,mfs,patch){
+    const key=keyFor(family,subtype,mfs);
+    onChange(entries.map(e=>keyFor(e.family,e.subtype,e.machineFunctionalSubtype)===key?{...e,...patch}:e));
+  }
+  const q=search.trim().toLowerCase();
+  function matches(label){return !q||label.toLowerCase().indexOf(q)!==-1;}
+
+  return(
+    <div>
+      <input type="text" placeholder="Gerät suchen…" value={search} onChange={e=>setSearch(e.target.value)}
+        style={{marginBottom:18,fontSize:15,padding:"12px 16px"}}/>
+      {EQUIPMENT_PICKER_FAMILIES.map(family=>{
+        const isMachine=family==="SELECTORIZED_MACHINE"||family==="PLATE_LOADED_MACHINE";
+        const items=(isMachine?MACHINE_FUNCTIONAL_SUBTYPE_REGISTRY:(EQUIPMENT_FAMILY_SUBTYPE_REGISTRY[family]||[]))
+          .filter(item=>matches(isMachine?(MACHINE_FUNCTIONAL_SUBTYPE_LABELS[item]||item):(EQUIPMENT_SUBTYPE_LABELS[item]||item)));
+        if(!items.length)return null;
+        return(
+          <div key={family} style={{marginBottom:22}}>
+            <div className="lbl" style={{marginBottom:10}}>{EQUIPMENT_FAMILY_LABELS[family]}</div>
+            {items.map(item=>{
+              const mfs=isMachine?item:null;
+              return(
+                <EquipmentTypeRow key={family+"|"+item} family={family} subtype={item} mfs={mfs}
+                  entry={findEntry(family,item,mfs)}
+                  onToggle={()=>toggle(family,item,mfs)}
+                  onUpdate={patch=>update(family,item,mfs,patch)}/>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /* "equipment_profile_confirmed" (§1.2 REQUIRED-Feld 6, hier nicht als
    UserTrainingProfile-Feld gefuehrt, siehe §1.4: Equipment lebt in
@@ -3197,15 +3529,12 @@ function nowEvaluationContext(){
    (Bearbeiten eines bestehenden Profils) — niemals aus erfundenen
    Defaults, ausschliesslich aus echten geladenen Werten. */
 function buildOnboardingDraftFromExisting(profile,location){
-  const equipmentSelectedIds=location
-    ?loadEquipmentInstances().filter(i=>i.location_id===location.id&&i.inventory_state==="PRESENT"&&TRAINING_EQUIPMENT_PRESETS.some(p=>p.id===i.equipment_definition_version_id)).map(i=>i.equipment_definition_version_id)
-    :[];
   return {
     goal:profile.goal,experience_self:profile.experience_self,
     training_days_per_week:profile.training_days_per_week,session_time_budget_min:profile.session_time_budget_min,
     locationId:location?location.id:genTrainingId("loc"),
     locationName:location?location.name:"",locationType:location?location.type:null,
-    equipmentSelectedIds,equipmentConfirmed:!!location,
+    equipmentEntries:location?buildEquipmentEntriesFromLocation(location.id):[],equipmentConfirmed:!!location,
     bodyweight_kg:String(profile.bodyweight_kg),
     priority_muscles:profile.priority_muscles||[],preferred_split:profile.preferred_split,
     uses_rir:!!profile.uses_rir,rest_preference:profile.rest_preference||REST_PREFERENCE.STANDARD,
@@ -3213,8 +3542,9 @@ function buildOnboardingDraftFromExisting(profile,location){
 }
 
 /* Persistiert das Ergebnis des Onboarding-/Bearbeiten-Flows: TrainingLocation
-   + EquipmentProfileVersion/-Instances (§1.4), optional ein neues
-   BodyweightEvent (Bodyweight-Replay-Contract, 23.4) und das
+   + EquipmentProfileVersion/-Instances (§1.4, via applyEquipmentSelection
+   — dieselbe Schreib-Funktion wie der staendige Equipment-Manager), optional
+   ein neues BodyweightEvent (Bodyweight-Replay-Contract, 23.4) und das
    UserTrainingProfile (§1.2/§1.3). Fasst NUR bereits bestehende STEP-01-
    Foundation-Funktionen zusammen, keine neue Fachlogik. */
 function finishOnboarding(draft,existingProfile,existingLocation){
@@ -3229,36 +3559,8 @@ function finishOnboarding(draft,existingProfile,existingLocation){
 
   /* Equipment: BODYWEIGHT_ONLY bekommt NIEMALS Instanzen vorbelegt (§1.4-
      Guard) — der Flow zeigt fuer diesen Location-Typ ueberhaupt keinen
-     Auswahlschritt, equipmentSelectedIds ist dafuer strukturell immer []. */
-  const selectedIds=isBWOnly?[]:draft.equipmentSelectedIds;
-  const existingInstances=loadEquipmentInstances().filter(i=>i.location_id===draft.locationId);
-  const presentInstanceIds=[];
-  selectedIds.forEach(defId=>{
-    const preset=TRAINING_EQUIPMENT_PRESETS.find(p=>p.id===defId);
-    if(!preset)return;
-    upsertEquipmentDefinitionVersion(createEquipmentDefinitionVersion({id:preset.id,version:1,canonical_name:preset.name,family:preset.family,subtype:preset.subtype,status:"ACTIVE"}));
-    const existingInstance=existingInstances.find(i=>i.equipment_definition_version_id===defId);
-    const instance=createEquipmentInstance({
-      id:existingInstance?existingInstance.id:genTrainingId("eqi"),
-      location_id:draft.locationId,equipment_definition_version_id:defId,inventory_state:"PRESENT",
-    });
-    upsertEquipmentInstance(instance);
-    presentInstanceIds.push(instance.id);
-  });
-  /* Abgewaehlte, zuvor vorhandene Instanzen: inventory_state wird auf
-     NOT_PRESENT gesetzt (persistente Achse, §1.4) statt die Instanz zu
-     loeschen — Inventory/Availability/Praeferenz bleiben getrennt. */
-  existingInstances.filter(i=>selectedIds.indexOf(i.equipment_definition_version_id)===-1&&i.inventory_state!=="NOT_PRESENT").forEach(i=>{
-    upsertEquipmentInstance(createEquipmentInstance({...i,inventory_state:"NOT_PRESENT"}));
-  });
-
-  const priorVersions=loadEquipmentProfileVersions().filter(v=>v.location_id===draft.locationId);
-  const equipmentProfile=createEquipmentProfileVersion({
-    id:genTrainingId("eqpv"),location_id:draft.locationId,
-    version:priorVersions.length?Math.max.apply(null,priorVersions.map(v=>v.version))+1:1,
-    equipment_instance_ids:presentInstanceIds,created_at:new Date().toISOString(),
-  });
-  upsertEquipmentProfileVersion(equipmentProfile);
+     Auswahlschritt, equipmentEntries ist dafuer strukturell immer []. */
+  const equipmentProfile=applyEquipmentSelection(draft.locationId,isBWOnly?[]:draft.equipmentEntries);
   upsertTrainingLocation(createTrainingLocation({...locationDraft,current_equipment_profile_version_id:equipmentProfile.id}));
 
   /* Bodyweight: nur ein neues BodyweightEvent anhaengen, wenn sich der Wert
@@ -3396,7 +3698,7 @@ function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,o
   const [draft,setDraft]=useState(()=>initialDraft||{
     goal:null,experience_self:null,training_days_per_week:4,session_time_budget_min:60,
     locationId:genTrainingId("loc"),locationName:"",locationType:null,
-    equipmentSelectedIds:[],equipmentConfirmed:false,
+    equipmentEntries:[],equipmentConfirmed:false,
     bodyweight_kg:"",priority_muscles:[],preferred_split:null,uses_rir:false,rest_preference:REST_PREFERENCE.STANDARD,
   });
   const [openSubSheet,setOpenSubSheet]=useState(null); // null | "focus" | "split" | "settings"
@@ -3405,7 +3707,7 @@ function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,o
   const isBWOnly=isBodyweightOnlyLocationType(draft.locationType);
 
   function setLocationType(type){
-    if(isBodyweightOnlyLocationType(type))patch({locationType:type,equipmentSelectedIds:[],equipmentConfirmed:true});
+    if(isBodyweightOnlyLocationType(type))patch({locationType:type,equipmentEntries:[],equipmentConfirmed:true});
     else patch({locationType:type,equipmentConfirmed:draft.locationType===type?draft.equipmentConfirmed:false});
   }
   function stepValid(s){
@@ -3494,9 +3796,7 @@ function TrainingOnboardingFlow({initialDraft,existingProfile,existingLocation,o
                 <span style={{fontSize:20}}>🧘</span>
                 <span className="sub" style={{lineHeight:1.5}}>„Nur Körpergewicht" bedeutet ausschließlich Boden- und Körpergewichtsübungen — es wird kein Equipment angenommen (auch keine Klimmzugstange, Dip-Station, Ringe oder Schlingentrainer). Du kannst das später jederzeit ändern.</span>
               </div>
-            :<ChipMultiSelect options={TRAINING_EQUIPMENT_PRESETS.map(p=>p.id)} value={draft.equipmentSelectedIds}
-                labels={Object.fromEntries(TRAINING_EQUIPMENT_PRESETS.map(p=>[p.id,p.name]))}
-                onToggle={id=>patch({equipmentSelectedIds:draft.equipmentSelectedIds.indexOf(id)!==-1?draft.equipmentSelectedIds.filter(x=>x!==id):draft.equipmentSelectedIds.concat([id]),equipmentConfirmed:true})}/>}
+            :<EquipmentPickerPanel entries={draft.equipmentEntries} onChange={entries=>patch({equipmentEntries:entries,equipmentConfirmed:true})}/>}
         </div>
       )}
       {step===6&&(
@@ -3580,6 +3880,8 @@ function TrainingView({data,openActivity}){
   const [refreshTick,setRefreshTick]=useState(0);
   const [showOnboarding,setShowOnboarding]=useState(false);
   const [showSplitSheet,setShowSplitSheet]=useState(false);
+  const [showEquipmentManager,setShowEquipmentManager]=useState(false);
+  const [showLocationsManager,setShowLocationsManager]=useState(false);
   const profile=useMemo(()=>loadUserTrainingProfile(),[refreshTick]);
   const location=useMemo(()=>profile?loadTrainingLocations().find(l=>l.id===profile.primary_location_id)||null:null,[profile,refreshTick]);
   const onboardingComplete=!!profile&&trainingLocationHasConfirmedEquipmentProfile(profile.primary_location_id);
@@ -3590,13 +3892,20 @@ function TrainingView({data,openActivity}){
     return n?n+" Geräte":"Keine Auswahl";
   },[location,refreshTick]);
   const openEdit=()=>{tapH();setShowOnboarding(true);};
+  /* Equipment fuehrt seit STEP06.1 NICHT mehr in den vollstaendigen 8-
+     Schritte-Wizard, sondern direkt in den staendigen Equipment-Manager
+     (dieselbe Schreib-Funktion applyEquipmentSelection wie das Onboarding,
+     kein Parallelpfad) — schnellerer Zugriff fuer die haeufigste Aenderung. */
+  const openEquipment=()=>{tapH();setShowEquipmentManager(true);};
+  const openLocations=()=>{tapH();setShowLocationsManager(true);};
   const summaryRows=profile?[
     ["Trainingsziel",TRAINING_GOAL_LABELS[profile.goal],openEdit],
     ["Erfahrung",EXPERIENCE_SELF_LABELS[profile.experience_self],openEdit],
     ["Trainingstage",profile.training_days_per_week+"× / Woche",openEdit],
     ["Dauer",profile.session_time_budget_min+" Min",openEdit],
     ["Trainingsort",location?location.name:"–",openEdit],
-    ["Equipment",equipmentSummary,openEdit],
+    ["Trainingsorte verwalten",loadTrainingLocations().length+(loadTrainingLocations().length===1?" Ort":" Orte"),openLocations],
+    ["Equipment",equipmentSummary,openEquipment],
     ["Körpergewicht",profile.bodyweight_kg+" kg",openEdit],
     ["Fokus",profile.priority_muscles.length?profile.priority_muscles.map(mus=>VOLUME_MUSCLE_LABELS[mus]).join(", "):"Keine Auswahl",openEdit],
     ["Split-Präferenz",profile.preferred_split?PREFERRED_SPLIT_LABELS[profile.preferred_split]:"Automatisch",()=>{tapH();setShowSplitSheet(true);}],
@@ -3681,7 +3990,119 @@ function TrainingView({data,openActivity}){
         <SplitPreferenceSheet profile={profile} onClose={()=>setShowSplitSheet(false)}
           onSaved={()=>{setShowSplitSheet(false);setRefreshTick(t=>t+1);}}/>
       )}
+      {showEquipmentManager&&location&&(
+        <EquipmentManagerScreen location={location} onClose={()=>setShowEquipmentManager(false)}
+          onSaved={()=>{setShowEquipmentManager(false);setRefreshTick(t=>t+1);}}/>
+      )}
+      {showLocationsManager&&(
+        <LocationsManagerScreen onClose={()=>setShowLocationsManager(false)}
+          onChanged={()=>setRefreshTick(t=>t+1)}/>
+      )}
     </div>
+  );
+}
+
+/* Staendiger Equipment-Manager fuer EINE bestehende TrainingLocation —
+   nutzt exakt dieselbe EquipmentPickerPanel/applyEquipmentSelection wie
+   das Onboarding (kein zweiter Schreibpfad). Normale App-Optik (kein
+   dark), da dies kein Onboarding-Schritt, sondern ein staendig
+   erreichbarer Verwaltungs-Screen ist (Aufgabentext 13: bestehenden VITAL
+   Stil beibehalten). */
+function EquipmentManagerScreen({location,onClose,onSaved}){
+  const [entries,setEntries]=useState(()=>buildEquipmentEntriesFromLocation(location.id));
+  const isBWOnly=isBodyweightOnlyLocationType(location.type);
+  function save(){
+    tapH();
+    applyEquipmentSelection(location.id,isBWOnly?[]:entries);
+    onSaved();
+  }
+  return(
+    <Page onClose={onClose} title={"Equipment · "+location.name}
+      footer={<button className="btn" style={ONBOARDING_CTA_STYLE} onClick={save}>Speichern</button>}>
+      {isBWOnly
+        ?<div style={{display:"flex",gap:12,alignItems:"flex-start",padding:16,borderRadius:16,background:"var(--card)",border:"1px solid var(--line)"}}>
+            <span style={{fontSize:20}}>🧘</span>
+            <span className="sub" style={{lineHeight:1.5}}>„Nur Körpergewicht" nimmt kein Equipment an (auch keine Klimmzugstange, Dip-Station, Ringe oder Schlingentrainer). Ändere den Ort-Typ im Trainingsprofil, um Geräte zu erfassen.</span>
+          </div>
+        :<EquipmentPickerPanel entries={entries} onChange={setEntries}/>}
+    </Page>
+  );
+}
+
+/* Neuer Trainingsort — analog zu Onboarding-Schritt 4/5, aber eigenstaendig
+   fuer bereits eingerichtete Nutzer, die einen ZWEITEN Ort brauchen (§1.4:
+   ein Nutzer kann mehrere TrainingLocations besitzen). Legt sofort eine
+   leere EquipmentProfileVersion an (analog BODYWEIGHT_ONLY-Guard in
+   finishOnboarding), damit der Ort direkt "eingerichtet" gilt und ueber
+   den Equipment-Manager befuellt werden kann. */
+function AddLocationSheet({onClose,onSaved}){
+  const [name,setName]=useState("");
+  const [type,setType]=useState(null);
+  function save(){
+    tapH();
+    const userId=getOrCreateLocalTrainingUserId();
+    const locationId=genTrainingId("loc");
+    const equipmentProfile=applyEquipmentSelection(locationId,[]);
+    upsertTrainingLocation(createTrainingLocation({id:locationId,user_id:userId,name:name.trim(),type,current_equipment_profile_version_id:equipmentProfile.id,is_default_for_weekdays:[]}));
+    onSaved();
+  }
+  const valid=name.trim().length>0&&!!type;
+  return(
+    <Sheet onClose={onClose} title="Neuer Trainingsort">
+      <div className="lbl" style={{marginBottom:6}}>Name</div>
+      <input type="text" placeholder="z.B. Fitnessstudio" value={name} onChange={e=>setName(e.target.value)} style={{marginBottom:18,fontSize:15,padding:"12px 16px"}}/>
+      <div className="lbl" style={{marginBottom:8}}>Art des Orts</div>
+      <ChoiceList options={Object.values(TRAINING_LOCATION_TYPE)} value={type} onChange={setType} labels={TRAINING_LOCATION_TYPE_LABELS}/>
+      <button className="btn" disabled={!valid} style={{marginTop:20,opacity:valid?1:.35}} onClick={save}>Anlegen</button>
+    </Sheet>
+  );
+}
+
+/* Liste aller TrainingLocations (§1.4: ein Nutzer kann mehrere Orte
+   besitzen) — anlegen + je Ort direkt in den Equipment-Manager. Getrennte
+   Inventories je Ort ergeben sich strukturell aus EquipmentInstance.
+   location_id (training-equipment.js buildLocationInventoryView filtert
+   danach) — hier nur die Verwaltungsoberflaeche dafuer. */
+function LocationsManagerScreen({onClose,onChanged}){
+  const [refreshTick,setRefreshTick]=useState(0);
+  const [showAdd,setShowAdd]=useState(false);
+  const [editEquipmentFor,setEditEquipmentFor]=useState(null);
+  const locations=useMemo(()=>loadTrainingLocations(),[refreshTick]);
+  const profile=useMemo(()=>loadUserTrainingProfile(),[refreshTick]);
+  function equipmentSummaryFor(loc){
+    if(loc.type===TRAINING_LOCATION_TYPE.BODYWEIGHT_ONLY)return "Nur Körpergewicht";
+    const n=loadEquipmentInstances().filter(i=>i.location_id===loc.id&&i.inventory_state==="PRESENT").length;
+    return n?n+" Geräte":"Keine Auswahl";
+  }
+  function bump(){setRefreshTick(t=>t+1);if(onChanged)onChanged();}
+  return(
+    <>
+    <Page onClose={onClose} title="Trainingsorte">
+      {locations.map(loc=>(
+        <div key={loc.id} className="card card-compact" style={{marginBottom:10}}>
+          <div className="row" style={{marginBottom:6}}>
+            <div style={{fontWeight:700,fontSize:14}}>{loc.name}{profile&&loc.id===profile.primary_location_id?" · Hauptort":""}</div>
+          </div>
+          <div className="sub" style={{marginBottom:10}}>{TRAINING_LOCATION_TYPE_LABELS[loc.type]}</div>
+          <button style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:"none",border:"none",borderTop:"1px solid var(--line)",padding:"11px 0",font:"inherit",color:"var(--ink)"}}
+            onClick={()=>{tapH();setEditEquipmentFor(loc);}}>
+            <span className="sub">Equipment</span>
+            <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:13,fontWeight:600}}>{equipmentSummaryFor(loc)}</span><span style={{color:"var(--ink3)",fontSize:15}}>›</span></span>
+          </button>
+        </div>
+      ))}
+      <button className="card card-compact" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,color:"var(--accent)",fontWeight:600,fontSize:14,border:"1.5px dashed var(--line)",width:"100%"}} onClick={()=>{tapH();setShowAdd(true);}}>
+        <span style={{fontSize:18}}>+</span> Trainingsort hinzufügen
+      </button>
+    </Page>
+    {showAdd&&(
+      <AddLocationSheet onClose={()=>setShowAdd(false)} onSaved={()=>{setShowAdd(false);bump();}}/>
+    )}
+    {editEquipmentFor&&(
+      <EquipmentManagerScreen location={editEquipmentFor} onClose={()=>setEditEquipmentFor(null)}
+        onSaved={()=>{setEditEquipmentFor(null);bump();}}/>
+    )}
+    </>
   );
 }
 
