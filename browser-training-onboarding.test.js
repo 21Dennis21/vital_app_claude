@@ -34,6 +34,10 @@ function findByExactText(d, text, tag){
 }
 function choiceBtn(d, value){ return d.querySelector('[data-choice="'+value+'"]'); }
 function chipBtn(d, value){ return d.querySelector('[data-chip="'+value+'"]'); }
+/* Seit STEP06.1 loest der Equipment-Schritt gegen die echte §29.1-Registry
+   auf (EquipmentPickerPanel) statt gegen die alte 10-Preset-Demo-Liste —
+   data-equipment-toggle traegt "family|subtype|machineFunctionalSubtype". */
+function equipmentBtn(d, family, subtype, mfs){ return d.querySelector('[data-equipment-toggle="'+family+"|"+subtype+"|"+(mfs||"")+'"]'); }
 function click(el, win){ el.dispatchEvent(new win.MouseEvent("click",{bubbles:true,cancelable:true})); }
 function isOn(el){ return !!el && el.className && el.className.indexOf(" on")!==-1; }
 /* Der Haupt-Flow-CTA ("Weiter"/"Fertig" im Page-Footer) traegt ein eigenes
@@ -113,11 +117,11 @@ async function main(){
   check(weiterBtn(d).disabled===false, "'Weiter' aktiv sobald Name + Typ gesetzt sind");
   click(weiterBtn(d), win); await flush(dom);
 
-  console.log("\n--- 7. Schritt 6/8: Equipment (REQUIRED: equipment_profile_confirmed, §1.4 nur Startschätzungen) ---");
+  console.log("\n--- 7. Schritt 6/8: Equipment (REQUIRED: equipment_profile_confirmed, §1.4 nur Startschätzungen, echte §29.1-Registry) ---");
   check(!!findByExactText(d,"Welches Equipment hast du?"), "Schritt 'Equipment' erreicht");
-  click(chipBtn(d,"eqdef_barbell_plates"), win); await flush(dom);
-  click(chipBtn(d,"eqdef_dumbbells"), win); await flush(dom);
-  check(isOn(chipBtn(d,"eqdef_barbell_plates"))&&isOn(chipBtn(d,"eqdef_dumbbells")), "beide Equipment-Presets ausgewählt");
+  click(equipmentBtn(d,"FREE_WEIGHT","OLYMPIC_BARBELL"), win); await flush(dom);
+  click(equipmentBtn(d,"FREE_WEIGHT","FIXED_DUMBBELL"), win); await flush(dom);
+  check(isOn(equipmentBtn(d,"FREE_WEIGHT","OLYMPIC_BARBELL"))&&isOn(equipmentBtn(d,"FREE_WEIGHT","FIXED_DUMBBELL")), "beide Geräte aus der echten §29.1-Registry ausgewählt");
   check(weiterBtn(d).disabled===false, "'Weiter' aktiv nach Equipment-Auswahl");
   click(weiterBtn(d), win); await flush(dom);
 
@@ -219,7 +223,7 @@ async function main(){
   check(d.querySelector('input[type="text"]').value==="Zuhause", "Ortsname vorausgefüllt");
   check(isOn(choiceBtn(d,"HOME_GYM")), "Ort-Typ vorausgefüllt");
   click(weiterBtn(d), win); await flush(dom); // -> Equipment
-  check(isOn(chipBtn(d,"eqdef_barbell_plates"))&&isOn(chipBtn(d,"eqdef_dumbbells")), "beide Equipment-Presets bleiben vorausgewählt");
+  check(isOn(equipmentBtn(d,"FREE_WEIGHT","OLYMPIC_BARBELL"))&&isOn(equipmentBtn(d,"FREE_WEIGHT","FIXED_DUMBBELL")), "beide Geräte bleiben vorausgewählt (buildEquipmentEntriesFromLocation rekonstruiert aus echten Instanzen)");
   click(weiterBtn(d), win); await flush(dom); // -> Koerpergewicht
   check(d.querySelector('input[inputmode="decimal"]').value==="82", "Körpergewicht vorausgefüllt");
   setNativeInputValue(d.querySelector('input[inputmode="decimal"]'), "83");
@@ -257,7 +261,7 @@ async function main(){
   check(!!findByExactText(d,"Wo trainierst du meistens?"), "Schritt 'Trainingsort' erreicht");
   click(choiceBtn(d,"BODYWEIGHT_ONLY"), win); await flush(dom);
   click(weiterBtn(d), win); await flush(dom);
-  check(!chipBtn(d,"eqdef_barbell_plates"), "Equipment-Presets werden für BODYWEIGHT_ONLY gar nicht erst angeboten");
+  check(!equipmentBtn(d,"FREE_WEIGHT","OLYMPIC_BARBELL"), "Equipment-Registry wird für BODYWEIGHT_ONLY gar nicht erst angeboten");
   check(weiterBtn(d).disabled===false, "'Weiter' ist für BODYWEIGHT_ONLY sofort aktiv (equipment_profile_confirmed automatisch)");
   click(weiterBtn(d), win); await flush(dom); // Koerpergewicht (bereits vorausgefuellt)
   click(weiterBtn(d), win); await flush(dom); // Optional
