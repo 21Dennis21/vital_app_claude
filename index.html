@@ -3274,6 +3274,19 @@ function equipmentDefinitionIdFor(family,subtype,mfs){
    Felder, die training-equipment.js validateLoadProfileSemantics()/
    resolveSetupPredicate() ohne Fallback braucht. */
 function buildLoadProfileFieldsFor(id,equipmentInstanceId,entry){
+  if(entry.machineFunctionalSubtype==="ASSISTED_PULLUP_DIP"){
+    /* §9.1: "Assistance verwendet LOWER_IS_MORE" + display_semantics=ASSISTANCE
+       (weniger Assistenzgewicht = schwerer) — der Catalog deklariert fuer
+       ASSISTED_PULLUP_MACHINE explizit possible_load_mechanisms:
+       ["ASSISTANCE_INVERSE"], validateLoadProfileSemantics() verlangt dafuer
+       zwingend genau diese beiden Felder; das allgemeine SELECTORIZED_
+       MACHINE-STACK_LABEL/HIGHER_IS_MORE-Profil (siehe unten) waere hier
+       normativ falsch. Kein erfundener kg-Wert: nur die strukturelle
+       Semantik, wie ueberall sonst in dieser Funktion. */
+    return {id,equipment_instance_id:equipmentInstanceId,version:1,load_unit:"ASSISTANCE_KG",display_semantics:"ASSISTANCE",
+      direction:"LOWER_IS_MORE",pair_semantics:"N_A",per_side_semantics:"N_A",ratio_confidence:"NONE",
+      effective_load_unknown:true,microloading_available:false};
+  }
   if(entry.family==="SELECTORIZED_MACHINE"){
     return {id,equipment_instance_id:equipmentInstanceId,version:1,load_unit:"DISPLAY_UNIT",display_semantics:"STACK_LABEL",
       direction:"HIGHER_IS_MORE",pair_semantics:"N_A",per_side_semantics:"N_A",ratio_confidence:"NONE",
